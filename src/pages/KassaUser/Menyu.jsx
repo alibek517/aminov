@@ -11,7 +11,8 @@ import {
   Receipt,
   Edit,
   BarChart3,
-  LogOut
+  LogOut,
+  X
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ProductModal from '../../components/ProductModal';
