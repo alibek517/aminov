@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, User, Lock, Calculator, DollarSign } from 'lucide-react';
-import './SignIn.css';
+import './Signin.css';
 
 const users = [
   { id: 1, username: 'kasir', password: '1111', name: 'Kasir', role: 'CASHIER' },
@@ -55,7 +55,7 @@ const SignIn = () => {
       const usernameExists = users.find(u => u.username === username.trim());
       setErrors({
         username: usernameExists ? '' : 'Foydalanuvchi topilmadi',
-        password: usernameExists ? 'Parol noto‘g‘ri' : '',
+        password: usernameExists ? 'Parol noto'g'ri' : '',
       });
     }
 
@@ -117,7 +117,7 @@ const SignIn = () => {
         </form>
 
         <div className="signin-footer">
-          <p>Yangi foydalanuvchimisiz? <span className="admin-link">Admin bilan bog‘laning</span></p>
+          <p>Yangi foydalanuvchimisiz? <span className="admin-link">Admin bilan bog'laning</span></p>
         </div>
       </div>
     </div>
