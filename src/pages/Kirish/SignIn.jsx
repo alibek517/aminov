@@ -55,7 +55,7 @@ const SignIn = () => {
       const usernameExists = users.find(u => u.username === username.trim());
       setErrors({
         username: usernameExists ? '' : 'Foydalanuvchi topilmadi',
-        password: usernameExists ? 'Parol noto\'g'ri' : '',
+        password: usernameExists ? "Parol noto'g'ri" : '',
       });
     }
 
