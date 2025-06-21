@@ -31,19 +31,22 @@ const BarcodeScanner = ({ onScan, onClose, isOpen }) => {
       stream.getTracks().forEach(track => track.stop()); // Test uchun stream ni yopish
       setHasPermission(true);
 
+      // Wait a bit to ensure DOM element is ready
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      if (!scannerRef.current) {
+        throw new Error('Scanner element not available');
+      }
+
       const html5QrcodeScanner = new Html5QrcodeScanner(
-        "qr-reader",
+        scannerRef.current,
         { 
           fps: 10,
           qrbox: { width: 250, height: 250 },
           aspectRatio: 1.0,
           showTorchButtonIfSupported: true,
           showZoomSliderIfSupported: true,
-          defaultZoomValueIfSupported: 2,
-          supportedScanTypes: [
-            Html5QrcodeScanner.SCAN_TYPE_CAMERA,
-            Html5QrcodeScanner.SCAN_TYPE_FILE
-          ]
+          defaultZoomValueIfSupported: 2
         },
         false
       );
@@ -133,7 +136,7 @@ const BarcodeScanner = ({ onScan, onClose, isOpen }) => {
             </div>
           ) : (
             <>
-              <div id="qr-reader" ref={scannerRef}></div>
+              <div ref={scannerRef}></div>
               <div className="scanner-instructions">
                 <p className="scanner-instruction">
                   📱 Mahsulot barkodini kameraga yaqinlashtiring
