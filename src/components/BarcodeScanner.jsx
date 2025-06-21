@@ -1,48 +1,98 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { X, Camera } from 'lucide-react';
+import { X, Camera, AlertCircle } from 'lucide-react';
 
 const BarcodeScanner = ({ onScan, onClose, isOpen }) => {
   const scannerRef = useRef(null);
   const [scanner, setScanner] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState('');
+  const [hasPermission, setHasPermission] = useState(null);
 
   useEffect(() => {
     if (isOpen && !scanner) {
+      initializeScanner();
+    }
+
+    return () => {
+      if (scanner) {
+        cleanupScanner();
+      }
+    };
+  }, [isOpen]);
+
+  const initializeScanner = async () => {
+    try {
+      setError('');
+      setIsScanning(true);
+
+      // Kamera ruxsatini tekshirish
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream.getTracks().forEach(track => track.stop()); // Test uchun stream ni yopish
+      setHasPermission(true);
+
       const html5QrcodeScanner = new Html5QrcodeScanner(
         "qr-reader",
         { 
-          fps: 10, 
+          fps: 10,
           qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
+          aspectRatio: 1.0,
+          showTorchButtonIfSupported: true,
+          showZoomSliderIfSupported: true,
+          defaultZoomValueIfSupported: 2,
+          supportedScanTypes: [
+            Html5QrcodeScanner.SCAN_TYPE_CAMERA,
+            Html5QrcodeScanner.SCAN_TYPE_FILE
+          ]
         },
         false
       );
 
       html5QrcodeScanner.render(
-        (decodedText) => {
+        (decodedText, decodedResult) => {
+          console.log('Barcode scanned:', decodedText);
           onScan(decodedText);
-          html5QrcodeScanner.clear();
-          setScanner(null);
-          setIsScanning(false);
+          cleanupScanner();
         },
         (error) => {
-          // Scanner xatolari
+          // Scanner xatolari - bu normal holat, har bir frame uchun
+          // console.log('Scanner error:', error);
         }
       );
 
       setScanner(html5QrcodeScanner);
       setIsScanning(true);
-    }
 
-    return () => {
-      if (scanner) {
+    } catch (err) {
+      console.error('Scanner initialization error:', err);
+      setHasPermission(false);
+      setError('Kameraga ruxsat berilmagan yoki kamera mavjud emas');
+      setIsScanning(false);
+    }
+  };
+
+  const cleanupScanner = () => {
+    if (scanner) {
+      try {
         scanner.clear();
-        setScanner(null);
-        setIsScanning(false);
+      } catch (err) {
+        console.error('Scanner cleanup error:', err);
       }
-    };
-  }, [isOpen, onScan, scanner]);
+      setScanner(null);
+      setIsScanning(false);
+    }
+  };
+
+  const handleClose = () => {
+    cleanupScanner();
+    onClose();
+  };
+
+  const handleRetry = () => {
+    setError('');
+    setHasPermission(null);
+    initializeScanner();
+  };
 
   if (!isOpen) return null;
 
@@ -51,15 +101,49 @@ const BarcodeScanner = ({ onScan, onClose, isOpen }) => {
       <div className="scanner-modal">
         <div className="scanner-header">
           <h3><Camera size={20} /> Barcode Scanner</h3>
-          <button onClick={onClose} className="close-btn">
+          <button onClick={handleClose} className="close-btn">
             <X size={20} />
           </button>
         </div>
+        
         <div className="scanner-content">
-          <div id="qr-reader" ref={scannerRef}></div>
-          <p className="scanner-instruction">
-            Mahsulot barkodini kameraga yaqinlashtiring
-          </p>
+          {error ? (
+            <div className="scanner-error">
+              <AlertCircle size={48} color="#ef4444" />
+              <p>{error}</p>
+              <button onClick={handleRetry} className="retry-btn">
+                Qayta urinish
+              </button>
+              <div className="scanner-help">
+                <h4>Yordam:</h4>
+                <ul>
+                  <li>Brauzerda kameraga ruxsat bering</li>
+                  <li>HTTPS protokolidan foydalaning</li>
+                  <li>Kamera ulangan va ishlaydigan ekanligini tekshiring</li>
+                </ul>
+              </div>
+            </div>
+          ) : hasPermission === false ? (
+            <div className="scanner-permission">
+              <AlertCircle size={48} color="#f59e0b" />
+              <p>Kameraga ruxsat kerak</p>
+              <button onClick={handleRetry} className="retry-btn">
+                Ruxsat berish
+              </button>
+            </div>
+          ) : (
+            <>
+              <div id="qr-reader" ref={scannerRef}></div>
+              <div className="scanner-instructions">
+                <p className="scanner-instruction">
+                  📱 Mahsulot barkodini kameraga yaqinlashtiring
+                </p>
+                <p className="scanner-tip">
+                  💡 Yaxshi yorug'lik va barqaror qo'l kerak
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
