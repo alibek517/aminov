@@ -10,7 +10,7 @@ const BarcodeScanner = ({ onScan, onClose, isOpen }) => {
   const [hasPermission, setHasPermission] = useState(null);
 
   useEffect(() => {
-    if (isOpen && !scanner) {
+    if (isOpen && !scanner && scannerRef.current) {
       initializeScanner();
     }
 
@@ -19,7 +19,7 @@ const BarcodeScanner = ({ onScan, onClose, isOpen }) => {
         cleanupScanner();
       }
     };
-  }, [isOpen]);
+  }, [isOpen, scannerRef.current]);
 
   const initializeScanner = async () => {
     try {
