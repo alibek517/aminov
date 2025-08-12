@@ -183,7 +183,7 @@ export default function AdminPanel() {
     { id: "debts", name: "Қарздорлик", icon: CreditCard },
     { id: "branches", name: "Филиаллар", icon: Building2 },
     { id: "reports", name: "Ҳисобот", icon: TrendingUp },
-    // { id: "geolocation", name: "Доставщиклар", icon: MapPin },
+    { id: "geolocation", name: "Доставщиклар", icon: MapPin },
     { id: "settings", name: "Созламалар", icon: SettingsIcon },
   ];
 

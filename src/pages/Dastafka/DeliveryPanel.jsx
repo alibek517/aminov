@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import io from 'socket.io-client';
 import { MapPin, Package, User, Settings as SettingsIcon, Phone, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Orders from './components/Orders';
@@ -6,11 +7,17 @@ import Profile from './components/Profile';
 import Settings from './components/Settings';
 import { translations } from './utils/translations';
 
-function DeliveryPanel() {
+
+
+function DeliveryPanel({ token }) {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [language, setLanguage] = useState('uz-latn');
   const [location, setLocation] = useState(null);
   const [isAvailable, setIsAvailable] = useState(true);
+  const [socket, setSocket] = useState(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState('');
+  const [userId, setUserId] = useState(null);
   const [orders, setOrders] = useState([
     {
       id: 1,
@@ -50,21 +57,128 @@ function DeliveryPanel() {
   const t = translations[language];
 
   useEffect(() => {
-    // Get user's location
+    if (!token) {
+      setError('Iltimos, amal qiluvchi JWT token taqdim eting');
+      console.error('No token provided');
+      return;
+    }
+
+    const userData = JSON.parse(localStorage.getItem('user'));
+    const id = localStorage.getItem('userId');
+    setUserId(id);
+
+    const socketIo = io('https://suddocs.uz/', {
+      path: '/socket.io',
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      secure: true,
+    });
+
+    socketIo.on('connect', () => {
+      setIsConnected(true);
+      setError('');
+      console.log('Socket.IO connected for AUDITOR, userId:', id);
+      updateLocation(socketIo, id);
+    });
+
+    socketIo.on('connect_error', (err) => {
+      setError(`Ulanish muvaffaqiyatsiz: ${err.message}`);
+      setIsConnected(false);
+      console.error('Socket.IO connect error:', err);
+    });
+
+    socketIo.on('error', (data) => {
+      setError(data.message || 'Serverda xato yuz berdi');
+      console.error('Socket.IO error:', data);
+    });
+
+    socketIo.on('locationUpdateConfirmed', (data) => {
+      console.log('Location update confirmed:', data);
+      setLocation({
+        latitude: data.location.latitude,
+        longitude: data.location.longitude,
+      });
+    });
+
+    setSocket(socketIo);
+
+    // Periodic location updates every 5 minutes
+    const interval = setInterval(() => {
+      if (isConnected) {
+        updateLocation(socketIo, id);
+      }
+    }, 300000);
+
+    return () => {
+      socketIo.disconnect();
+      console.log('Socket.IO disconnected');
+      clearInterval(interval);
+    };
+  }, [token]);
+
+  const updateLocation = async (socket, userId) => {
+    if (!userId) {
+      console.error('No userId available for location update');
+      return;
+    }
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const address = await getAddress(latitude, longitude);
+          socket.emit('updateLocation', {
+            userId,
+            latitude,
+            longitude,
+            address,
+            isOnline: true,
           });
+          console.log('Sent periodic location:', { userId, latitude, longitude, address });
         },
         (error) => {
-          console.error('Error getting location:', error);
-        }
+          console.error('Geolocation error:', error);
+          socket.emit('updateLocation', {
+            userId,
+            latitude: 41.3111,
+            longitude: 69.2797,
+            address: 'Unknown',
+            isOnline: true,
+          });
+          console.log('Sent fallback location for user:', userId);
+          setError('Joylashuvni olishda xato yuz berdi. Standart joylashuv ishlatildi.');
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
+    } else {
+      console.error('Geolocation not supported');
+      socket.emit('updateLocation', {
+        userId,
+        latitude: 41.3111,
+        longitude: 69.2797,
+        address: 'Unknown',
+        isOnline: true,
+      });
+      console.log('Sent fallback location for user:', userId);
+      setError('Brauzer joylashuvni qo‘llab-quvvatlamaydi.');
     }
-  }, []);
+  };
+
+  const getAddress = async (latitude, longitude) => {
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=YOUR_GOOGLE_MAPS_API_KEY`
+      );
+      const data = await response.json();
+      return data.results[0]?.formatted_address || 'Unknown';
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      return 'Unknown';
+    }
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -114,6 +228,13 @@ function DeliveryPanel() {
                 {isAvailable ? t.available : t.busy}
               </div>
             </div>
+          </div>
+          <div className="mt-2">
+            <p className={isConnected ? 'text-green-500' : 'text-red-500'}>
+              {t.connection}: {isConnected ? t.connected : t.disconnected}
+            </p>
+            {error && <p className="text-red-500">{error}</p>}
+            <p className="text-blue-500">{t.userId}: {userId || 'N/A'}</p>
           </div>
         </div>
       </header>
