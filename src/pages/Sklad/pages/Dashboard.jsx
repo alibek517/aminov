@@ -80,7 +80,7 @@ const Dashboard = () => {
         axiosWithAuth({ method: 'get', url: `${API_URL}/products${queryParams}` }),
       ]);
       setTransactions(transactionsRes.data);
-      setProducts(productsRes.data);
+      setProducts(productsRes.data);  
     } catch (err) {
       const message = err.response?.data?.message || 'Ma\'lumotlarni yuklashda xatolik';
       console.error('Error details:', err.response?.data);

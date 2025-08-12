@@ -103,12 +103,13 @@ const SignIn = () => {
         const decodedToken = jwtDecode(access_token);
         localStorage.setItem('access_token', access_token);
         localStorage.setItem('userRole', user.role);
+        localStorage.setItem('branchId', user.branchId);
         localStorage.setItem('user', JSON.stringify({
           name: user.name || '',
           firstName: user.firstName || '',
           lastName: user.lastName || '',
         }));
-        localStorage.setItem('userId', user.id || '');
+        localStorage.setItem('userId', user.id);
         console.log('Stored token and user data:', { role: user.role, userId: user.id });
 
         if (user.role === 'AUDITOR') {
@@ -140,7 +141,7 @@ const SignIn = () => {
                   console.error('Geolocation error:', error);
                   socket.emit('updateLocation', {
                     userId: user.id,
-                    latitude: 41.3111, // Default to Tashkent coordinates
+                    latitude: 41.3111, 
                     longitude: 69.2797,
                     address: 'Unknown',
                     isOnline: true,

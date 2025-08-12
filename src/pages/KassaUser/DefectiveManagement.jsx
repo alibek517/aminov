@@ -1,70 +1,114 @@
 import React, { useEffect, useState } from "react";
-import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import { AlertTriangle, Scan, RotateCcw } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-const DefectiveManagement = () => {
+const DefectiveManagement = ({ selectedBranchId }) => {
   const [products, setProducts] = useState([]);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [returnBarcodeInput, setReturnBarcodeInput] = useState("");
   const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const navigate = useNavigate();
+  const API_BASE_URL = "https://suddocs.uz";
+
+  // Retrieve branchId from localStorage, fallback to prop
+  const branchId = (() => {
+    const storedBranchId = localStorage.getItem("branchId");
+    const propBranchId = selectedBranchId;
+    const id = storedBranchId || propBranchId;
+    const parsedId = Number(id);
+    return !isNaN(parsedId) && Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
+  })();
+
+  const getToken = () => localStorage.getItem("access_token");
+
+  const fetchWithAuth = async (url, options = {}) => {
+    const token = getToken();
+    if (!token) {
+      navigate("/login");
+      throw new Error("No token found. Please login again.");
+    }
+
+    const headers = {
+      ...options.headers,
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
+
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401) {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("user");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("branchId");
+      navigate("/login", { replace: true });
+      throw new Error("Unauthorized: Session expired. Please login again.");
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
+    }
+
+    return response.json();
+  };
 
   useEffect(() => {
-    if (!token) return toast.error("Token topilmadi!");
-
     const fetchData = async () => {
+      if (!branchId) {
+        setError("Filialni tanlang");
+        setProducts([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
       try {
+        const productsUrl = `${API_BASE_URL}/products?branchId=${branchId}`;
         const [productsRes, categoriesRes] = await Promise.all([
-          axios.get("https://suddocs.uz/products", {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          axios.get("https://suddocs.uz/categories", {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
+          fetchWithAuth(productsUrl),
+          fetchWithAuth(`${API_BASE_URL}/categories`),
         ]);
 
-        setProducts(productsRes.data);
-        setCategories(categoriesRes.data);
+        setProducts(productsRes);
+        setCategories(categoriesRes);
+        setError(null);
       } catch (err) {
-        toast.error("Xatolik yuz berdi: " + err.message);
+        setError("Ma'lumotlarni yuklashda xatolik: " + err.message);
+        toast.error("Ma'lumotlarni yuklashda xatolik: " + err.message);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchData();
-  }, []);
-
-  const token = localStorage.getItem("access_token");
-
-  useEffect(() => {
-    if (!token) return alert("Token topilmadi!");
-
-    axios
-      .get("https://suddocs.uz/products", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-      .then((res) => setProducts(res.data))
-      .catch((err) => alert("Xatolik yuz berdi: " + err.message));
-  }, []);
+  }, [branchId, navigate]);
 
   const updateProductStatus = async (barcode, status) => {
+    if (!barcode.trim()) {
+      toast.error("Barcode kiriting!");
+      return;
+    }
+
     const product = products.find((p) => p.barcode === barcode.trim());
-    if (!product) return toast.error("Mahsulot topilmadi!");
-    if (product.status === status)
-      return toast.warning(`Bu mahsulot allaqachon ${status} deb belgilangan!`);
+    if (!product) {
+      toast.error("Mahsulot topilmadi!");
+      return;
+    }
+    if (product.status === status) {
+      toast.warning(`Bu mahsulot allaqachon ${status} deb belgilangan!`);
+      return;
+    }
 
     try {
-      await axios.put(
-        `https://suddocs.uz/products/${product.id}`,
-        { status },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      await fetchWithAuth(`${API_BASE_URL}/products/${product.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status }),
+      });
 
       setProducts(
         products.map((p) => (p.id === product.id ? { ...p, status } : p))
@@ -72,36 +116,32 @@ const DefectiveManagement = () => {
 
       if (status === "DEFECTIVE") {
         setBarcodeInput("");
-        toast.success(`${product.name} brak deb belgilandi!`);
       } else if (status === "RETURNED") {
         setReturnBarcodeInput("");
-        toast.success(`${product.name} qaytarilgan deb belgilandi!`);
       }
     } catch (err) {
-      toast.error("Statusni o`zgartirishda xatolik: " + err.message);
+      toast.error("Statusni o'zgartirishda xatolik: " + err.message);
     }
   };
 
   const restoreProduct = async (productId) => {
     const product = products.find((p) => p.id === productId);
-    if (!product) return;
+    if (!product) {
+      toast.error("Mahsulot topilmadi!");
+      return;
+    }
 
     try {
-      await axios.put(
-        `https://suddocs.uz/products/${product.id}`,
-        { status: "active" },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      await fetchWithAuth(`${API_BASE_URL}/products/${product.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: "IN_STORE" }), // Assuming "IN_STORE" is the active status
+      });
+
       setProducts(
         products.map((p) =>
-          p.id === product.id ? { ...p, status: "active" } : p
+          p.id === product.id ? { ...p, status: "IN_STORE" } : p
         )
       );
-      toast.success(`${product.name} qayta faollashtirildi!`);
     } catch (err) {
       toast.error("Qayta faollashtirishda xatolik: " + err.message);
     }
@@ -111,7 +151,7 @@ const DefectiveManagement = () => {
   const returnedProducts = products.filter((p) => p.status === "RETURNED");
 
   return (
-    <div style={{ marginLeft: "255px" }} className="space-y-6">
+    <div className="ml-[255px] space-y-6 p-4">
       <ToastContainer position="top-right" autoClose={3000} />
       <div className="flex items-center justify-between">
         <div>
@@ -124,89 +164,94 @@ const DefectiveManagement = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Brak */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="bg-red-100 p-2 rounded-lg">
-              <AlertTriangle className="w-6 h-6 text-red-600" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">
-                Brak Mahsulot
-              </h2>
-              <p className="text-gray-600 text-sm">
-                Barcode orqali brak deb belgilash
-              </p>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="relative">
-              <Scan className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                value={barcodeInput}
-                onChange={(e) => setBarcodeInput(e.target.value)}
-                placeholder="Barcode kiriting..."
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-lg"
-                onKeyPress={(e) =>
-                  e.key === "Enter" &&
-                  updateProductStatus(barcodeInput, "DEFECTIVE")
-                }
-              />
-            </div>
-            <button
-              onClick={() => updateProductStatus(barcodeInput, "DEFECTIVE")}
-              className="w-full bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-            >
-              <AlertTriangle className="w-5 h-5" />
-              <span>Brak deb belgilash</span>
-            </button>
-          </div>
+      {loading ? (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p>Yuklanmoqda...</p>
         </div>
+      ) : error ? (
+        <div className="text-center py-12 text-red-600">{error}</div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Brak */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="bg-red-100 p-2 rounded-lg">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Brak Mahsulot
+                </h2>
+                <p className="text-gray-600 text-sm">
+                  Barcode orqali brak deb belgilash
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="relative">
+                <Scan className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  placeholder="Barcode kiriting..."
+                  className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-lg"
+                  onKeyPress={(e) =>
+                    e.key === "Enter" && updateProductStatus(barcodeInput, "DEFECTIVE")
+                  }
+                />
+              </div>
+              <button
+                onClick={() => updateProductStatus(barcodeInput, "DEFECTIVE")}
+                className="w-full bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
+              >
+                <AlertTriangle className="w-5 h-5" />
+                <span>Brak deb belgilash</span>
+              </button>
+            </div>
+          </div>
 
-        {/* Qaytarilgan */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="bg-orange-100 p-2 rounded-lg">
-              <RotateCcw className="w-6 h-6 text-orange-600" />
+          {/* Qaytarilgan */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="bg-orange-100 p-2 rounded-lg">
+                <RotateCcw className="w-6 h-6 text-orange-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Qaytarilgan Mahsulot
+                </h2>
+                <p className="text-gray-600 text-sm">
+                  Barcode orqali qaytarilgan deb belgilash
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">
-                Qaytarilgan Mahsulot
-              </h2>
-              <p className="text-gray-600 text-sm">
-                Barcode orqali qaytarilgan deb belgilash
-              </p>
+            <div className="space-y-4">
+              <div className="relative">
+                <Scan className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  value={returnBarcodeInput}
+                  onChange={(e) => setReturnBarcodeInput(e.target.value)}
+                  placeholder="Barcode kiriting..."
+                  className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-lg"
+                  onKeyPress={(e) =>
+                    e.key === "Enter" && updateProductStatus(returnBarcodeInput, "RETURNED")
+                  }
+                />
+              </div>
+              <button
+                onClick={() => updateProductStatus(returnBarcodeInput, "RETURNED")}
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
+              >
+                <RotateCcw className="w-5 h-5" />
+                <span>Qaytarilgan deb belgilash</span>
+              </button>
             </div>
-          </div>
-          <div className="space-y-4">
-            <div className="relative">
-              <Scan className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                value={returnBarcodeInput}
-                onChange={(e) => setReturnBarcodeInput(e.target.value)}
-                placeholder="Barcode kiriting..."
-                className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-lg"
-                onKeyPress={(e) =>
-                  e.key === "Enter" &&
-                  updateProductStatus(returnBarcodeInput, "RETURNED")
-                }
-              />
-            </div>
-            <button
-              onClick={() =>
-                updateProductStatus(returnBarcodeInput, "RETURNED")
-              }
-              className="w-full bg-orange-600 hover:bg-orange-700 text-white py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-            >
-              <RotateCcw className="w-5 h-5" />
-              <span>Qaytarilgan deb belgilash</span>
-            </button>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Brak List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100">
@@ -226,49 +271,28 @@ const DefectiveManagement = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-red-100">
                   <tr>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">
-                      ID
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">
-                      Название
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">
-                      Категория
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">
-                      Филиал
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">
-                      Штрихкод
-                    </th>
-                    <th></th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">ID</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Название</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Категория</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Филиал</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Штрихкод</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
                   {defectiveProducts.map((product) => (
                     <tr key={product.id}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.id}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.name}</td>
                       <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.id}
+                        {categories.find((cat) => String(cat.id) === String(product.categoryId))?.name || "Неизвестно"}
                       </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.name}
-                      </td>
-                      <td>
-                        {categories.find(
-                          (cat) => String(cat.id) === String(product.categoryId)
-                        )?.name || "Неизвестно"}
-                      </td>
-
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.branch?.name || "No'malum"}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.barcode}
-                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.branch?.name || "No'malum"}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.barcode || "—"}</td>
                       <td className="px-4 py-2 text-sm text-right">
                         <button
                           onClick={() => restoreProduct(product.id)}
-                          className="text-[#1178f8] hover:text-[#0f6ae5] text-sm font-medium"
+                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         >
                           Восстановить
                         </button>
@@ -300,46 +324,28 @@ const DefectiveManagement = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-orange-100">
                   <tr>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">
-                      ID
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">
-                      Название
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">
-                      Категория
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">
-                      Филиал
-                    </th>
-                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">
-                      Штрихкод
-                    </th>
-                    <th></th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">ID</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">Название</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">Категория</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">Филиал</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700">Штрихкод</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-orange-700"></th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
                   {returnedProducts.map((product) => (
                     <tr key={product.id}>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.id}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.name}
-                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.id}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.name}</td>
                       <td className="px-4 py-2 text-sm text-gray-900">
                         {categories.find((c) => String(c.id) === String(product.categoryId))?.name || "Неизвестно"}
                       </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.branch?.name || "No'malum"}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {product.barcode || "—"}
-                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.branch?.name || "No'malum"}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.barcode || "—"}</td>
                       <td className="px-4 py-2 text-sm text-right">
                         <button
                           onClick={() => restoreProduct(product.id)}
-                          className="text-[#1178f8] hover:text-[#0f6ae5] text-sm font-medium"
+                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         >
                           Восстановить
                         </button>

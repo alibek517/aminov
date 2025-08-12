@@ -14,6 +14,8 @@ function Logout({ onConfirm, onCancel }) {
     localStorage.removeItem('userRole');
     localStorage.removeItem('user');
     localStorage.removeItem('userId');
+    localStorage.removeItem('selectedBranchId');
+    localStorage.removeItem('access_token');
     onConfirm();
     navigate('/', { replace: true });
   };

@@ -362,19 +362,7 @@ function App() {
       )}
       
       {locationPermission === 'granted' && (
-        <div style={{
-          position: 'fixed',
-          top: '10px',
-          right: '10px',
-          background: '#51cf66',
-          color: 'white',
-          padding: '8px',
-          borderRadius: '5px',
-          zIndex: 9999,
-          fontSize: '12px'
-        }}>
-          📍 Geolokatsiya faol
-        </div>
+        <div> </div>
       )}
 
       <Routes>

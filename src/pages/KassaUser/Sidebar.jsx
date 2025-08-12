@@ -126,18 +126,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
             <p className="text-sm text-gray-600">Savdo Tizimi</p>
           </div>
         </div>
-        <select
-          value={selectedBranchId}
-          onChange={handleBranchChange}
-          className="w-full border border-gray-300 rounded-lg py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          disabled={error}
-        >
-          {branches.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
+       
         {error && <span className="mt-2 text-red-500 text-sm">{error}</span>}
       </div>
       <nav className="flex-1 p-4">

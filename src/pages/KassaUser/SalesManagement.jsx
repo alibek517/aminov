@@ -13,8 +13,7 @@ import {
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { jsPDF } from "jspdf";
-import Receipt from "./Receipt/Receipt"; // Путь к Receipt.jsx
-console.log("Receipt:", Receipt);
+import Receipt from "./Receipt/Receipt";
 
 const SalesManagement = ({ selectedBranchId }) => {
   const [showReceipt, setShowReceipt] = useState(false);
@@ -30,12 +29,12 @@ const SalesManagement = ({ selectedBranchId }) => {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
   const navigate = useNavigate();
-  const receiptRef = useRef(); // Ссылка для ReactToPrint
+  const receiptRef = useRef();
 
   const API_BASE_URL = "https://suddocs.uz";
 
-  // Перевод статусов продуктов на русский
   const statusTranslations = {
     IN_WAREHOUSE: "На складе",
     IN_STORE: "В магазине",
@@ -44,7 +43,24 @@ const SalesManagement = ({ selectedBranchId }) => {
     RETURNED: "Возвращён",
   };
 
+  const nameMap = {
+    IN_WAREHOUSE: "Omborda",
+    IN_STORE: "Do‘konda",
+    SOLD: "Sotilgan",
+    DEFECTIVE: "Brok",
+    RETURNED: "Qaytarilgan",
+  };
+
   const getToken = () => localStorage.getItem("access_token");
+
+  // Retrieve branchId from localStorage, fallback to prop
+  const branchId = (() => {
+    const storedBranchId = localStorage.getItem("branchId");
+    const propBranchId = selectedBranchId;
+    const id = storedBranchId || propBranchId;
+    const parsedId = Number(id);
+    return !isNaN(parsedId) && Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
+  })();
 
   const fetchWithAuth = async (url, options = {}) => {
     const token = getToken();
@@ -65,7 +81,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       localStorage.removeItem("userRole");
       localStorage.removeItem("user");
       localStorage.removeItem("userId");
-      localStorage.removeItem("selectedBranchId");
+      localStorage.removeItem("branchId");
       navigate("/login", { replace: true });
       throw new Error("Unauthorized: Session expired. Please login again.");
     }
@@ -79,17 +95,20 @@ const SalesManagement = ({ selectedBranchId }) => {
 
   useEffect(() => {
     const loadData = async () => {
+      if (!branchId) {
+        setError("Filialni tanlang");
+        setProducts([]);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
-        const productsUrl = selectedBranchId
-          ? `${API_BASE_URL}/products?branchId=${selectedBranchId}`
-          : `${API_BASE_URL}/products`;
+        const productsUrl = `${API_BASE_URL}/products?branchId=${branchId}`;
         const [productsData, categoriesData] = await Promise.all([
           fetchWithAuth(productsUrl),
           fetchWithAuth(`${API_BASE_URL}/categories`),
         ]);
-        console.log("Products:", productsData);
-        console.log("Categories:", categoriesData);
         setProducts(productsData);
         setCategories(categoriesData);
         setError(null);
@@ -101,7 +120,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       }
     };
     loadData();
-  }, [navigate, selectedBranchId]);
+  }, [branchId, navigate]);
 
   useEffect(() => {
     let barcode = "";
@@ -164,56 +183,23 @@ const SalesManagement = ({ selectedBranchId }) => {
     );
   }, [products, searchTerm, selectedCategory]);
 
-  const nameMap = {
-    IN_WAREHOUSE: "Omborda",
-    IN_STORE: "Do‘konda",
-    SOLD: "Sotilgan",
-    DEFECTIVE: "Brok",
-    RETURNED: "Qaytarilgan",
-  };
-
   const addToCart = (product) => {
-    const productStatus = 
-          statusTranslations[nameMap[product.status] || product.status] ||
-          product.status
-    if (product.status === "DEFECTIVE") {
+    const productStatus = statusTranslations[product.status] || product.status;
+    if (["DEFECTIVE", "RETURNED", "SOLD"].includes(product.status)) {
       toast.error(
-        `Mahsulot ${"Braklangan"} holatida! Iltimos, boshqa mahsulot tanlang.`
-      );
-      return;
-    }
-    if (product.status === "RETURNED") {
-      toast.error(
-        `Mahsulot ${"Qayatarilgan"} holatida! Iltimos, boshqa mahsulot tanlang.`
-      );
-      return;
-    }
-    if (product.status === "SOLD") {
-      toast.error(
-        `Mahsulot ${"Sotilgan"} holatida! Iltimos, boshqa mahsulot tanlang.`
-      );
-      return;
-    }
-    if (product.status === "IN_STORE" && product.quantity === 0) {
-      toast.error(
-        `Mahsulot ${"Dokonda"} holatida mavjud emas!`
+        `Mahsulot ${nameMap[product.status] || productStatus} holatida! Iltimos, boshqa mahsulot tanlang.`
       );
       return;
     }
     if (product.quantity === 0) {
-      toast.error(
-        `Mahsulot ${productStatus} holatida mavjud emas!`
-      );
+      toast.error(`Mahsulot ${productStatus} holatida mavjud emas!`);
       return;
     }
     const existingItem = cart.find((item) => item.id === product.id);
     if (existingItem) {
       if (existingItem.quantity >= product.quantity) {
         toast.error(
-          `${
-            statusTranslations[nameMap[product.status]] ||
-            nameMap[product.status]
-          } yetarli mahsulot yo'q!`
+          `${nameMap[product.status] || productStatus} yetarli mahsulot yo'q!`
         );
         return;
       }
@@ -224,14 +210,8 @@ const SalesManagement = ({ selectedBranchId }) => {
             : item
         )
       );
-      toast.success(
-        `${nameMap[product.name] || product.name} savatga qo‘shildi!`
-      );
     } else {
       setCart([...cart, { ...product, quantity: 1 }]);
-      toast.success(
-        `${nameMap[product.name] || product.name} savatga qo‘shildi!`
-      );
     }
   };
 
@@ -246,9 +226,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       removeFromCart(productId);
     } else if (quantity > product.quantity) {
       toast.error(
-        `Yetarli mahsulot ${
-          statusTranslations[product.status] || product.status
-        } holatida yo'q!`
+        `Yetarli mahsulot ${statusTranslations[product.status] || product.status} holatida yo'q!`
       );
     } else {
       setCart(
@@ -264,9 +242,7 @@ const SalesManagement = ({ selectedBranchId }) => {
   };
 
   const generateReceipt = () => {
-    const receiptId = `order_${new Date()
-      .toISOString()
-      .replace(/[-:T.]/g, "")}`;
+    const receiptId = `order_${new Date().toISOString().replace(/[-:T.]/g, "")}`;
     const receipt = {
       id: receiptId,
       date: new Date().toISOString(),
@@ -283,7 +259,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       })),
       total: getTotalAmount(),
       returnCode: Math.random().toString(36).substring(2, 10).toUpperCase(),
-      branchId: selectedBranchId || null,
+      branchId: branchId || null,
       deliveryMethod,
       paymentMethod,
     };
@@ -293,77 +269,11 @@ const SalesManagement = ({ selectedBranchId }) => {
       body: JSON.stringify(receipt),
     })
       .then(() => {
-        toast.success("Chek muvaffaqiyatli saqlandi!");
       })
       .catch((err) => {
         console.error("Failed to save receipt:", err);
         toast.error("Chekni saqlashda xatolik: " + err.message);
       });
-
-    const printWindow = window.open("", "_blank");
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Chek #${receipt.id}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { font-size: 24px; }
-            p, li { font-size: 16px; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; }
-            .total { font-weight: bold; font-size: 18px; }
-          </style>
-        </head>
-        <body>
-          <h1>Chek #${receipt.id}</h1>
-          <p>Sana: ${new Date(receipt.date).toLocaleString("uz-UZ")}</p>
-          <p>Kassir: ${receipt.cashier}</p>
-          <p>Mijoz: ${receipt.customer}</p>
-          <p>Yetkazib berish usuli: ${
-            receipt.deliveryMethod === "delivery"
-              ? "Yetkazib berish"
-              : "O‘zi olib ketish"
-          } </p>
-          <p>To‘lov usuli: ${
-            receipt.paymentMethod === "cash"
-              ? "Naqd"
-              : receipt.paymentMethod === "card"
-              ? "Karta"
-              : "Kredit"
-          }</p>
-          <h2>Mahsulotlar</h2>
-          <table>
-            <tr>
-              <th>№</th>
-              <th>Mahsulot</th>
-              <th>Kategoriya</th>
-              <th>Narx</th>
-              <th>Soni</th>
-              <th>Jami</th>
-            </tr>
-            ${receipt.items
-              .map(
-                (item, index) => `
-              <tr>
-                <td>${index + 1}</td>
-                <td>${item.name}</td>
-                <td>${item.category}</td>
-                <td>${item.price.toLocaleString()} so'm</td>
-                <td>${item.quantity}</td>
-                <td>${item.total.toLocaleString()} so'm</td>
-              </tr>
-            `
-              )
-              .join("")}
-          </table>
-          <p class="total">Jami: ${receipt.total.toLocaleString()} so'm</p>
-          <p>Qaytarish kodi: ${receipt.returnCode}</p>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
 
     const doc = new jsPDF();
     doc.setFontSize(16);
@@ -401,11 +311,7 @@ const SalesManagement = ({ selectedBranchId }) => {
     y += 5;
     receipt.items.forEach((item, index) => {
       doc.text(
-        `${index + 1}  ${item.name}  ${
-          item.category
-        }  ${item.price.toLocaleString()} so'm  ${
-          item.quantity
-        }  ${item.total.toLocaleString()} so'm`,
+        `${index + 1}  ${item.name}  ${item.category}  ${item.price.toLocaleString()} so'm  ${item.quantity}  ${item.total.toLocaleString()} so'm`,
         10,
         y
       );
@@ -437,9 +343,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       });
       const product = products.find((p) => p.id === outOfStockItem.id);
       toast.error(
-        `Yetarli mahsulot ${
-          statusTranslations[product.status] || product.status
-        } holatida yo'q!`
+        `Yetarli mahsulot ${statusTranslations[product.status] || product.status} holatida yo'q!`
       );
       return;
     }
@@ -473,7 +377,7 @@ const SalesManagement = ({ selectedBranchId }) => {
           total: getTotalAmount(),
           date: new Date().toISOString(),
           receiptId: receipt.id,
-          branchId: selectedBranchId || null,
+          branchId: branchId || null,
           deliveryMethod,
           paymentMethod,
         }),
@@ -500,7 +404,6 @@ const SalesManagement = ({ selectedBranchId }) => {
       setPaymentMethod("cash");
       setShowSaleModal(false);
       setShowConfirmModal(false);
-      toast.success("Sotish muvaffaqiyatli yakunlandi!");
     } catch (err) {
       toast.error(
         err.message.includes("Unauthorized")
@@ -513,20 +416,17 @@ const SalesManagement = ({ selectedBranchId }) => {
   };
 
   return (
-    <div style={{ marginLeft: "260px" }} className="space-y-0">
+    <div className="ml-[260px] space-y-6 p-4">
       <ToastContainer position="top-right" autoClose={3000} />
       <div className="flex items-center justify-between">
-        <div style={{ marginBottom: "10px" }} className="flex flex-col">
+        <div className="flex flex-col">
           <h1 className="text-3xl font-bold text-gray-900">Sotish Tizimi</h1>
-          <p className="text-gray-600 mt-1">
-            Mahsulotlarni sotish va savdo qilish
-          </p>
+          <p className="text-gray-600 mt-1">Mahsulotlarni sotish va savdo qilish</p>
         </div>
         <div className="flex space-x-3">
           <button
             onClick={() => setShowSaleModal(true)}
-            style={{ marginBottom: "10px" }}
-            className="bg-[#1178f8] hover:bg-[#0f6ae5] text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
           >
             <ShoppingCart className="w-4 h-4" />
             <span>Savat ({cart.length})</span>
@@ -534,29 +434,23 @@ const SalesManagement = ({ selectedBranchId }) => {
         </div>
       </div>
 
-      <div
-        style={{ marginBottom: "10px" }}
-        className="flex space-x-2 mb-4 overflow-x-auto"
-      >
+      <div className="flex space-x-2 mb-4 overflow-x-auto">
         {categoryOptions.map((cat) => (
           <button
             key={cat.id}
             onClick={() => setSelectedCategory(String(cat.id))}
             className={`px-4 py-2 rounded-lg whitespace-nowrap ${
               selectedCategory === String(cat.id)
-                ? "bg-[#1178f8] text-white"
-                : "bg-gray-200"
-            }`}
+                ? "bg-blue-600 text-white"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            } transition-colors`}
           >
             {cat.name}
           </button>
         ))}
       </div>
 
-      <div
-        style={{ marginBottom: "10px" }}
-        className="bg-white rounded-xl shadow-sm border border-gray-100 p-6"
-      >
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="relative flex items-center">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
@@ -564,7 +458,7 @@ const SalesManagement = ({ selectedBranchId }) => {
             placeholder="Mahsulot nomi, ID yoki barcode bilan qidiring..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1178f8] focus:border-transparent text-lg"
+            className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent text-lg"
           />
           <button
             onClick={handleManualBarcode}
@@ -588,58 +482,29 @@ const SalesManagement = ({ selectedBranchId }) => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-100">
               <tr>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  ID
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  Название
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  Категория
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  Штрихкод
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  Цена
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  Остаток
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  Статус
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">
-                  Действие
-                </th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">ID</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Название</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Категория</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Штрихкод</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Цена</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Остаток</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Статус</th>
+                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Действие</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
               {filteredProducts.map((product) => (
                 <tr key={product.id}>
+                  <td className="px-4 py-2 text-sm text-gray-900">{product.id}</td>
+                  <td className="px-4 py-2 text-sm text-gray-900">{product.name}</td>
                   <td className="px-4 py-2 text-sm text-gray-900">
-                    {product.id}
+                    {categories.find((c) => String(c.id) === String(product.categoryId))?.name || "Неизвестно"}
                   </td>
+                  <td className="px-4 py-2 text-sm text-gray-900">{product.barcode || "Нет"}</td>
                   <td className="px-4 py-2 text-sm text-gray-900">
-                    {product.name}
+                    {(product.marketPrice || product.price).toLocaleString()} сум
                   </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {categories.find(
-                      (c) => String(c.id) === String(product.categoryId)
-                    )?.name || "Неизвестно"}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {product.barcode || "Нет"}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {product.marketPrice
-                      ? product.marketPrice.toLocaleString()
-                      : product.price.toLocaleString()}{" "}
-                    сум
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {product.quantity} шт
-                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900">{product.quantity} шт</td>
                   <td className="px-4 py-2 text-sm text-gray-900">
                     {statusTranslations[product.status] || product.status}
                   </td>
@@ -650,8 +515,8 @@ const SalesManagement = ({ selectedBranchId }) => {
                       className={`py-1 px-3 rounded-md text-sm ${
                         product.quantity === 0
                           ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                          : "bg-[#1178f8] hover:bg-[#0f6ae5] text-white"
-                      }`}
+                          : "bg-blue-600 hover:bg-blue-700 text-white"
+                      } transition-colors`}
                     >
                       {product.quantity === 0 ? "Нет в наличии" : "Добавить"}
                     </button>
@@ -666,9 +531,7 @@ const SalesManagement = ({ selectedBranchId }) => {
       {filteredProducts.length === 0 && !loading && !error && (
         <div className="text-center py-12">
           <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            Mahsulot topilmadi
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Mahsulot topilmadi</h3>
           <p className="text-gray-600">Qidiruv so'zini o'zgartiring</p>
         </div>
       )}
@@ -678,12 +541,10 @@ const SalesManagement = ({ selectedBranchId }) => {
           <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold text-gray-900">
-                  Sotish Savati
-                </h3>
+                <h3 className="text-xl font-semibold text-gray-900">Sotish Savati</h3>
                 <button
                   onClick={() => setShowSaleModal(false)}
-                  className="text-gray-400 hover:text-red-400 hover:bg-slate-300 hover:rounded-md transition-colors text-2xl"
+                  className="text-gray-400 hover:text-red-400 hover:bg-gray-100 rounded-md transition-colors p-1"
                 >
                   <X size={24} />
                 </button>
@@ -692,10 +553,7 @@ const SalesManagement = ({ selectedBranchId }) => {
 
             <div className="p-6 space-y-6">
               <div>
-                <label
-                  style={{ marginTop: "-20px" }}
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Mijoz nomi (ixtiyoriy)
                 </label>
                 <input
@@ -703,21 +561,18 @@ const SalesManagement = ({ selectedBranchId }) => {
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Mijoz nomini kiriting (ixtiyoriy)"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1178f8] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
                 />
               </div>
 
               <div>
-                <label
-                  style={{ marginTop: "-20px" }}
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Yetkazib berish usuli
                 </label>
                 <select
                   value={deliveryMethod}
                   onChange={(e) => setDeliveryMethod(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1178f8] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
                 >
                   <option value="self-pickup">O‘zi olib ketish</option>
                   <option value="delivery">Yetkazib berish</option>
@@ -725,16 +580,13 @@ const SalesManagement = ({ selectedBranchId }) => {
               </div>
 
               <div>
-                <label
-                  style={{ marginTop: "-20px" }}
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   To‘lov usuli
                 </label>
                 <select
                   value={paymentMethod}
                   onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#1178f8] focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
                 >
                   <option value="cash">Naqd</option>
                   <option value="card">Karta</option>
@@ -743,9 +595,7 @@ const SalesManagement = ({ selectedBranchId }) => {
               </div>
 
               <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4">
-                  Savatdagi mahsulotlar
-                </h4>
+                <h4 className="text-lg font-medium text-gray-900 mb-4">Savatdagi mahsulotlar</h4>
                 {cart.length === 0 ? (
                   <div className="text-center py-8">
                     <ShoppingCart className="w-12 h-12 text-gray-300 mx-auto mb-4" />
@@ -756,70 +606,42 @@ const SalesManagement = ({ selectedBranchId }) => {
                     <table className="w-full border-collapse">
                       <thead>
                         <tr className="bg-gray-100">
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                            №
-                          </th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                            Mahsulot
-                          </th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                            Kategoriya
-                          </th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                            Narx
-                          </th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                            Soni
-                          </th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">
-                            Jami
-                          </th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">№</th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Mahsulot</th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Kategoriya</th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Narx</th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Soni</th>
+                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Jami</th>
                           <th className="px-4 py-2 text-left text-sm font-medium text-gray-700"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {cart.map((item, index) => (
-                          <tr
-                            key={item.id}
-                            className="border-b border-gray-200"
-                          >
+                          <tr key={item.id} className="border-b border-gray-200">
                             <td className="px-4 py-2 text-sm">{index + 1}</td>
                             <td className="px-4 py-2 text-sm">{item.name}</td>
                             <td className="px-4 py-2 text-sm">
-                              {categories.find(
-                                (c) => String(c.id) === String(item.categoryId)
-                              )?.name || "Noma‘lum"}
+                              {categories.find((c) => String(c.id) === String(item.categoryId))?.name || "Noma‘lum"}
                             </td>
-                            <td className="px-4 py-2 text-sm">
-                              {item.price.toLocaleString()} so'm
-                            </td>
+                            <td className="px-4 py-2 text-sm">{item.price.toLocaleString()} so'm</td>
                             <td className="px-4 py-2 text-sm">
                               <div className="flex items-center space-x-2">
                                 <button
-                                  onClick={() =>
-                                    updateQuantity(item.id, item.quantity - 1)
-                                  }
+                                  onClick={() => updateQuantity(item.id, item.quantity - 1)}
                                   className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center"
                                 >
                                   -
                                 </button>
-                                <span className="w-8 text-center">
-                                  {item.quantity}
-                                </span>
+                                <span className="w-8 text-center">{item.quantity}</span>
                                 <button
-                                  onClick={() =>
-                                    updateQuantity(item.id, item.quantity + 1)
-                                  }
+                                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
                                   className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center"
                                 >
                                   +
                                 </button>
                               </div>
                             </td>
-                            <td className="px-4 py-2 text-sm">
-                              {(item.price * item.quantity).toLocaleString()}{" "}
-                              so'm
-                            </td>
+                            <td className="px-4 py-2 text-sm">{(item.price * item.quantity).toLocaleString()} so'm</td>
                             <td className="px-4 py-2 text-sm">
                               <button
                                 onClick={() => removeFromCart(item.id)}
@@ -840,9 +662,7 @@ const SalesManagement = ({ selectedBranchId }) => {
                 <div className="border-t border-gray-100 pt-4">
                   <div className="flex items-center justify-between text-xl font-bold">
                     <span>Jami summa:</span>
-                    <span className="text-[#1178f8]">
-                      {getTotalAmount().toLocaleString()} so'm
-                    </span>
+                    <span className="text-blue-600">{getTotalAmount().toLocaleString()} so'm</span>
                   </div>
                 </div>
               )}
@@ -857,7 +677,7 @@ const SalesManagement = ({ selectedBranchId }) => {
                 <button
                   onClick={completeSale}
                   disabled={cart.length === 0}
-                  className="px-6 py-2 bg-[#1178f8] hover:bg-[#0f6ae5] disabled:bg-gray-300 text-white rounded-lg transition-colors"
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-lg transition-colors"
                 >
                   Sotishni yakunlash
                 </button>
@@ -871,35 +691,19 @@ const SalesManagement = ({ selectedBranchId }) => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full">
             <div className="p-6 border-b border-gray-100">
-              <h3 className="text-xl font-semibold text-gray-900">
-                Sotishni tasdiqlash
-              </h3>
+              <h3 className="text-xl font-semibold text-gray-900">Sotishni tasdiqlash</h3>
             </div>
             <div className="p-6">
               <p className="text-gray-600 mb-4">
                 <strong>{cart.length}</strong> ta mahsulotni{" "}
-                <strong>{customerName || "Noma‘lum Mijoz"}</strong> uchun
-                sotishni tasdiqlaysizmi? <br />
+                <strong>{customerName || "Noma‘lum Mijoz"}</strong> uchun sotishni tasdiqlaysizmi? <br />
                 Yetkazib berish usuli:{" "}
-                <strong>
-                  {deliveryMethod === "delivery"
-                    ? "Yetkazib berish"
-                    : "O‘zi olib ketish"}
-                </strong>{" "}
-                <br />
+                <strong>{deliveryMethod === "delivery" ? "Yetkazib berish" : "O‘zi olib ketish"}</strong> <br />
                 To‘lov usuli:{" "}
                 <strong>
-                  {paymentMethod === "cash"
-                    ? "Naqd"
-                    : paymentMethod === "card"
-                    ? "Karta"
-                    : "Kredit"}
-                </strong>{" "}
-                <br />
-                Jami summa:{" "}
-                <strong style={{ fontSize: "18px" }}>
-                  {getTotalAmount().toLocaleString()} so'm.
-                </strong>
+                  {paymentMethod === "cash" ? "Naqd" : paymentMethod === "card" ? "Karta" : "Kredit"}
+                </strong> <br />
+                Jami summa: <strong className="text-lg">{getTotalAmount().toLocaleString()} so'm</strong>
               </p>
               <div className="flex justify-end space-x-3">
                 <button
@@ -910,7 +714,7 @@ const SalesManagement = ({ selectedBranchId }) => {
                 </button>
                 <ReactToPrint
                   trigger={() => (
-                    <button className="px-6 py-2 bg-[#1178f8] hover:bg-[#0f6ae5] text-white rounded-lg transition-colors">
+                    <button className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
                       Tasdiqlash va chop etish
                     </button>
                   )}
@@ -923,14 +727,8 @@ const SalesManagement = ({ selectedBranchId }) => {
         </div>
       )}
 
-      <div style={{ display: "none" }}>
-        {showReceipt && (
-          <Receipt
-            ref={receiptRef}
-            order={order}
-            onClose={() => setShowReceipt(false)}
-          />
-        )}
+      <div className="hidden">
+        <Receipt ref={receiptRef} order={cart} onClose={() => setShowReceipt(false)} />
       </div>
     </div>
   );
