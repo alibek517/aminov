@@ -1,735 +1,778 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import ReactToPrint from "react-to-print";
-import { useNavigate } from "react-router-dom";
-import {
-  ShoppingCart,
-  Search,
-  Plus,
-  Package,
-  X,
-  ScanLine,
-  Trash2,
-} from "lucide-react";
-import { toast, ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
-import { jsPDF } from "jspdf";
-import Receipt from "./Receipt/Receipt";
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
-const SalesManagement = ({ selectedBranchId }) => {
-  const [showReceipt, setShowReceipt] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [cart, setCart] = useState([]);
-  const [customerName, setCustomerName] = useState("");
-  const [deliveryMethod, setDeliveryMethod] = useState("self-pickup");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [showSaleModal, setShowSaleModal] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
+const SalesManagement = () => {
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [branches, setBranches] = useState([]);
+  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [transactionType, setTransactionType] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedBranch, setSelectedBranch] = useState('');
+  const [toBranch, setToBranch] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [price, setPrice] = useState('');
+  const [paymentType, setPaymentType] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [deliveryType, setDeliveryType] = useState('');
+  const [address, setAddress] = useState('');
+  const [passportSeries, setPassportSeries] = useState('');
+  const [passportNumber, setPassportNumber] = useState('');
+  const [jshshir, setJshshir] = useState('');
+  const [creditMonths, setCreditMonths] = useState('');
+  const [creditInterest, setCreditInterest] = useState('');
+  const [initialPayment, setInitialPayment] = useState('');
+  const [paidAmount, setPaidAmount] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
-  const receiptRef = useRef();
+  const API_URL = 'https://suddocs.uz';
 
-  const API_BASE_URL = "https://suddocs.uz";
-
-  const statusTranslations = {
-    IN_WAREHOUSE: "На складе",
-    IN_STORE: "В магазине",
-    SOLD: "Продан",
-    DEFECTIVE: "Бракованный",
-    RETURNED: "Возвращён",
+  const formatCurrency = (amount) => {
+    if (amount === null || amount === undefined || isNaN(amount)) {
+      return "0 so'm";
+    }
+    if (amount < 0) {
+      return `-${new Intl.NumberFormat('uz-UZ').format(Math.abs(amount))} so'm`;
+    }
+    return new Intl.NumberFormat('uz-UZ').format(amount) + " so'm";
   };
 
-  const nameMap = {
-    IN_WAREHOUSE: "Omborda",
-    IN_STORE: "Do‘konda",
-    SOLD: "Sotilgan",
-    DEFECTIVE: "Brok",
-    RETURNED: "Qaytarilgan",
-  };
+  const formatQuantity = (qty) => (qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' dona' : '0 dona');
 
-  const getToken = () => localStorage.getItem("access_token");
-
-  // Retrieve branchId from localStorage, fallback to prop
-  const branchId = (() => {
-    const storedBranchId = localStorage.getItem("branchId");
-    const propBranchId = selectedBranchId;
-    const id = storedBranchId || propBranchId;
-    const parsedId = Number(id);
-    return !isNaN(parsedId) && Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
-  })();
-
-  const fetchWithAuth = async (url, options = {}) => {
-    const token = getToken();
-    if (!token) {
-      navigate("/login");
-      throw new Error("No token found. Please login again.");
-    }
-
-    const headers = {
-      ...options.headers,
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-
-    const response = await fetch(url, { ...options, headers });
-    if (response.status === 401) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("userRole");
-      localStorage.removeItem("user");
-      localStorage.removeItem("userId");
-      localStorage.removeItem("branchId");
-      navigate("/login", { replace: true });
-      throw new Error("Unauthorized: Session expired. Please login again.");
-    }
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
-    }
-
-    return response.json();
-  };
-
-  useEffect(() => {
-    const loadData = async () => {
-      if (!branchId) {
-        setError("Filialni tanlang");
-        setProducts([]);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const productsUrl = `${API_BASE_URL}/products?branchId=${branchId}`;
-        const [productsData, categoriesData] = await Promise.all([
-          fetchWithAuth(productsUrl),
-          fetchWithAuth(`${API_BASE_URL}/categories`),
-        ]);
-        setProducts(productsData);
-        setCategories(categoriesData);
-        setError(null);
-      } catch (err) {
-        setError("Ma'lumotlarni yuklashda xatolik: " + err.message);
-        toast.error("Ma'lumotlarni yuklashda xatolik: " + err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, [branchId, navigate]);
-
-  useEffect(() => {
-    let barcode = "";
-    const handleKeyPress = (e) => {
-      if (e.key === "Enter") {
-        if (barcode) {
-          const scannedProduct = products.find(
-            (p) =>
-              p.barcode === barcode ||
-              p.id.toString() === barcode ||
-              p.name.toLowerCase().includes(barcode.toLowerCase())
-          );
-          if (scannedProduct) {
-            addToCart(scannedProduct);
-          } else {
-            toast.error("Mahsulot topilmadi!");
-          }
-          barcode = "";
-          setSearchTerm("");
-        }
-      } else {
-        barcode += e.key;
-        setSearchTerm((prev) => prev + e.key);
-      }
-    };
-
-    window.addEventListener("keypress", handleKeyPress);
-    return () => window.removeEventListener("keypress", handleKeyPress);
-  }, [products]);
-
-  const handleManualBarcode = () => {
-    const barcode = prompt("Shtrix-kod, ID yoki nom kiriting:");
-    if (barcode) {
-      const scannedProduct = products.find(
-        (p) =>
-          p.barcode === barcode ||
-          p.id.toString() === barcode ||
-          p.name.toLowerCase().includes(barcode.toLowerCase())
-      );
-      if (scannedProduct) {
-        addToCart(scannedProduct);
-      } else {
-        toast.error("Mahsulot topilmadi!");
-      }
-    }
-  };
-
-  const categoryOptions = useMemo(() => {
-    return [{ id: "all", name: "Barcha kategoriyalar" }, ...categories];
-  }, [categories]);
-
-  const filteredProducts = useMemo(() => {
-    return products.filter(
-      (product) =>
-        (selectedCategory === "all" ||
-          String(product.categoryId) === String(selectedCategory)) &&
-        (product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          product.id.toString().includes(searchTerm) ||
-          (product.barcode?.includes(searchTerm) ?? false))
-    );
-  }, [products, searchTerm, selectedCategory]);
-
-  const addToCart = (product) => {
-    const productStatus = statusTranslations[product.status] || product.status;
-    if (["DEFECTIVE", "RETURNED", "SOLD"].includes(product.status)) {
-      toast.error(
-        `Mahsulot ${nameMap[product.status] || productStatus} holatida! Iltimos, boshqa mahsulot tanlang.`
-      );
-      return;
-    }
-    if (product.quantity === 0) {
-      toast.error(`Mahsulot ${productStatus} holatida mavjud emas!`);
-      return;
-    }
-    const existingItem = cart.find((item) => item.id === product.id);
-    if (existingItem) {
-      if (existingItem.quantity >= product.quantity) {
-        toast.error(
-          `${nameMap[product.status] || productStatus} yetarli mahsulot yo'q!`
-        );
-        return;
-      }
-      setCart(
-        cart.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        )
-      );
-    } else {
-      setCart([...cart, { ...product, quantity: 1 }]);
-    }
-  };
-
-  const removeFromCart = (productId) => {
-    setCart(cart.filter((item) => item.id !== productId));
-    toast.info("Mahsulot savatdan o‘chirildi");
-  };
-
-  const updateQuantity = (productId, quantity) => {
-    const product = products.find((p) => p.id === productId);
-    if (quantity <= 0) {
-      removeFromCart(productId);
-    } else if (quantity > product.quantity) {
-      toast.error(
-        `Yetarli mahsulot ${statusTranslations[product.status] || product.status} holatida yo'q!`
-      );
-    } else {
-      setCart(
-        cart.map((item) =>
-          item.id === productId ? { ...item, quantity } : item
-        )
-      );
-    }
-  };
-
-  const getTotalAmount = () => {
-    return cart.reduce((total, item) => total + item.price * item.quantity, 0);
-  };
-
-  const generateReceipt = () => {
-    const receiptId = `order_${new Date().toISOString().replace(/[-:T.]/g, "")}`;
-    const receipt = {
-      id: receiptId,
-      date: new Date().toISOString(),
-      cashier: localStorage.getItem("user") || "Noma‘lum Kassir",
-      customer: customerName || "Noma‘lum Mijoz",
-      items: cart.map((item) => ({
-        id: item.id,
-        name: item.name,
-        category:
-          categories.find((c) => c.id === item.categoryId)?.name || "Noma‘lum",
-        quantity: item.quantity,
-        price: item.price,
-        total: item.price * item.quantity,
-      })),
-      total: getTotalAmount(),
-      returnCode: Math.random().toString(36).substring(2, 10).toUpperCase(),
-      branchId: branchId || null,
-      deliveryMethod,
-      paymentMethod,
-    };
-
-    fetchWithAuth(`${API_BASE_URL}/api/receipts`, {
-      method: "POST",
-      body: JSON.stringify(receipt),
-    })
-      .then(() => {
-      })
-      .catch((err) => {
-        console.error("Failed to save receipt:", err);
-        toast.error("Chekni saqlashda xatolik: " + err.message);
-      });
-
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text(`Chek #${receipt.id}`, 10, 10);
-    doc.setFontSize(12);
-    doc.text(`Sana: ${new Date(receipt.date).toLocaleString("uz-UZ")}`, 10, 20);
-    doc.text(`Kassir: ${receipt.cashier}`, 10, 30);
-    doc.text(`Mijoz: ${receipt.customer}`, 10, 40);
-    doc.text(
-      `Yetkazib berish usuli: ${
-        receipt.deliveryMethod === "delivery"
-          ? "Yetkazib berish"
-          : "O‘zi olib ketish"
-      }`,
-      10,
-      50
-    );
-    doc.text(
-      `To‘lov usuli: ${
-        receipt.paymentMethod === "cash"
-          ? "Naqd"
-          : receipt.paymentMethod === "card"
-          ? "Karta"
-          : "Kredit"
-      }`,
-      10,
-      60
-    );
-    doc.text("Mahsulotlar:", 10, 70);
-    let y = 80;
-    doc.setFontSize(10);
-    doc.text("№  Mahsulot  Kategoriya  Narx  Soni  Jami", 10, y);
-    y += 5;
-    doc.line(10, y, 200, y);
-    y += 5;
-    receipt.items.forEach((item, index) => {
-      doc.text(
-        `${index + 1}  ${item.name}  ${item.category}  ${item.price.toLocaleString()} so'm  ${item.quantity}  ${item.total.toLocaleString()} so'm`,
-        10,
-        y
-      );
-      y += 10;
-    });
-    doc.setFontSize(12);
-    doc.text(`Jami: ${receipt.total.toLocaleString()} so'm`, 10, y);
-    doc.text(`Qaytarish kodi: ${receipt.returnCode}`, 10, y + 10);
-    doc.save(`receipt_${receipt.id}.pdf`);
-
-    return receipt;
-  };
-
-  const completeSale = async () => {
-    if (cart.length === 0) {
-      toast.error("Savat bo‘sh! Iltimos, mahsulot qo‘shing.");
-      return;
-    }
-
-    const hasEnoughStock = cart.every((item) => {
-      const product = products.find((p) => p.id === item.id);
-      return product.quantity >= item.quantity;
-    });
-
-    if (!hasEnoughStock) {
-      const outOfStockItem = cart.find((item) => {
-        const product = products.find((p) => p.id === item.id);
-        return product.quantity < item.quantity;
-      });
-      const product = products.find((p) => p.id === outOfStockItem.id);
-      toast.error(
-        `Yetarli mahsulot ${statusTranslations[product.status] || product.status} holatida yo'q!`
-      );
-      return;
-    }
-
-    setShowConfirmModal(true);
-  };
-
-  const confirmSale = async () => {
+  const axiosWithAuth = async (config) => {
+    const token = localStorage.getItem('access_token') || 'mock-token';
+    const headers = { ...config.headers, Authorization: `Bearer ${token}` };
     try {
-      await Promise.all(
-        cart.map((item) => {
-          const product = products.find((p) => p.id === item.id);
-          const newQuantity = product.quantity - item.quantity;
-          return fetchWithAuth(`${API_BASE_URL}/products/${item.id}`, {
-            method: "PUT",
-            body: JSON.stringify({
-              quantity: newQuantity,
-              status: newQuantity === 0 ? "SOLD" : product.status,
-            }),
-          });
-        })
-      );
+      const response = await axios({ ...config, headers });
+      return response;
+    } catch (error) {
+      if (error.response?.status === 401) {
+        localStorage.clear();
+        navigate('/login');
+        throw new Error('Sessiya tugadi');
+      }
+      throw error;
+    }
+  };
 
-      const receipt = generateReceipt();
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const branchesRes = await axiosWithAuth({ method: 'get', url: `${API_URL}/branches` });
+        setBranches(branchesRes.data);
+      } catch (err) {
+        setNotification({ message: err.message || 'Filiallarni yuklashda xatolik', type: 'error' });
+      }
+    };
+    fetchBranches();
 
-      await fetchWithAuth(`${API_BASE_URL}/api/sales`, {
-        method: "POST",
-        body: JSON.stringify({
-          customer: customerName || "Noma‘lum Mijoz",
-          items: cart,
-          total: getTotalAmount(),
-          date: new Date().toISOString(),
-          receiptId: receipt.id,
-          branchId: branchId || null,
-          deliveryMethod,
-          paymentMethod,
-        }),
+    const branchId = localStorage.getItem('branchId');
+    if (branchId && !isNaN(branchId) && Number.isInteger(Number(branchId)) && Number(branchId) > 0) {
+      setSelectedBranchId(branchId);
+    } else {
+      setNotification({ message: 'Filial ID topilmadi yoki noto‘g‘ri', type: 'error' });
+    }
+  }, [navigate]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setNotification(null);
+    const branchId = Number(selectedBranchId);
+    const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
+
+    if (!isValidBranchId) {
+      setNotification({ message: 'Filialni tanlang', type: 'error' });
+      setProducts([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('branchId', branchId.toString());
+      if (searchTerm.trim()) queryParams.append('search', searchTerm);
+      queryParams.append('includeZeroQuantity', 'true');
+      const productsRes = await axiosWithAuth({
+        method: 'get',
+        url: `${API_URL}/products?${queryParams.toString()}`,
       });
-
-      setProducts(
-        products.map((p) => {
-          const cartItem = cart.find((item) => item.id === p.id);
-          if (cartItem) {
-            const newQuantity = p.quantity - cartItem.quantity;
-            return {
-              ...p,
-              quantity: newQuantity,
-              status: newQuantity === 0 ? "SOLD" : p.status,
-            };
-          }
-          return p;
-        })
-      );
-
-      setCart([]);
-      setCustomerName("");
-      setDeliveryMethod("self-pickup");
-      setPaymentMethod("cash");
-      setShowSaleModal(false);
-      setShowConfirmModal(false);
+      const sortedProducts = productsRes.data.sort((a, b) => b.quantity - a.quantity);
+      setProducts(sortedProducts);
     } catch (err) {
-      toast.error(
-        err.message.includes("Unauthorized")
-          ? "Autentifikatsiya xatosi! Kirish sahifasiga yo‘naltirilmoqda."
-          : "Sotishda xatolik: " + err.message
-      );
-      console.error("Error completing sale:", err);
-      setShowConfirmModal(false);
+      setNotification({ message: err.message || "Ma'lumotlarni yuklashda xatolik", type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [searchTerm, selectedBranchId]);
+
+  useEffect(() => {
+    if (selectedBranchId) {
+      loadData();
+    }
+  }, [loadData, selectedBranchId]);
+
+  const openModal = (product, type) => {
+    setSelectedProduct(product);
+    setTransactionType(type);
+    setQuantity('');
+    setPrice(product.price ? product.price.toString() : '0');
+    if (type === 'SALE') {
+      setSelectedBranch(localStorage.getItem('branchId') || '');
+    } else {
+      setSelectedBranch(product.branchId ? product.branchId.toString() : selectedBranchId || '');
+    }
+    setToBranch('');
+    setFirstName('');
+    setLastName('');
+    setPhone('');
+    setPaymentType('');
+    setDeliveryType('');
+    setAddress('');
+    setPassportSeries('');
+    setPassportNumber('');
+    setJshshir('');
+    setCreditMonths('');
+    setCreditInterest('');
+    setInitialPayment('');
+    setPaidAmount('');
+    setErrors({});
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setSelectedProduct(null);
+    setTransactionType('');
+    setQuantity('');
+    setPrice('');
+    setSelectedBranch('');
+    setToBranch('');
+    setFirstName('');
+    setLastName('');
+    setPhone('');
+    setPaymentType('');
+    setDeliveryType('');
+    setAddress('');
+    setPassportSeries('');
+    setPassportNumber('');
+    setJshshir('');
+    setCreditMonths('');
+    setCreditInterest('');
+    setInitialPayment('');
+    setPaidAmount('');
+    setErrors({});
+    setNotification(null);
+  };
+
+  const validateFields = () => {
+    const newErrors = {};
+    const total = Number(quantity) * Number(price);
+
+    if (!transactionType) newErrors.transactionType = 'Tranzaksiya turi tanlanishi shart';
+    if (!quantity || isNaN(quantity) || Number(quantity) <= 0) {
+      newErrors.quantity = "Miqdor 0 dan katta bo'lishi kerak";
+    } else if (Number(quantity) > selectedProduct.quantity) {
+      newErrors.quantity = `Maksimal miqdor: ${selectedProduct.quantity} dona`;
+    }
+    if (transactionType === 'SALE' && (!price || isNaN(price) || Number(price) < 0)) {
+      newErrors.price = "Narx 0 dan katta yoki teng bo'lishi kerak";
+    }
+    if (!selectedBranch) {
+      newErrors.branch = 'Filial tanlanishi shart';
+    }
+    if (transactionType === 'TRANSFER' && !toBranch) {
+      newErrors.toBranch = "O'tkaziladigan filial tanlanishi shart";
+    }
+    if (transactionType === 'TRANSFER' && Number(toBranch) === Number(selectedBranch)) {
+      newErrors.toBranch = "O'tkaziladigan filial boshqa bo'lishi kerak";
+    }
+    if (transactionType === 'SALE') {
+      if (!firstName.trim()) newErrors.firstName = 'Ism kiritilishi shart';
+      if (!lastName.trim()) newErrors.lastName = 'Familiya kiritilishi shart';
+      if (!phone.trim()) newErrors.phone = 'Telefon kiritilishi shart';
+      if (!paymentType) newErrors.paymentType = "To'lov turi tanlanishi shart";
+      if (!deliveryType) newErrors.deliveryType = "Yetkazib berish turi tanlanishi shart";
+      if (deliveryType === 'DELIVERY' && !address.trim()) newErrors.address = "Manzil kiritilishi shart";
+      if (paymentType === 'CREDIT') {
+        if (!passportSeries.trim()) newErrors.passportSeries = "Pasport seriyasi kiritilishi shart";
+        if (!passportNumber.trim()) newErrors.passportNumber = "Pasport raqami kiritilishi shart";
+        if (!jshshir.trim()) newErrors.jshshir = "JSHSHIR kiritilishi shart";
+        if (!creditMonths || isNaN(creditMonths) || Number(creditMonths) <= 0) {
+          newErrors.creditMonths = "Oylar soni 0 dan katta bo'lishi kerak";
+        }
+        if (!creditInterest || isNaN(creditInterest) || Number(creditInterest) < 0) {
+          newErrors.creditInterest = "Foiz 0 dan katta yoki teng bo'lishi kerak";
+        }
+        if (!initialPayment || isNaN(initialPayment) || Number(initialPayment) < 0 || Number(initialPayment) > total) {
+          newErrors.initialPayment = `Birinchi to'lov 0 va ${formatCurrency(total)} dan kichik bo'lishi kerak`;
+        }
+      }
+      if (paymentType === 'CASH') {
+        if (!paidAmount || isNaN(paidAmount) || Number(paidAmount) < 0) {
+          newErrors.paidAmount = "Bergan summa 0 dan katta yoki teng bo'lishi kerak";
+        } else if (Number(paidAmount) < total) {
+          newErrors.paidAmount = `Yana ${formatCurrency(total - Number(paidAmount))} to'lash kerak`;
+        }
+      }
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateFields()) {
+      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
+      return;
+    }
+    setSubmitting(true);
+    setNotification(null);
+    try {
+      const userId = Number(localStorage.getItem('userId')) || 1;
+      if (transactionType === 'SALE') {
+        const qty = Number(quantity);
+        const prc = Number(price);
+        let total = qty * prc;
+        let finalTotal = total;
+        if (paymentType === 'CREDIT') {
+          const loan = total - Number(initialPayment);
+          finalTotal = loan * (1 + Number(creditInterest) / 100);
+        }
+        const payload = {
+          userId,
+          type: 'SALE',
+          status: 'PENDING',
+          total,
+          finalTotal,
+          paymentType,
+          deliveryType,
+          deliveryAddress: deliveryType === 'DELIVERY' ? address : null,
+          customer: {
+            firstName,
+            lastName,
+            phone,
+            ...(paymentType === 'CREDIT' ? { passportSeries, passportNumber, jshshir } : {}),
+          },
+          branchId: Number(selectedBranch),
+          items: [
+            {
+              productId: selectedProduct.id,
+              quantity: qty,
+              price: prc,
+              total,
+            },
+          ],
+        };
+        if (paymentType === 'CREDIT') {
+          payload.creditMonths = Number(creditMonths);
+          payload.creditInterest = Number(creditInterest);
+          payload.initialPayment = Number(initialPayment);
+        }
+        await axiosWithAuth({
+          method: 'post',
+          url: `${API_URL}/transactions`,
+          data: payload,
+        });
+        setNotification({ message: 'Sotuv muvaffaqiyatli amalga oshirildi', type: 'success' });
+      } else if (transactionType === 'TRANSFER') {
+        const payload = {
+          productId: selectedProduct.id,
+          fromBranchId: Number(selectedBranch),
+          toBranchId: Number(toBranch),
+          quantity: Number(quantity),
+          initiatedById: userId,
+          transferDate: new Date().toISOString(),
+        };
+        await axiosWithAuth({
+          method: 'post',
+          url: `${API_URL}/product-transfers`,
+          data: payload,
+        });
+        setNotification({ message: "Tovar o'tkazmasi muvaffaqiyatli amalga oshirildi", type: 'success' });
+      }
+      closeModal();
+      loadData();
+    } catch (err) {
+      const message = err.response?.data?.message || 'Tranzaksiya yaratishda xatolik';
+      setNotification({ message, type: 'error' });
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="ml-[260px] space-y-6 p-4">
-      <ToastContainer position="top-right" autoClose={3000} />
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <h1 className="text-3xl font-bold text-gray-900">Sotish Tizimi</h1>
-          <p className="text-gray-600 mt-1">Mahsulotlarni sotish va savdo qilish</p>
-        </div>
-        <div className="flex space-x-3">
+    <div className="ml-[255px] space-y-6 p-4">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6">Sotish</h1>
+      
+      {notification && (
+        <div
+          className={`p-4 rounded-lg mb-6 flex justify-between items-center ${
+            notification.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+          }`}
+        >
+          <span>{notification.message}</span>
           <button
-            onClick={() => setShowSaleModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+            className="text-sm font-medium underline hover:text-gray-900"
+            onClick={() => setNotification(null)}
           >
-            <ShoppingCart className="w-4 h-4" />
-            <span>Savat ({cart.length})</span>
+            Yopish
           </button>
         </div>
-      </div>
-
-      <div className="flex space-x-2 mb-4 overflow-x-auto">
-        {categoryOptions.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => setSelectedCategory(String(cat.id))}
-            className={`px-4 py-2 rounded-lg whitespace-nowrap ${
-              selectedCategory === String(cat.id)
-                ? "bg-blue-600 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            } transition-colors`}
-          >
-            {cat.name}
-          </button>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="relative flex items-center">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-          <input
-            type="text"
-            placeholder="Mahsulot nomi, ID yoki barcode bilan qidiring..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent text-lg"
-          />
-          <button
-            onClick={handleManualBarcode}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            title="Shtrix-kodni qo'lda kiritish"
-          >
-            <ScanLine size={20} />
-          </button>
-        </div>
-      </div>
-
+      )}
+      <input
+        type="text"
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        placeholder="Tovar qidirish..."
+        className="w-full p-3 border border-gray-300 rounded-lg mb-6 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
       {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p>Yuklanmoqda...</p>
-        </div>
-      ) : error ? (
-        <div className="text-center py-12 text-red-600">{error}</div>
+        <div className="text-center text-gray-600">Yuklanmoqda...</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">ID</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Название</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Категория</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Штрихкод</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Цена</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Остаток</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Статус</th>
-                <th className="px-4 py-2 text-left text-sm font-semibold text-gray-700">Действие</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
-              {filteredProducts.map((product) => (
-                <tr key={product.id}>
-                  <td className="px-4 py-2 text-sm text-gray-900">{product.id}</td>
-                  <td className="px-4 py-2 text-sm text-gray-900">{product.name}</td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {categories.find((c) => String(c.id) === String(product.categoryId))?.name || "Неизвестно"}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">{product.barcode || "Нет"}</td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {(product.marketPrice || product.price).toLocaleString()} сум
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">{product.quantity} шт</td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {statusTranslations[product.status] || product.status}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    <button
-                      onClick={() => addToCart(product)}
-                      disabled={product.quantity === 0}
-                      className={`py-1 px-3 rounded-md text-sm ${
-                        product.quantity === 0
-                          ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                          : "bg-blue-600 hover:bg-blue-700 text-white"
-                      } transition-colors`}
-                    >
-                      {product.quantity === 0 ? "Нет в наличии" : "Добавить"}
-                    </button>
-                  </td>
+        <>
+          <h2 className="text-xl font-semibold text-gray-700 mb-4">Mahsulotlar Qoldig'i</h2>
+          <div className="overflow-x-auto shadow-md rounded-lg">
+            <table className="w-full bg-white border border-gray-200">
+              <thead>
+                <tr className="bg-gray-100 text-gray-600">
+                  <th className="p-3 text-left font-medium">ID</th>
+                  <th className="p-3 text-left font-medium">Nomi</th>
+                  <th className="p-3 text-left font-medium">Barcode</th>
+                  <th className="p-3 text-left font-medium">Narx</th>
+                  <th className="p-3 text-left font-medium">Miqdor</th>
+                  <th className="p-3 text-left font-medium">Amallar</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {filteredProducts.length === 0 && !loading && !error && (
-        <div className="text-center py-12">
-          <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Mahsulot topilmadi</h3>
-          <p className="text-gray-600">Qidiruv so'zini o'zgartiring</p>
-        </div>
-      )}
-
-      {showSaleModal && (
-        <div className="fixed inset-0 bg-black backdrop-blur-sm bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-semibold text-gray-900">Sotish Savati</h3>
-                <button
-                  onClick={() => setShowSaleModal(false)}
-                  className="text-gray-400 hover:text-red-400 hover:bg-gray-100 rounded-md transition-colors p-1"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Mijoz nomi (ixtiyoriy)
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Mijoz nomini kiriting (ixtiyoriy)"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Yetkazib berish usuli
-                </label>
-                <select
-                  value={deliveryMethod}
-                  onChange={(e) => setDeliveryMethod(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-                >
-                  <option value="self-pickup">O‘zi olib ketish</option>
-                  <option value="delivery">Yetkazib berish</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  To‘lov usuli
-                </label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-                >
-                  <option value="cash">Naqd</option>
-                  <option value="card">Karta</option>
-                  <option value="credit">Kredit</option>
-                </select>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4">Savatdagi mahsulotlar</h4>
-                {cart.length === 0 ? (
-                  <div className="text-center py-8">
-                    <ShoppingCart className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500">Savat bo'sh</p>
-                  </div>
+              </thead>
+              <tbody>
+                {products.length > 0 ? (
+                  products.map((product) => (
+                    <tr key={product.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="p-3 text-gray-700">#{product.id}</td>
+                      <td className="p-3 text-gray-700">{product.name}</td>
+                      <td className="p-3 text-gray-700">{product.barcode}</td>
+                      <td className="p-3 text-gray-700">{formatCurrency(product.price)}</td>
+                      <td className="p-3 text-gray-700">{formatQuantity(product.quantity)}</td>
+                      <td className="p-3">
+                        <button
+                          onClick={() => openModal(product, 'SALE')}
+                          className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 disabled:bg-gray-400 transition-colors"
+                          disabled={submitting || product.quantity === 0}
+                        >
+                          Mijozga Sotish
+                        </button>
+                      </td>
+                    </tr>
+                  ))
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">№</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Mahsulot</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Kategoriya</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Narx</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Soni</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700">Jami</th>
-                          <th className="px-4 py-2 text-left text-sm font-medium text-gray-700"></th>
+                  <tr>
+                    <td colSpan="6" className="p-3 text-center text-gray-600">
+                      Tovarlar topilmadi
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {showModal && selectedProduct && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-8 w-full max-w-3xl overflow-y-auto max-h-[90vh]">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-2xl font-bold text-gray-800">
+                    {transactionType === 'SALE' ? 'Mijozga Sotish' : "Filialga O'tkazish"}
+                  </h3>
+                  <button
+                    onClick={closeModal}
+                    className="text-gray-600 hover:text-gray-800 font-bold text-xl"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <table className="w-full text-sm text-gray-700 border border-gray-200 shadow-md rounded-lg">
+                  <tbody>
+                    <tr className="border-b">
+                      <td className="p-3 font-medium bg-gray-50">Mahsulot</td>
+                      <td className="p-3">{selectedProduct.name}</td>
+                    </tr>
+                    {transactionType === 'TRANSFER' && (
+                      <>
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Filial (dan)</td>
+                          <td className="p-3">
+                            <select
+                              value={selectedBranch}
+                              onChange={(e) => setSelectedBranch(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.branch ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            >
+                              <option value="">Tanlang</option>
+                              {branches.map((b) => (
+                                <option key={b.id} value={b.id}>
+                                  {b.name}
+                                </option>
+                              ))}
+                            </select>
+                            {errors.branch && (
+                              <span className="text-red-500 text-xs">{errors.branch}</span>
+                            )}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {cart.map((item, index) => (
-                          <tr key={item.id} className="border-b border-gray-200">
-                            <td className="px-4 py-2 text-sm">{index + 1}</td>
-                            <td className="px-4 py-2 text-sm">{item.name}</td>
-                            <td className="px-4 py-2 text-sm">
-                              {categories.find((c) => String(c.id) === String(item.categoryId))?.name || "Noma‘lum"}
-                            </td>
-                            <td className="px-4 py-2 text-sm">{item.price.toLocaleString()} so'm</td>
-                            <td className="px-4 py-2 text-sm">
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                                  className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center"
-                                >
-                                  -
-                                </button>
-                                <span className="w-8 text-center">{item.quantity}</span>
-                                <button
-                                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                  className="w-6 h-6 bg-gray-200 hover:bg-gray-300 rounded-full flex items-center justify-center"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </td>
-                            <td className="px-4 py-2 text-sm">{(item.price * item.quantity).toLocaleString()} so'm</td>
-                            <td className="px-4 py-2 text-sm">
-                              <button
-                                onClick={() => removeFromCart(item.id)}
-                                className="text-red-600 hover:text-red-800"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Filial (ga)</td>
+                          <td className="p-3">
+                            <select
+                              value={toBranch}
+                              onChange={(e) => setToBranch(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.toBranch ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            >
+                              <option value="">Tanlang</option>
+                              {branches
+                                .filter((b) => b.id !== Number(selectedBranch))
+                                .map((b) => (
+                                  <option key={b.id} value={b.id}>
+                                    {b.name}
+                                  </option>
+                                ))}
+                            </select>
+                            {errors.toBranch && (
+                              <span className="text-red-500 text-xs">{errors.toBranch}</span>
+                            )}
+                          </td>
+                        </tr>
+                      </>
+                    )}
+                    {transactionType === 'SALE' && (
+                      <>
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Ism</td>
+                          <td className="p-3">
+                            <input
+                              value={firstName}
+                              onChange={(e) => setFirstName(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.firstName ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            />
+                            {errors.firstName && (
+                              <span className="text-red-500 text-xs">{errors.firstName}</span>
+                            )}
+                          </td>
+                        </tr>
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Familiya</td>
+                          <td className="p-3">
+                            <input
+                              value={lastName}
+                              onChange={(e) => setLastName(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.lastName ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            />
+                            {errors.lastName && (
+                              <span className="text-red-500 text-xs">{errors.lastName}</span>
+                            )}
+                          </td>
+                        </tr>
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Telefon</td>
+                          <td className="p-3">
+                            <input
+                              value={phone}
+                              onChange={(e) => setPhone(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.phone ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            />
+                            {errors.phone && (
+                              <span className="text-red-500 text-xs">{errors.phone}</span>
+                            )}
+                          </td>
+                        </tr>
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">To'lov Turi</td>
+                          <td className="p-3">
+                            <select
+                              value={paymentType}
+                              onChange={(e) => setPaymentType(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.paymentType ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            >
+                              <option value="">Tanlang</option>
+                              <option value="CASH">Naqd</option>
+                              <option value="CARD">Karta</option>
+                              <option value="CREDIT">Kredit</option>
+                            </select>
+                            {errors.paymentType && (
+                              <span className="text-red-500 text-xs">{errors.paymentType}</span>
+                            )}
+                          </td>
+                        </tr>
+                        {paymentType === 'CREDIT' && (
+                          <>
+                            <tr className="border-b">
+                              <td className="p-3 font-medium bg-gray-50">Pasport Seriyasi</td>
+                              <td className="p-3">
+                                <input
+                                  value={passportSeries}
+                                  onChange={(e) => setPassportSeries(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    errors.passportSeries ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                />
+                                {errors.passportSeries && (
+                                  <span className="text-red-500 text-xs">{errors.passportSeries}</span>
+                                )}
+                              </td>
+                            </tr>
+                            <tr className="border-b">
+                              <td className="p-3 font-medium bg-gray-50">Pasport Raqami</td>
+                              <td className="p-3">
+                                <input
+                                  value={passportNumber}
+                                  onChange={(e) => setPassportNumber(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    errors.passportNumber ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                />
+                                {errors.passportNumber && (
+                                  <span className="text-red-500 text-xs">{errors.passportNumber}</span>
+                                )}
+                              </td>
+                            </tr>
+                            <tr className="border-b">
+                              <td className="p-3 font-medium bg-gray-50">JSHSHIR</td>
+                              <td className="p-3">
+                                <input
+                                  value={jshshir}
+                                  onChange={(e) => setJshshir(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    errors.jshshir ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                />
+                                {errors.jshshir && (
+                                  <span className="text-red-500 text-xs">{errors.jshshir}</span>
+                                )}
+                              </td>
+                            </tr>
+                            <tr className="border-b">
+                              <td className="p-3 font-medium bg-gray-50">Oylar soni</td>
+                              <td className="p-3">
+                                <input
+                                  type="number"
+                                  value={creditMonths}
+                                  onChange={(e) => setCreditMonths(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    errors.creditMonths ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                  min="1"
+                                />
+                                {errors.creditMonths && (
+                                  <span className="text-red-500 text-xs">{errors.creditMonths}</span>
+                                )}
+                              </td>
+                            </tr>
+                            <tr className="border-b">
+                              <td className="p-3 font-medium bg-gray-50">Foiz (%)</td>
+                              <td className="p-3">
+                                <input
+                                  type="number"
+                                  value={creditInterest}
+                                  onChange={(e) => setCreditInterest(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    errors.creditInterest ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                  min="0"
+                                  step="0.01"
+                                />
+                                {errors.creditInterest && (
+                                  <span className="text-red-500 text-xs">{errors.creditInterest}</span>
+                                )}
+                              </td>
+                            </tr>
+                            <tr className="border-b">
+                              <td className="p-3 font-medium bg-gray-50">Birinchi to'lov</td>
+                              <td className="p-3">
+                                <input
+                                  type="number"
+                                  value={initialPayment}
+                                  onChange={(e) => setInitialPayment(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    errors.initialPayment ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                  min="0"
+                                  step="0.01"
+                                />
+                                {errors.initialPayment && (
+                                  <span className="text-red-500 text-xs">{errors.initialPayment}</span>
+                                )}
+                              </td>
+                            </tr>
+                          </>
+                        )}
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Yetkazib Berish Turi</td>
+                          <td className="p-3">
+                            <select
+                              value={deliveryType}
+                              onChange={(e) => setDeliveryType(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.deliveryType ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            >
+                              <option value="">Tanlang</option>
+                              <option value="SELF_PICKUP">O'zi Olib Ketish</option>
+                              <option value="DELIVERY">Yetkazib Berish</option>
+                            </select>
+                            {errors.deliveryType && (
+                              <span className="text-red-500 text-xs">{errors.deliveryType}</span>
+                            )}
+                          </td>
+                        </tr>
+                        {deliveryType === 'DELIVERY' && (
+                          <tr className="border-b">
+                            <td className="p-3 font-medium bg-gray-50">Manzil</td>
+                            <td className="p-3">
+                              <input
+                                value={address}
+                                onChange={(e) => setAddress(e.target.value)}
+                                className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                  errors.address ? 'border-red-500' : 'border-gray-300'
+                                }`}
+                              />
+                              {errors.address && (
+                                <span className="text-red-500 text-xs">{errors.address}</span>
+                              )}
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {cart.length > 0 && (
-                <div className="border-t border-gray-100 pt-4">
-                  <div className="flex items-center justify-between text-xl font-bold">
-                    <span>Jami summa:</span>
-                    <span className="text-blue-600">{getTotalAmount().toLocaleString()} so'm</span>
-                  </div>
+                        )}
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Narx</td>
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              value={price}
+                              onChange={(e) => setPrice(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.price ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                              step="0.01"
+                            />
+                            {errors.price && (
+                              <span className="text-red-500 text-xs">{errors.price}</span>
+                            )}
+                          </td>
+                        </tr>
+                        <tr className="border-b">
+                          <td className="p-3 font-medium bg-gray-50">Miqdor</td>
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              value={quantity}
+                              onChange={(e) => setQuantity(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                errors.quantity ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                              min="1"
+                            />
+                            {errors.quantity && (
+                              <span className="text-red-500 text-xs">{errors.quantity}</span>
+                            )}
+                          </td>
+                        </tr>
+                        {quantity && price && (
+                          <>
+                            <tr className="border-b">
+                              <td className="p-3 font-medium bg-gray-50">Jami to'lov</td>
+                              <td className="p-3 font-bold">{formatCurrency(Number(quantity) * Number(price))}</td>
+                            </tr>
+                            {paymentType === 'CREDIT' && initialPayment && creditInterest && creditMonths && (
+                              <>
+                                <tr className="border-b">
+                                  <td className="p-3 font-medium bg-gray-50">Birinchi to'lov</td>
+                                  <td className="p-3">{formatCurrency(Number(initialPayment))}</td>
+                                </tr>
+                                <tr className="border-b">
+                                  <td className="p-3 font-medium bg-gray-50">Kredit summasi</td>
+                                  <td className="p-3">{formatCurrency((Number(quantity) * Number(price)) - Number(initialPayment))}</td>
+                                </tr>
+                                <tr className="border-b">
+                                  <td className="p-3 font-medium bg-gray-50">Jami kredit to'lovi</td>
+                                  <td className="p-3 font-bold">{formatCurrency(((Number(quantity) * Number(price)) - Number(initialPayment)) * (1 + Number(creditInterest) / 100))}</td>
+                                </tr>
+                                <tr className="border-b">
+                                  <td className="p-3 font-medium bg-gray-50">Oylik to'lov</td>
+                                  <td className="p-3">{formatCurrency((((Number(quantity) * Number(price)) - Number(initialPayment)) * (1 + Number(creditInterest) / 100)) / Number(creditMonths))}</td>
+                                </tr>
+                              </>
+                            )}
+                            {paymentType === 'CASH' && (
+                              <>
+                                <tr className="border-b">
+                                  <td className="p-3 font-medium bg-gray-50">Bergan summa</td>
+                                  <td className="p-3">
+                                    <input
+                                      type="number"
+                                      value={paidAmount}
+                                      onChange={(e) => setPaidAmount(e.target.value)}
+                                      className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                        errors.paidAmount ? 'border-red-500' : 'border-gray-300'
+                                      }`}
+                                      min="0"
+                                      step="0.01"
+                                    />
+                                    {errors.paidAmount && (
+                                      <span className="text-red-500 text-xs">{errors.paidAmount}</span>
+                                    )}
+                                  </td>
+                                </tr>
+                                {paidAmount && (
+                                  <tr className="border-b">
+                                    <td className="p-3 font-medium bg-gray-50">Qaytim</td>
+                                    <td className="p-3 font-bold">
+                                      {Number(paidAmount) >= Number(quantity) * Number(price)
+                                        ? formatCurrency(Number(paidAmount) - (Number(quantity) * Number(price)))
+                                        : `Yana ${formatCurrency((Number(quantity) * Number(price)) - Number(paidAmount))} to'lash kerak`}
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
+                            )}
+                          </>
+                        )}
+                      </>
+                    )}
+                  </tbody>
+                </table>
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="flex-1 bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
+                  >
+                    {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
+                  </button>
+                  <button
+                    onClick={closeModal}
+                    className="flex-1 bg-gray-200 text-gray-700 p-3 rounded-lg hover:bg-gray-300 transition-colors"
+                  >
+                    Bekor
+                  </button>
                 </div>
-              )}
-
-              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-100">
-                <button
-                  onClick={() => setShowSaleModal(false)}
-                  className="px-4 py-2 text-gray-600 hover:text-red-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Bekor qilish
-                </button>
-                <button
-                  onClick={completeSale}
-                  disabled={cart.length === 0}
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-lg transition-colors"
-                >
-                  Sotishni yakunlash
-                </button>
               </div>
             </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
-
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full">
-            <div className="p-6 border-b border-gray-100">
-              <h3 className="text-xl font-semibold text-gray-900">Sotishni tasdiqlash</h3>
-            </div>
-            <div className="p-6">
-              <p className="text-gray-600 mb-4">
-                <strong>{cart.length}</strong> ta mahsulotni{" "}
-                <strong>{customerName || "Noma‘lum Mijoz"}</strong> uchun sotishni tasdiqlaysizmi? <br />
-                Yetkazib berish usuli:{" "}
-                <strong>{deliveryMethod === "delivery" ? "Yetkazib berish" : "O‘zi olib ketish"}</strong> <br />
-                To‘lov usuli:{" "}
-                <strong>
-                  {paymentMethod === "cash" ? "Naqd" : paymentMethod === "card" ? "Karta" : "Kredit"}
-                </strong> <br />
-                Jami summa: <strong className="text-lg">{getTotalAmount().toLocaleString()} so'm</strong>
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => setShowConfirmModal(false)}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Bekor qilish
-                </button>
-                <ReactToPrint
-                  trigger={() => (
-                    <button className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-                      Tasdiqlash va chop etish
-                    </button>
-                  )}
-                  content={() => receiptRef.current}
-                  onBeforePrint={confirmSale}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="hidden">
-        <Receipt ref={receiptRef} order={cart} onClose={() => setShowReceipt(false)} />
-      </div>
     </div>
   );
 };

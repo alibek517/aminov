@@ -1,21 +1,23 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Scan, RotateCcw } from "lucide-react";
+import { AlertTriangle, Scan, RotateCcw, CheckCircle } from "lucide-react";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 const DefectiveManagement = ({ selectedBranchId }) => {
   const [products, setProducts] = useState([]);
+  const [defectiveProducts, setDefectiveProducts] = useState([]);
+  const [fixedProducts, setFixedProducts] = useState([]);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [returnBarcodeInput, setReturnBarcodeInput] = useState("");
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [restoreCounts, setRestoreCounts] = useState({});
 
   const navigate = useNavigate();
   const API_BASE_URL = "https://suddocs.uz";
 
-  // Retrieve branchId from localStorage, fallback to prop
   const branchId = (() => {
     const storedBranchId = localStorage.getItem("branchId");
     const propBranchId = selectedBranchId;
@@ -51,7 +53,6 @@ const DefectiveManagement = ({ selectedBranchId }) => {
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
     }
 
     return response.json();
@@ -62,6 +63,8 @@ const DefectiveManagement = ({ selectedBranchId }) => {
       if (!branchId) {
         setError("Filialni tanlang");
         setProducts([]);
+        setDefectiveProducts([]);
+        setFixedProducts([]);
         setLoading(false);
         return;
       }
@@ -69,13 +72,19 @@ const DefectiveManagement = ({ selectedBranchId }) => {
       setLoading(true);
       try {
         const productsUrl = `${API_BASE_URL}/products?branchId=${branchId}`;
-        const [productsRes, categoriesRes] = await Promise.all([
+        const defectiveUrl = `${API_BASE_URL}/products/defective?branchId=${branchId}`;
+        const fixedUrl = `${API_BASE_URL}/products/fixed?branchId=${branchId}`;
+        const [productsRes, categoriesRes, defectiveRes, fixedRes] = await Promise.all([
           fetchWithAuth(productsUrl),
           fetchWithAuth(`${API_BASE_URL}/categories`),
+          fetchWithAuth(defectiveUrl),
+          fetchWithAuth(fixedUrl),
         ]);
 
         setProducts(productsRes);
         setCategories(categoriesRes);
+        setDefectiveProducts(defectiveRes);
+        setFixedProducts(fixedRes);
         setError(null);
       } catch (err) {
         setError("Ma'lumotlarni yuklashda xatolik: " + err.message);
@@ -124,30 +133,51 @@ const DefectiveManagement = ({ selectedBranchId }) => {
     }
   };
 
-  const restoreProduct = async (productId) => {
-    const product = products.find((p) => p.id === productId);
+  const restoreProduct = async (productId, restoreCount) => {
+    const product = defectiveProducts.find((p) => p.id === productId);
     if (!product) {
       toast.error("Mahsulot topilmadi!");
       return;
     }
+    if (restoreCount <= 0 || restoreCount > product.defectiveQuantity) {
+      toast.error("Noto'g'ri qaytarish miqdori!");
+      return;
+    }
 
     try {
-      await fetchWithAuth(`${API_BASE_URL}/products/${product.id}`, {
+      const updatedProduct = await fetchWithAuth(`${API_BASE_URL}/products/${product.id}/restore-defective`, {
         method: "PUT",
-        body: JSON.stringify({ status: "IN_STORE" }), // Assuming "IN_STORE" is the active status
+        body: JSON.stringify({ restoreCount }),
       });
 
-      setProducts(
-        products.map((p) =>
-          p.id === product.id ? { ...p, status: "IN_STORE" } : p
+      // Update defective products
+      setDefectiveProducts(prev =>
+        prev.map(p =>
+          p.id === productId
+            ? updatedProduct
+            : p
+        ).filter(p => p.defectiveQuantity > 0)
+      );
+
+      // If fully restored, add to fixed
+      if (updatedProduct.defectiveQuantity === 0) {
+        setFixedProducts(prev => [...prev, updatedProduct]);
+      }
+
+      // Update main products list if needed
+      setProducts(prev =>
+        prev.map(p =>
+          p.id === productId ? updatedProduct : p
         )
       );
+
+      setRestoreCounts(prev => ({ ...prev, [productId]: "" }));
+      toast.success("Mahsulot muvaffaqiyatli tuzatildi!");
     } catch (err) {
       toast.error("Qayta faollashtirishda xatolik: " + err.message);
     }
   };
 
-  const defectiveProducts = products.filter((p) => p.status === "DEFECTIVE");
   const returnedProducts = products.filter((p) => p.status === "RETURNED");
 
   return (
@@ -159,7 +189,7 @@ const DefectiveManagement = ({ selectedBranchId }) => {
             Brak va Qaytarilgan Mahsulotlar
           </h1>
           <p className="text-gray-600 mt-1">
-            Mahsulotlarni brak yoki qaytarilgan deb belgilash
+            Mahsulotlarni brak, qaytarilgan yoki tuzatilgan deb belgilash
           </p>
         </div>
       </div>
@@ -276,6 +306,8 @@ const DefectiveManagement = ({ selectedBranchId }) => {
                     <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Категория</th>
                     <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Филиал</th>
                     <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Штрихкод</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Defective Miqdori</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-red-700">Tuzatish Miqdori</th>
                     <th className="px-4 py-2 text-left text-sm font-semibold text-red-700"></th>
                   </tr>
                 </thead>
@@ -289,14 +321,77 @@ const DefectiveManagement = ({ selectedBranchId }) => {
                       </td>
                       <td className="px-4 py-2 text-sm text-gray-900">{product.branch?.name || "No'malum"}</td>
                       <td className="px-4 py-2 text-sm text-gray-900">{product.barcode || "—"}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.defectiveQuantity || 0}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">
+                        <input
+                          type="number"
+                          min="1"
+                          max={product.defectiveQuantity}
+                          value={restoreCounts[product.id] || ""}
+                          onChange={(e) =>
+                            setRestoreCounts((prev) => ({
+                              ...prev,
+                              [product.id]: e.target.value,
+                            }))
+                          }
+                          placeholder="Miqdor"
+                          className="w-24 px-2 py-1 border border-gray-300 rounded-lg"
+                        />
+                      </td>
                       <td className="px-4 py-2 text-sm text-right">
                         <button
-                          onClick={() => restoreProduct(product.id)}
+                          onClick={() => restoreProduct(product.id, Number(restoreCounts[product.id]))}
                           className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         >
-                          Восстановить
+                          Tuzatildi
                         </button>
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Fixed List */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        <div className="p-6 border-b border-gray-100">
+          <h2 className="text-xl font-semibold text-gray-900">
+            Tuzatilgan Mahsulotlar ({fixedProducts.length})
+          </h2>
+        </div>
+        <div className="p-6">
+          {fixedProducts.length === 0 ? (
+            <div className="text-center py-8">
+              <CheckCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500">Tuzatilgan mahsulotlar yo'q</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-green-100">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-green-700">ID</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-green-700">Название</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-green-700">Категория</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-green-700">Филиал</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-green-700">Штрихкод</th>
+                    <th className="px-4 py-2 text-left text-sm font-semibold text-green-700">Miqdori</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {fixedProducts.map((product) => (
+                    <tr key={product.id}>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.id}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.name}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">
+                        {categories.find((c) => String(c.id) === String(product.categoryId))?.name || "Неизвестно"}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.branch?.name || "No'malum"}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.barcode || "—"}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{product.quantity}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -344,7 +439,7 @@ const DefectiveManagement = ({ selectedBranchId }) => {
                       <td className="px-4 py-2 text-sm text-gray-900">{product.barcode || "—"}</td>
                       <td className="px-4 py-2 text-sm text-right">
                         <button
-                          onClick={() => restoreProduct(product.id)}
+                          onClick={() => restoreProduct(product.id, product.quantity)}
                           className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         >
                           Восстановить

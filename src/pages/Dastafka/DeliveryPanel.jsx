@@ -1,18 +1,17 @@
+// DeliveryPanel.jsx
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
 import io from 'socket.io-client';
-import { MapPin, Package, User, Settings as SettingsIcon, Phone, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { MapPin, Package, User, Settings as SettingsIcon } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Orders from './components/Orders';
 import Profile from './components/Profile';
 import Settings from './components/Settings';
 import { translations } from './utils/translations';
 
-
-
 function DeliveryPanel({ token }) {
-  const [activeTab, setActiveTab] = useState('dashboard');
   const [language, setLanguage] = useState('uz-latn');
-  const [location, setLocation] = useState(null);
+  const [location, setLocation] = useState(null); // Stores { latitude, longitude, address }
   const [isAvailable, setIsAvailable] = useState(true);
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -28,7 +27,7 @@ function DeliveryPanel({ token }) {
       price: '12,000,000',
       status: 'pending',
       time: '10:30',
-      distance: '2.5 km'
+      distance: '2.5 km',
     },
     {
       id: 2,
@@ -39,7 +38,7 @@ function DeliveryPanel({ token }) {
       price: '18,500,000',
       status: 'assigned',
       time: '11:45',
-      distance: '4.2 km'
+      distance: '4.2 km',
     },
     {
       id: 3,
@@ -50,20 +49,30 @@ function DeliveryPanel({ token }) {
       price: '15,000,000',
       status: 'pending',
       time: '14:20',
-      distance: '1.8 km'
-    }
+      distance: '1.8 km',
+    },
   ]);
 
   const t = translations[language];
+  const navigate = useNavigate();
+  const locationPath = useLocation();
+
+  // Determine active tab from the current route
+  const getActiveTab = () => {
+    const path = locationPath.pathname.split('/').pop() || 'dashboard';
+    return ['dashboard', 'orders', 'profile', 'settings'].includes(path) ? path : 'dashboard';
+  };
+
+  const activeTab = getActiveTab();
 
   useEffect(() => {
     if (!token) {
-      setError('Iltimos, amal qiluvchi JWT token taqdim eting');
+      setError(t.noTokenError || 'Iltimos, amal qiluvchi JWT token taqdim eting');
       console.error('No token provided');
       return;
     }
 
-    const userData = JSON.parse(localStorage.getItem('user'));
+    const userData = JSON.parse(localStorage.getItem('user') || '{}');
     const id = localStorage.getItem('userId');
     setUserId(id);
 
@@ -81,33 +90,43 @@ function DeliveryPanel({ token }) {
       setIsConnected(true);
       setError('');
       console.log('Socket.IO connected for AUDITOR, userId:', id);
-      updateLocation(socketIo, id);
+      if (id) updateLocation(socketIo, id);
     });
 
     socketIo.on('connect_error', (err) => {
-      setError(`Ulanish muvaffaqiyatsiz: ${err.message}`);
+      setError(`${t.connectionError || 'Ulanish muvaffaqiyatsiz'}: ${err.message}`);
       setIsConnected(false);
       console.error('Socket.IO connect error:', err);
     });
 
     socketIo.on('error', (data) => {
-      setError(data.message || 'Serverda xato yuz berdi');
+      setError(data.message || t.serverError || 'Serverda xato yuz berdi');
       console.error('Socket.IO error:', data);
     });
 
     socketIo.on('locationUpdateConfirmed', (data) => {
       console.log('Location update confirmed:', data);
-      setLocation({
-        latitude: data.location.latitude,
-        longitude: data.location.longitude,
-      });
+      // Validate location data before updating state
+      if (
+        data?.location &&
+        typeof data.location.latitude === 'number' &&
+        typeof data.location.longitude === 'number'
+      ) {
+        setLocation({
+          latitude: data.location.latitude,
+          longitude: data.location.longitude,
+          address: data.location.address || 'Unknown',
+        });
+      } else {
+        console.error('Invalid location data received:', data);
+        setError(t.invalidLocationData || 'Noto‘g‘ri joylashuv ma‘lumotlari olindi');
+      }
     });
 
     setSocket(socketIo);
 
-    // Periodic location updates every 5 minutes
     const interval = setInterval(() => {
-      if (isConnected) {
+      if (isConnected && id) {
         updateLocation(socketIo, id);
       }
     }, 300000);
@@ -117,11 +136,12 @@ function DeliveryPanel({ token }) {
       console.log('Socket.IO disconnected');
       clearInterval(interval);
     };
-  }, [token]);
+  }, [token, isConnected, t]);
 
   const updateLocation = async (socket, userId) => {
     if (!userId) {
       console.error('No userId available for location update');
+      setError(t.noUserIdError || 'Foydalanuvchi ID topilmadi');
       return;
     }
 
@@ -130,6 +150,7 @@ function DeliveryPanel({ token }) {
         async (position) => {
           const { latitude, longitude } = position.coords;
           const address = await getAddress(latitude, longitude);
+          const newLocation = { latitude, longitude, address };
           socket.emit('updateLocation', {
             userId,
             latitude,
@@ -138,32 +159,45 @@ function DeliveryPanel({ token }) {
             isOnline: true,
           });
           console.log('Sent periodic location:', { userId, latitude, longitude, address });
+          setLocation(newLocation);
         },
         (error) => {
           console.error('Geolocation error:', error);
-          socket.emit('updateLocation', {
-            userId,
+          const fallbackLocation = {
             latitude: 41.3111,
             longitude: 69.2797,
             address: 'Unknown',
+          };
+          socket.emit('updateLocation', {
+            userId,
+            latitude: fallbackLocation.latitude,
+            longitude: fallbackLocation.longitude,
+            address: fallbackLocation.address,
             isOnline: true,
           });
           console.log('Sent fallback location for user:', userId);
-          setError('Joylashuvni olishda xato yuz berdi. Standart joylashuv ishlatildi.');
+          setLocation(fallbackLocation);
+          setError(t.geolocationError || 'Joylashuvni olishda xato yuz berdi. Standart joylashuv ishlatildi.');
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
       console.error('Geolocation not supported');
-      socket.emit('updateLocation', {
-        userId,
+      const fallbackLocation = {
         latitude: 41.3111,
         longitude: 69.2797,
         address: 'Unknown',
+      };
+      socket.emit('updateLocation', {
+        userId,
+        latitude: fallbackLocation.latitude,
+        longitude: fallbackLocation.longitude,
+        address: fallbackLocation.address,
         isOnline: true,
       });
       console.log('Sent fallback location for user:', userId);
-      setError('Brauzer joylashuvni qo‘llab-quvvatlamaydi.');
+      setLocation(fallbackLocation);
+      setError(t.geolocationNotSupported || 'Brauzer joylashuvni qo‘llab-quvvatlamaydi.');
     }
   };
 
@@ -180,31 +214,8 @@ function DeliveryPanel({ token }) {
     }
   };
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard 
-          t={t} 
-          location={location} 
-          isAvailable={isAvailable} 
-          setIsAvailable={setIsAvailable}
-          orders={orders}
-        />;
-      case 'orders':
-        return <Orders t={t} orders={orders} setOrders={setOrders} />;
-      case 'profile':
-        return <Profile t={t} />;
-      case 'settings':
-        return <Settings t={t} language={language} setLanguage={setLanguage} />;
-      default:
-        return <Dashboard 
-          t={t} 
-          location={location} 
-          isAvailable={isAvailable} 
-          setIsAvailable={setIsAvailable}
-          orders={orders}
-        />;
-    }
+  const handleTabChange = (tab) => {
+    navigate(`/dastafka/${tab}`);
   };
 
   return (
@@ -220,11 +231,11 @@ function DeliveryPanel({ token }) {
               <h1 className="text-xl font-bold text-gray-900">TechCourier</h1>
             </div>
             <div className="flex items-center space-x-2">
-              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                isAvailable 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-red-100 text-red-800'
-              }`}>
+              <div
+                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  isAvailable ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                }`}
+              >
                 {isAvailable ? t.available : t.busy}
               </div>
             </div>
@@ -241,7 +252,24 @@ function DeliveryPanel({ token }) {
 
       {/* Main Content */}
       <main className="max-w-md mx-auto pb-20">
-        {renderContent()}
+        <Routes>
+          <Route
+            path="/dashboard"
+            element={
+              <Dashboard
+                t={t}
+                location={location}
+                isAvailable={isAvailable}
+                setIsAvailable={setIsAvailable}
+                orders={orders}
+              />
+            }
+          />
+          <Route path="/orders" element={<Orders t={t} orders={orders} setOrders={setOrders} />} />
+          <Route path="/profile" element={<Profile t={t} />} />
+          <Route path="/settings" element={<Settings t={t} language={language} setLanguage={setLanguage} />} />
+          <Route path="*" element={<Navigate to="/dastafka/dashboard" replace />} />
+        </Routes>
       </main>
 
       {/* Bottom Navigation */}
@@ -249,44 +277,36 @@ function DeliveryPanel({ token }) {
         <div className="max-w-md mx-auto px-4">
           <div className="flex items-center justify-around py-2">
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => handleTabChange('dashboard')}
               className={`flex flex-col items-center justify-center py-2 px-4 rounded-lg transition-colors ${
-                activeTab === 'dashboard' 
-                  ? 'text-blue-600 bg-blue-50' 
-                  : 'text-gray-600 hover:text-gray-900'
+                activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <MapPin className="w-5 h-5" />
               <span className="text-xs mt-1">{t.dashboard}</span>
             </button>
             <button
-              onClick={() => setActiveTab('orders')}
+              onClick={() => handleTabChange('orders')}
               className={`flex flex-col items-center justify-center py-2 px-4 rounded-lg transition-colors ${
-                activeTab === 'orders' 
-                  ? 'text-blue-600 bg-blue-50' 
-                  : 'text-gray-600 hover:text-gray-900'
+                activeTab === 'orders' ? 'text-blue-600 bg-blue-50' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <Package className="w-5 h-5" />
               <span className="text-xs mt-1">{t.orders}</span>
             </button>
             <button
-              onClick={() => setActiveTab('profile')}
+              onClick={() => handleTabChange('profile')}
               className={`flex flex-col items-center justify-center py-2 px-4 rounded-lg transition-colors ${
-                activeTab === 'profile' 
-                  ? 'text-blue-600 bg-blue-50' 
-                  : 'text-gray-600 hover:text-gray-900'
+                activeTab === 'profile' ? 'text-blue-600 bg-blue-50' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <User className="w-5 h-5" />
               <span className="text-xs mt-1">{t.profile}</span>
             </button>
             <button
-              onClick={() => setActiveTab('settings')}
+              onClick={() => handleTabChange('settings')}
               className={`flex flex-col items-center justify-center py-2 px-4 rounded-lg transition-colors ${
-                activeTab === 'settings' 
-                  ? 'text-blue-600 bg-blue-50' 
-                  : 'text-gray-600 hover:text-gray-900'
+                activeTab === 'settings' ? 'text-blue-600 bg-blue-50' : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               <SettingsIcon className="w-5 h-5" />

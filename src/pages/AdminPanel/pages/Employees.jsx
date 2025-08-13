@@ -84,7 +84,6 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       throw new Error("Unauthorized: Session expired. Please login again.");
     }
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}`);
     }
     return response;
   };

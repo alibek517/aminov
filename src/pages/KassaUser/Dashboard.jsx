@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { DollarSign, AlertTriangle } from "lucide-react";
 
@@ -18,9 +18,8 @@ const StatCard = ({ title, value }) => (
 
 const Notification = ({ message, type, onClose }) => (
   <div
-    className={`p-4 rounded ${
-      type === "error" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
-    } mb-4`}
+    className={`p-4 rounded ${type === "error" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"
+      } mb-4`}
   >
     {message}
     <button className="ml-4 text-sm underline" onClick={onClose}>
@@ -37,8 +36,8 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
-  const [startDate, setStartDate] = useState("2025-08-12"); // Default to current day
-  const [endDate, setEndDate] = useState("2025-08-12"); // Default to current day
+  const [startDate, setStartDate] = useState("2025-08-12");
+  const [endDate, setEndDate] = useState("2025-08-12");
   const navigate = useNavigate();
   const token = localStorage.getItem("access_token");
   const userId = localStorage.getItem("userId");
@@ -182,6 +181,24 @@ const Dashboard = () => {
 
   const cashInRegister = calculateCashInRegister();
 
+  // Memoize filtered transactions for the "Сўнгги Сотиш" table
+  const filteredTransactions = useMemo(() => {
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    return transactions
+      .filter((transaction) => {
+        const txDate = new Date(transaction.createdAt);
+        return (
+          transaction.userId === Number(userId) &&
+          txDate >= start &&
+          txDate <= end
+        );
+      })
+      .slice(0, 5);
+  }, [transactions, userId, startDate, endDate]);
+
   const lowStockItems = products
     .filter((product) => product.quantity < 5)
     .slice(0, 5)
@@ -199,7 +216,35 @@ const Dashboard = () => {
           <p className="text-gray-600 mt-1">Бугунги санага умумий маълумотлар</p>
         </div>
         <div className="text-sm text-gray-500">
-          Охирги янгиланиш: {new Date().toLocaleString("uz-Cyrl-UZ")}
+          <button
+            style={{
+              border: '2px solid #4A90E2',
+              padding: '12px 24px',
+              backgroundColor: '#fff',
+              borderRadius: '25px',
+              fontSize: '16px',
+              color: '#4A90E2',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+            }}
+            onMouseOver={(e) => {
+              e.target.style.backgroundColor = '#4A90E2';
+              e.target.style.color = '#fff';
+              e.target.style.boxShadow= '0px 0px 150px rgba(0, 0, 0)'
+              ;
+            }}
+            onMouseOut={(e) => {
+              e.target.style.backgroundColor = '#fff';
+              e.target.style.color = '#4A90E2';
+              e.target.style.boxShadow= '0 4px 6px rgba(0, 0, 0, 0.1)'
+            }}
+          >
+            Сотувчилар маоши
+          </button>
+
+
         </div>
       </div>
 
@@ -255,10 +300,10 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-6 border-b border-gray-100">
-                <h3 className="text-lg font-semibold text-gray-900">Сўнгги Транзакциялар</h3>
+                <h3 className="text-lg font-semibold text-gray-900">Сўнгги Сотиш</h3>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[700px]">
+                <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -279,8 +324,8 @@ const Dashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {transactions.slice(0, 5).length > 0 ? (
-                      transactions.slice(0, 5).map((transaction) => (
+                    {filteredTransactions.length > 0 ? (
+                      filteredTransactions.map((transaction) => (
                         <tr
                           key={transaction.id}
                           className="hover:bg-gray-50 transition-colors duration-150"

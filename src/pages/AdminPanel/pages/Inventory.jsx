@@ -117,7 +117,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
     }
 
     return response;

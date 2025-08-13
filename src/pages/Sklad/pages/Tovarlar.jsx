@@ -2,6 +2,19 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
+const Notification = ({ message, type, onClose }) => (
+  <div
+    className={`p-4 rounded-lg shadow-md ${
+      type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+    } mb-4 transition-all duration-300 ease-in-out`}
+  >
+    {message}
+    <button className="ml-4 text-sm underline hover:text-gray-900" onClick={onClose}>
+      Yopish
+    </button>
+  </div>
+);
+
 const Kirim = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [products, setProducts] = useState([]);
@@ -39,7 +52,17 @@ const Kirim = () => {
     const fetchBranches = async () => {
       try {
         const branchesRes = await axiosWithAuth({ method: 'get', url: `${API_URL}/branches` });
-        setBranches(branchesRes.data);
+        const branchesData = branchesRes.data;
+        setBranches(branchesData);
+
+        // Avtomatik ravishda "Ombor" filialini tanlash
+        const omborBranch = branchesData.find((b) => b.name === 'Ombor');
+        if (omborBranch) {
+          setSelectedBranchId(omborBranch.id.toString());
+          setBranch(omborBranch.id.toString());
+        } else {
+          setNotification({ message: '"Ombor" filiali topilmadi', type: 'error' });
+        }
       } catch (err) {
         setNotification({ message: err.message || 'Filiallarni yuklashda xatolik', type: 'error' });
       }
@@ -63,7 +86,10 @@ const Kirim = () => {
       const queryParams = new URLSearchParams();
       queryParams.append('branchId', branchId.toString());
       queryParams.append('includeZeroQuantity', 'true');
-      const productsRes = await axiosWithAuth({ method: 'get', url: `${API_URL}/products?${queryParams.toString()}` });
+      const productsRes = await axiosWithAuth({
+        method: 'get',
+        url: `${API_URL}/products?${queryParams.toString()}`,
+      });
       setProducts(productsRes.data);
     } catch (err) {
       setNotification({ message: err.message || 'Ma\'lumotlarni yuklashda xatolik', type: 'error' });
@@ -73,27 +99,30 @@ const Kirim = () => {
   }, [navigate, selectedBranchId]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (selectedBranchId) {
+      loadData();
+    }
+  }, [loadData, selectedBranchId]);
 
   const validateFields = () => {
     const newErrors = {};
     if (!selectedProductId) newErrors.product = 'Tovar tanlanishi shart';
     if (!branch) newErrors.branch = 'Filial tanlanishi shart';
-    if (!quantity || isNaN(quantity) || Number(quantity) <= 0) newErrors.quantity = 'Miqdor 0 dan katta bo\'lishi kerak';
+    if (!quantity || isNaN(quantity) || Number(quantity) <= 0)
+      newErrors.quantity = "Miqdor 0 dan katta bo'lishi kerak";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleAddStock = async () => {
     if (!validateFields()) {
-      setNotification({ message: 'Barcha maydonlarni to\'g\'ri to\'ldiring', type: 'error' });
+      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
       return;
     }
     setSubmitting(true);
     try {
       const userId = Number(localStorage.getItem('userId')) || 1;
-      const selectedProduct = products.find(p => p.id === Number(selectedProductId));
+      const selectedProduct = products.find((p) => p.id === Number(selectedProductId));
       const payload = {
         userId,
         type: 'STOCK_ADJUSTMENT',
@@ -101,12 +130,14 @@ const Kirim = () => {
         total: 0,
         finalTotal: 0,
         branchId: Number(branch),
-        items: [{
-          productId: Number(selectedProductId),
-          quantity: Number(quantity),
-          price: selectedProduct.price || 0,
-          total: 0,
-        }],
+        items: [
+          {
+            productId: Number(selectedProductId),
+            quantity: Number(quantity),
+            price: selectedProduct.price || 0,
+            total: 0,
+          },
+        ],
       };
       console.log('Submitting STOCK_ADJUSTMENT transaction:', payload);
       await axiosWithAuth({
@@ -114,12 +145,15 @@ const Kirim = () => {
         url: `${API_URL}/transactions`,
         data: payload,
       });
-      setNotification({ message: 'Miqdor muvaffaqiyatli qo\'shildi', type: 'success' });
+      setNotification({ message: "Miqdor muvaffaqiyatli qo'shildi", type: 'success' });
       setModalOpen(false);
       resetForm();
       loadData();
     } catch (err) {
-      setNotification({ message: err.response?.data?.message || 'Miqdor qo\'shishda xatolik', type: 'error' });
+      setNotification({
+        message: err.response?.data?.message || "Miqdor qo'shishda xatolik",
+        type: 'error',
+      });
     } finally {
       setSubmitting(false);
     }
@@ -127,7 +161,7 @@ const Kirim = () => {
 
   const resetForm = () => {
     setSelectedProductId('');
-    setBranch('');
+    setBranch(selectedBranchId || '');
     setQuantity('');
     setErrors({});
   };
@@ -138,109 +172,125 @@ const Kirim = () => {
   };
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Kirim</h1>
+    <div className="p-6 bg-gray-50 min-h-screen">
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">Kirim</h1>
       <select
         value={selectedBranchId}
-        onChange={(e) => setSelectedBranchId(e.target.value)}
-        className="w-full p-2 border rounded mb-4"
+        onChange={(e) => {
+          setSelectedBranchId(e.target.value);
+          setBranch(e.target.value);
+        }}
+        className="w-full max-w-xs p-2 border border-gray-300 rounded-md mb-6 bg-white text-gray-700 focus:outline-none focus:border-blue-500 transition-all duration-200"
       >
         <option value="">Filial tanlang</option>
         {branches.map((b) => (
-          <option key={b.id} value={b.id}>{b.name}</option>
+          <option key={b.id} value={b.id}>
+            {b.name}
+          </option>
         ))}
       </select>
-      {notification && (
-        <div className={`p-4 rounded ${notification.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'} mb-4`}>
-          {notification.message}
-          <button className="ml-4 text-sm underline" onClick={() => setNotification(null)}>Yopish</button>
-        </div>
-      )}
+      {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
       <button
         onClick={() => setModalOpen(true)}
-        className="bg-blue-500 text-white p-2 rounded mb-4"
+        className="bg-blue-500 text-white px-4 py-2 rounded-md mb-6 hover:bg-blue-600 transition-all duration-200"
       >
         Miqdor Qo'shish
       </button>
       {loading ? (
-        <div className="text-center">Yuklanmoqda...</div>
+        <div className="text-center text-gray-600">Yuklanmoqda...</div>
       ) : (
         <>
-          <table className="w-full bg-white border rounded mb-4">
-            <thead>
-              <tr className="bg-gray-200">
-                <th className="p-2 text-left">ID</th>
-                <th className="p-2 text-left">Nomi</th>
-                <th className="p-2 text-left">Filial</th>
-                <th className="p-2 text-left">Miqdor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.length > 0 ? (
-                products.map((product) => (
-                  <tr key={product.id} className="border-b">
-                    <td className="p-2">#{product.id}</td>
-                    <td className="p-2">{product.name}</td>
-                    <td className="p-2">{product.branch?.name || 'Noma\'lum'}</td>
-                    <td className="p-2">{formatQuantity(product.quantity)}</td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="4" className="p-2 text-center">Tovarlar topilmadi</td>
+          <div className="overflow-x-auto">
+            <table className="w-full bg-white border border-gray-200 rounded-lg shadow-md">
+              <thead>
+                <tr className="bg-gray-100 text-gray-700">
+                  <th className="p-4 text-left font-semibold">ID</th>
+                  <th className="p-4 text-left font-semibold">Nomi</th>
+                  <th className="p-4 text-left font-semibold">Filial</th>
+                  <th className="p-4 text-left font-semibold">Miqdor</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {products.length > 0 ? (
+                  products.map((product) => (
+                    <tr key={product.id} className="border-b border-gray-200 last:border-none">
+                      <td className="p-4 text-gray-800">#{product.id}</td>
+                      <td className="p-4 text-gray-800">{product.name}</td>
+                      <td className="p-4 text-gray-800">{product.branch?.name || "Noma'lum"}</td>
+                      <td className="p-4 text-gray-800">{formatQuantity(product.quantity)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="p-4 text-center text-gray-600">
+                      Tovarlar topilmadi
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
           {modalOpen && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded p-4 w-full max-w-md">
+              <div className="bg-white rounded-lg p-6 w-full max-w-md transform transition-all duration-300 scale-95 modal-open:scale-100">
                 <div className="flex justify-between mb-4">
-                  <h3 className="text-lg font-bold">Miqdor Qo'shish</h3>
-                  <button onClick={closeModal} className="text-gray-600">X</button>
+                  <h3 className="text-xl font-semibold text-gray-800">Miqdor Qo'shish</h3>
+                  <button onClick={closeModal} className="text-gray-600 hover:text-gray-900">
+                    X
+                  </button>
                 </div>
                 <table className="w-full text-sm">
                   <tbody>
                     <tr>
-                      <td className="py-1">Tovar</td>
+                      <td className="py-2 text-gray-700">Tovar</td>
                       <td>
                         <select
                           value={selectedProductId}
                           onChange={(e) => setSelectedProductId(e.target.value)}
-                          className={`w-full p-1 border rounded ${errors.product ? 'border-red-500' : ''}`}
+                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                            errors.product ? 'border-red-500' : 'border-gray-300'
+                          } transition-all duration-200`}
                         >
                           <option value="">Tanlang</option>
                           {products.map((p) => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
                           ))}
                         </select>
                         {errors.product && <span className="text-red-500 text-xs">{errors.product}</span>}
                       </td>
                     </tr>
                     <tr>
-                      <td className="py-1">Filial</td>
+                      <td className="py-2 text-gray-700">Filial</td>
                       <td>
                         <select
                           value={branch}
                           onChange={(e) => setBranch(e.target.value)}
-                          className={`w-full p-1 border rounded ${errors.branch ? 'border-red-500' : ''}`}
+                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                            errors.branch ? 'border-red-500' : 'border-gray-300'
+                          } transition-all duration-200`}
                         >
                           <option value="">Tanlang</option>
                           {branches.map((b) => (
-                            <option key={b.id} value={b.id}>{b.name}</option>
+                            <option key={b.id} value={b.id}>
+                              {b.name}
+                            </option>
                           ))}
                         </select>
                         {errors.branch && <span className="text-red-500 text-xs">{errors.branch}</span>}
                       </td>
                     </tr>
                     <tr>
-                      <td className="py-1">Miqdor</td>
+                      <td className="py-2 text-gray-700">Miqdor</td>
                       <td>
                         <input
                           type="number"
                           value={quantity}
                           onChange={(e) => setQuantity(e.target.value)}
-                          className={`w-full p-1 border rounded ${errors.quantity ? 'border-red-500' : ''}`}
+                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                            errors.quantity ? 'border-red-500' : 'border-gray-300'
+                          } transition-all duration-200`}
                           min="1"
                         />
                         {errors.quantity && <span className="text-red-500 text-xs">{errors.quantity}</span>}
@@ -252,13 +302,13 @@ const Kirim = () => {
                   <button
                     onClick={handleAddStock}
                     disabled={submitting}
-                    className="flex-1 bg-blue-500 text-white p-2 rounded disabled:bg-gray-400"
+                    className="flex-1 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-gray-400 transition-all duration-200"
                   >
                     {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
                   </button>
                   <button
                     onClick={closeModal}
-                    className="flex-1 bg-gray-200 p-2 rounded"
+                    className="flex-1 bg-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 transition-all duration-200"
                   >
                     Bekor
                   </button>

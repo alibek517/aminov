@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Package,
@@ -31,7 +31,12 @@ import Settings from "./pages/Settings";
 import Logout from "../Chiqish/logout";
 
 export default function AdminPanel() {
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Initialize activeTab based on the current URL path
+  const initialTab = location.pathname.split("/").pop() || "dashboard";
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState(() => {
@@ -46,7 +51,17 @@ export default function AdminPanel() {
   );
   const [userName, setUserName] = useState("");
 
-  const navigate = useNavigate();
+  useEffect(() => {
+    // Redirect only if the URL is exactly /admin or /admin/
+    if (location.pathname === "/admin" || location.pathname === "/admin/") {
+      navigate("/admin/dashboard", { replace: true });
+      setActiveTab("dashboard");
+    } else {
+      // Ensure activeTab matches the current URL path on refresh
+      const currentTab = location.pathname.split("/").pop() || "dashboard";
+      setActiveTab(currentTab);
+    }
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     const user = localStorage.getItem("user");
@@ -126,7 +141,7 @@ export default function AdminPanel() {
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
+      throw new Error("Network response was not ok");
     }
 
     return response;
@@ -150,8 +165,7 @@ export default function AdminPanel() {
           localStorage.setItem("selectedBranchId", "");
         }
       } catch (err) {
-        setError(err.message || "Failed to fetch branches");
-        console.error("Error fetching branches:", err);
+        setError("Failed to fetch branches");
       }
     };
 
@@ -177,14 +191,14 @@ export default function AdminPanel() {
   }, [selectedBranchId]);
 
   const navigation = [
-    { id: "dashboard", name: "Бошқарув панели", icon: LayoutDashboard },
-    { id: "inventory", name: "Инвентар", icon: Package },
-    { id: "employees", name: "Ходимлар", icon: UserCog },
-    { id: "debts", name: "Қарздорлик", icon: CreditCard },
-    { id: "branches", name: "Филиаллар", icon: Building2 },
-    { id: "reports", name: "Ҳисобот", icon: TrendingUp },
-    { id: "geolocation", name: "Доставщиклар", icon: MapPin },
-    { id: "settings", name: "Созламалар", icon: SettingsIcon },
+    { id: "dashboard", name: "Бошқарув панели", icon: LayoutDashboard, path: "/admin/dashboard" },
+    { id: "inventory", name: "Инвентар", icon: Package, path: "/admin/inventory" },
+    { id: "employees", name: "Ходимлар", icon: UserCog, path: "/admin/employees" },
+    { id: "debts", name: "Қарздорлик", icon: CreditCard, path: "/admin/debts" },
+    { id: "branches", name: "Филиаллар", icon: Building2, path: "/admin/branches" },
+    { id: "reports", name: "Ҳисобот", icon: TrendingUp, path: "/admin/reports" },
+    { id: "geolocation", name: "Доставщиклар", icon: MapPin, path: "/admin/geolocation" },
+    { id: "settings", name: "Созламалар", icon: SettingsIcon, path: "/admin/settings" },
   ];
 
   const handleLogoutConfirm = () => {
@@ -242,7 +256,6 @@ export default function AdminPanel() {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const userNamee = user.name || "Dr. Rodriguez";
   const userRole = localStorage.getItem("userRole") || "Kassir";
-  // Generate initials from the name
   const initials = userName
     .split(" ")
     .map((word) => word.charAt(0))
@@ -284,6 +297,7 @@ export default function AdminPanel() {
                 onClick={() => {
                   setActiveTab(item.id);
                   setSidebarOpen(false);
+                  navigate(item.path);
                 }}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${
                   activeTab === item.id

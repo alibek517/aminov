@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Menu, Home, TrendingUp, TrendingDown, BarChart3, Box, Settings, LogOut, Bell, MapPin, Users } from 'lucide-react';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { Home, TrendingUp, TrendingDown, BarChart3, Box, Settings, LogOut, Bell, Users } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Chiqim from './pages/Chiqim';
 import Tovarlar from './pages/Tovarlar';
 import TovarlarRoyxati from './pages/TovarlarRoyxati';
 import Hisobotlar from './pages/Hisobotlar';
 import Customers from './pages/Customers';
+import Logout from '../Chiqish/logout';
 
 // AuthContext
 export const AuthContext = React.createContext({
@@ -38,30 +39,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// Logout Modal Component
-const Logout = ({ onConfirm, onCancel }) => (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-lg p-6 w-full max-w-sm">
-      <h3 className="text-lg font-bold mb-4">Tizimdan chiqish</h3>
-      <p className="text-gray-600 mb-4">Haqiqatan ham tizimdan chiqmoqchimisiz?</p>
-      <div className="flex gap-2">
-        <button
-          onClick={onConfirm}
-          className="flex-1 bg-red-500 text-white p-2 rounded hover:bg-red-600"
-        >
-          Chiqish
-        </button>
-        <button
-          onClick={onCancel}
-          className="flex-1 bg-gray-200 p-2 rounded hover:bg-gray-300"
-        >
-          Bekor
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
 function SkladPanel() {
   const [token, setToken] = useState(localStorage.getItem('access_token') || 'mock-token');
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -75,18 +52,28 @@ function SkladPanel() {
   const [userName, setUserName] = useState('Test User');
 
   const navigate = useNavigate();
+  const location = useLocation();
 
   const navigation = [
-    { id: 'dashboard', name: 'Dashboard', icon: Home },
-    { id: 'tovarlar', name: 'Kirim', icon: TrendingUp },
-    { id: 'chiqim', name: 'Chiqim', icon: TrendingDown },
-    { id: 'tovarlarroyxati', name: 'Tovarlar Ro\'yxati', icon: Box },
-    { id: 'hisobotlar', name: 'Hisobotlar', icon: BarChart3 },
-    { id: 'customers', name: 'Mijozlar', icon: Users },
-    { id: 'geolocation', name: 'Geolocation', icon: MapPin },
+    { id: 'dashboard', name: 'Dashboard', icon: Home, path: '/sklad/dashboard' },
+    { id: 'tovarlar', name: 'Kirim', icon: TrendingUp, path: '/sklad/tovarlar' },
+    { id: 'chiqim', name: 'Chiqim', icon: TrendingDown, path: '/sklad/chiqim' },
+    { id: 'tovarlarroyxati', name: "Tovarlar Ro'yxati", icon: Box, path: '/sklad/tovarlarroyxati' },
+    { id: 'hisobotlar', name: 'Hisobotlar', icon: BarChart3, path: '/sklad/hisobotlar' },
+    { id: 'customers', name: 'Mijozlar', icon: Users, path: '/sklad/customers' },
   ];
 
   useEffect(() => {
+    // Set activeTab based on the current URL path
+    const currentPath = location.pathname;
+    const activeNav = navigation.find((item) => item.path === currentPath);
+    if (activeNav) {
+      setActiveTab(activeNav.id);
+    } else if (currentPath === '/sklad' || currentPath === '/sklad/') {
+      setActiveTab('dashboard');
+      navigate('/sklad/dashboard', { replace: true });
+    }
+
     const user = localStorage.getItem('user');
     if (user) {
       try {
@@ -129,7 +116,7 @@ function SkladPanel() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [selectedBranchId, token]);
+  }, [selectedBranchId, token, location.pathname, navigate]);
 
   useEffect(() => {
     localStorage.setItem('selectedBranchId', selectedBranchId);
@@ -144,7 +131,7 @@ function SkladPanel() {
     setToken(null);
     setActiveTab('dashboard');
     setShowLogoutModal(false);
-    navigate('/');
+    navigate('/sklad');
   };
 
   const handleLogoutCancel = () => {
@@ -153,6 +140,12 @@ function SkladPanel() {
 
   const handleBranchChange = (e) => {
     setSelectedBranchId(e.target.value);
+    // No navigation; content re-renders with new selectedBranchId
+  };
+
+  const handleNavigation = (item) => {
+    setActiveTab(item.id);
+    navigate(item.path);
   };
 
   const renderContent = () => {
@@ -169,8 +162,6 @@ function SkladPanel() {
         return <Hisobotlar selectedBranchId={selectedBranchId} />;
       case 'customers':
         return <Customers selectedBranchId={selectedBranchId} />;
-      case 'geolocation':
-        return <div className="p-4">Geolocation not implemented</div>;
       default:
         return <Dashboard selectedBranchId={selectedBranchId} />;
     }
@@ -179,7 +170,6 @@ function SkladPanel() {
   return (
     <AuthContext.Provider value={{ token, setToken }}>
       <div className="flex min-h-screen bg-gray-100">
-        {/* Sidebar */}
         <div className="fixed top-0 left-0 h-full w-64 bg-white shadow-md z-50">
           <div className="flex items-center p-4 border-b">
             <div className="flex items-center space-x-2">
@@ -197,8 +187,10 @@ function SkladPanel() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center space-x-3 p-2 rounded ${activeTab === item.id ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                  onClick={() => handleNavigation(item)}
+                  className={`w-full flex items-center space-x-3 p-2 rounded ${
+                    activeTab === item.id ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   <Icon className="w-5 h-5" />
                   <span>{item.name}</span>
@@ -218,41 +210,29 @@ function SkladPanel() {
           </div>
         </div>
 
-        {/* Logout Modal */}
         {showLogoutModal && (
-          <Logout
-            onConfirm={handleLogoutConfirm}
-            onCancel={handleLogoutCancel}
-          />
+          <Logout onConfirm={handleLogoutConfirm} onCancel={handleLogoutCancel} />
         )}
 
-        {/* Main Content */}
         <div className="flex-1 flex flex-col ml-64">
           <header className="bg-white shadow-sm">
-            <div className="px-6 py-4 flex justify-between items-center">
-              <select
-                value={selectedBranchId}
-                onChange={handleBranchChange}
-                className="border rounded p-2"
-                disabled={error}
-              >
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-              {error && <span className="text-red-500 text-sm">{error}</span>}
+            <div className="flex items-center justify-between p-4">
               <div className="flex items-center space-x-4">
-                <span className="text-sm text-gray-600">{currentTime}</span>
-                <Bell className="w-5 h-5 text-gray-600" />
-                <div className="flex items-center">
-                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white">
-                    {userName.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="ml-2 text-sm text-gray-700">{userName}</span>
-                </div>
+                <select
+                  value={selectedBranchId}
+                  onChange={handleBranchChange}
+                  className="border rounded p-2"
+                >
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+                <span>{userName}</span>
+                <span>{currentTime}</span>
               </div>
+              <Bell className="w-6 h-6 text-gray-600" />
             </div>
           </header>
 

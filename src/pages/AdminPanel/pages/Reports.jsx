@@ -68,7 +68,6 @@ const TransactionReport = () => {
         const errorData = await response.json().catch(() => ({}));
         console.log(response);
         
-        const errorMessage = errorData.message || `HTTP ${response.status}: Failed to fetch transactions`;
         console.error('Fetch error:', errorMessage);
         if (response.status === 401) {
           localStorage.removeItem('access_token');
@@ -110,7 +109,6 @@ const TransactionReport = () => {
 
       if (!transactionResponse.ok) {
         const errorData = await transactionResponse.json().catch(() => ({}));
-        const errorMessage = errorData.message || `HTTP ${transactionResponse.status}: Failed to fetch transaction details`;
         console.error('Fetch error:', errorMessage);
         if (transactionResponse.status === 401) {
           localStorage.removeItem('access_token');
@@ -133,7 +131,6 @@ const TransactionReport = () => {
 
       if (!historyResponse.ok) {
         const errorData = await historyResponse.json().catch(() => ({}));
-        const errorMessage = errorData.message || `HTTP ${historyResponse.status}: Failed to fetch stock history`;
         console.error('Fetch error:', errorMessage);
         throw new Error(errorMessage);
       }

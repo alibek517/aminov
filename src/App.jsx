@@ -8,6 +8,7 @@ import Menyu from './pages/KassaUser/Menyu';
 import Logout from './pages/Chiqish/logout';
 import Dastafka from './pages/Dastafka/DeliveryPanel';
 
+
 function App() {
   const [role, setRole] = useState(null);
   const [token, setToken] = useState(null);
@@ -16,7 +17,6 @@ function App() {
   const [locationPermission, setLocationPermission] = useState(null);
   const [locationError, setLocationError] = useState('');
 
-  // Geolokatsiya olish funksiyasi
   const getCurrentLocation = () => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
@@ -53,16 +53,14 @@ function App() {
         {
           enableHighAccuracy: true,
           timeout: 10000,
-          maximumAge: 300000 // 5 minut
+          maximumAge: 300000 
         }
       );
     });
   };
 
-  // Manzilni olish funksiyasi (Reverse Geocoding)
   const getAddressFromCoordinates = async (latitude, longitude) => {
     try {
-      // OpenStreetMap Nominatim API (bepul)
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&accept-language=uz,en`
       );
@@ -79,7 +77,6 @@ function App() {
     }
   };
 
-  // Socket ulanishini o'rnatish
   useEffect(() => {
     const savedRole = localStorage.getItem('userRole');
     const savedToken = localStorage.getItem('access_token');
@@ -103,7 +100,6 @@ function App() {
           setRole(savedRole);
           setToken(savedToken);
           
-          // Socket ulanishini o'rnatish
           initializeSocket(savedToken);
         })
         .catch((error) => {
@@ -122,7 +118,6 @@ function App() {
     }
   }, []);
 
-  // Socket ulanishini yaratish
   const initializeSocket = (userToken) => {
     if (socket) {
       socket.disconnect();
@@ -146,15 +141,12 @@ function App() {
       console.log('Socket connected successfully');
       setSocket(socketIo);
       
-      // Geolokatsiya ruxsatini so'rash va locationni yuborish
       requestLocationAndSend(socketIo);
       
-      // Har 30 sekundda lokatsiyani yangilash
       const locationInterval = setInterval(() => {
         updateLocationPeriodically(socketIo);
       }, 30000);
 
-      // Cleanup function
       socketIo.on('disconnect', () => {
         clearInterval(locationInterval);
       });
@@ -169,7 +161,6 @@ function App() {
       console.error('Socket error:', data);
     });
 
-    // Location update confirmation
     socketIo.on('locationUpdateConfirmed', (data) => {
       console.log('Location update confirmed:', data);
     });
@@ -177,7 +168,6 @@ function App() {
     return socketIo;
   };
 
-  // Geolokatsiya ruxsatini so'rash va yuborish
   const requestLocationAndSend = async (socketConnection) => {
     try {
       console.log('Requesting location permission...');
@@ -189,7 +179,6 @@ function App() {
       setLocationPermission('granted');
       setLocationError('');
       
-      // Backend ga lokatsiyani yuborish
       if (socketConnection && socketConnection.connected) {
         socketConnection.emit('updateLocation', {
           latitude: location.latitude,
@@ -205,10 +194,9 @@ function App() {
       setLocationPermission('denied');
       setLocationError(error.message);
       
-      // Lokatsiya olish imkoni bo'lmasa, default lokatsiya bilan online qilish
       if (socketConnection && socketConnection.connected) {
         socketConnection.emit('updateLocation', {
-          latitude: 41.3111, // Toshkent markazi
+          latitude: 41.3111,
           longitude: 69.2797,
           address: 'Toshkent, O\'zbekiston (Default)',
           isOnline: true
@@ -219,7 +207,6 @@ function App() {
     }
   };
 
-  // Davriy ravishda lokatsiyani yangilash
   const updateLocationPeriodically = async (socketConnection) => {
     if (!socketConnection || !socketConnection.connected) return;
 
@@ -237,7 +224,6 @@ function App() {
       console.log('Location updated periodically');
     } catch (error) {
       console.log('Periodic location update failed:', error.message);
-      // Xato bo'lsa ham online holatni saqlash
       socketConnection.emit('updateLocation', {
         latitude: 41.3111,
         longitude: 69.2797,
@@ -247,7 +233,6 @@ function App() {
     }
   };
 
-  // Sahifadan chiqishda offline qilish
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (socket && socket.connected) {
@@ -264,10 +249,8 @@ function App() {
     const handleVisibilityChange = () => {
       if (socket && socket.connected) {
         if (document.hidden) {
-          // Sahifa yashirilganda offline qilish (ixtiyoriy)
           console.log('Page hidden - keeping online status');
         } else {
-          // Sahifa ko'rsatilganda lokatsiyani yangilash
           updateLocationPeriodically(socket);
         }
       }
@@ -341,7 +324,6 @@ function App() {
 
   return (
     <BrowserRouter>
-      {/* Geolokatsiya holati haqida xabar */}
       {locationError && (
         <div style={{
           position: 'fixed',
@@ -368,7 +350,7 @@ function App() {
       <Routes>
         <Route path="/" element={<SignIn />} />
         <Route
-          path="/admin"
+          path="/admin/*"
           element={
             <PrivateRoute allowedRoles={['ADMIN', 'MANAGER']}>
               <AdminPanel token={token} />
@@ -376,7 +358,7 @@ function App() {
           }
         />
         <Route
-          path="/kasir"
+          path="/kasir/*"
           element={
             <PrivateRoute allowedRoles={['CASHIER']}>
               <Menyu token={token} />
@@ -384,7 +366,7 @@ function App() {
           }
         />
         <Route
-          path="/sklad"
+          path="/sklad/*"
           element={
             <PrivateRoute allowedRoles={['WAREHOUSE']}>
               <SkladPanel token={token} />
@@ -392,7 +374,7 @@ function App() {
           }
         />
         <Route
-          path="/dastafka"
+          path="/dastafka/*"
           element={
             <PrivateRoute allowedRoles={['AUDITOR']}>
               <Dastafka token={token} />

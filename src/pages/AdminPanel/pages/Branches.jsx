@@ -48,7 +48,6 @@ const Branches = () => {
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}`);
     }
 
     return response;
@@ -79,7 +78,6 @@ const Branches = () => {
       }));
       setBranches(enhancedBranches);
     } catch (err) {
-      setError(err.message || 'Failed to fetch branches');
       console.error(err);
     }
   };

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, ShoppingCart, AlertTriangle, Package, Settings, LogOut } from 'lucide-react';
-import Logout from '../Chiqish/logout';
-import { useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut } from 'lucide-react';
+import Logout from '../Chiqish/logout'; // Adjust path as needed
 
-const Sidebar = ({ activeTab, setActiveTab }) => {
+const Sidebar = ({ token, socket, locationPermission, locationError }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState(() => {
     return localStorage.getItem('selectedBranchId') || '';
@@ -13,14 +13,13 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
   const navigate = useNavigate();
 
   const menuItems = [
-    { id: 'dashboard', label: 'Boshqarma', icon: BarChart3 },
-    { id: 'sales', label: 'Sotish', icon: ShoppingCart },
-    { id: 'defective', label: 'Brak/Qaytarish', icon: AlertTriangle }
+    { id: 'dashboard', label: 'Boshqarma', icon: BarChart3, path: '/kasir/dashboard' },
+    { id: 'sales', label: 'Sotish', icon: ShoppingCart, path: '/kasir/sales' },
+    { id: 'defective', label: 'Brak/Qaytarish', icon: AlertTriangle, path: '/kasir/defective' },
   ];
 
   // Fetch branches from API
   const fetchWithAuth = async (url, options = {}) => {
-    const token = localStorage.getItem('access_token');
     if (!token) {
       navigate('/login');
       throw new Error('No token found. Please login again.');
@@ -44,7 +43,7 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.statusText}`);
+      throw new Error('Failed to fetch branches.');
     }
 
     return response;
@@ -61,13 +60,12 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
           localStorage.setItem('selectedBranchId', '');
         }
       } catch (err) {
-        setError(err.message || 'Failed to fetch branches');
-        console.error('Error fetching branches:', err);
+        setError(err.message);
       }
     };
 
     fetchBranches();
-  }, [selectedBranchId, navigate]);
+  }, [selectedBranchId, navigate, token]);
 
   // Save selected branch to localStorage
   useEffect(() => {
@@ -91,6 +89,10 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
     localStorage.removeItem('user');
     localStorage.removeItem('userId');
     localStorage.removeItem('selectedBranchId');
+    localStorage.removeItem('access_token');
+    if (socket) {
+      socket.disconnect();
+    }
     navigate('/login');
   };
 
@@ -106,7 +108,6 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userName = user.name || 'Dr. Rodriguez';
   const userRole = localStorage.getItem('userRole') || 'Kassir';
-  // Generate initials from the name
   const initials = userName
     .split(' ')
     .map(word => word.charAt(0))
@@ -126,24 +127,30 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
             <p className="text-sm text-gray-600">Savdo Tizimi</p>
           </div>
         </div>
-       
         {error && <span className="mt-2 text-red-500 text-sm">{error}</span>}
+        {locationError && (
+          <span className="mt-2 text-red-500 text-sm">
+            <strong>Geolokatsiya xatosi:</strong> {locationError}
+          </span>
+        )}
       </div>
       <nav className="flex-1 p-4">
         <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.id}>
-              <button
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                  activeTab === item.id
-                    ? 'bg-[#1178f8] bg-opacity-10 text-[#1178f8] border border-[#1178f8] border-opacity-20'
-                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                }`}
+              <NavLink
+                to={item.path}
+                className={({ isActive }) =>
+                  `w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${
+                    isActive
+                      ? 'bg-[#1178f8] bg-opacity-10 text-[#1178f8] border border-[#1178f8] border-opacity-20'
+                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                  }`
+                }
               >
                 <item.icon className="w-5 h-5" />
                 <span className="font-medium">{item.label}</span>
-              </button>
+              </NavLink>
             </li>
           ))}
         </ul>
