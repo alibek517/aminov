@@ -27,7 +27,6 @@ import Employees from "./pages/Employees";
 import Reports from "./pages/Reports";
 import Debts from "./pages/Debts";
 import Branches from "./pages/Branches";
-import Settings from "./pages/Settings";
 import Logout from "../Chiqish/logout";
 
 export default function AdminPanel() {
@@ -198,7 +197,6 @@ export default function AdminPanel() {
     { id: "branches", name: "Филиаллар", icon: Building2, path: "/admin/branches" },
     { id: "reports", name: "Ҳисобот", icon: TrendingUp, path: "/admin/reports" },
     { id: "geolocation", name: "Доставщиклар", icon: MapPin, path: "/admin/geolocation" },
-    { id: "settings", name: "Созламалар", icon: SettingsIcon, path: "/admin/settings" },
   ];
 
   const handleLogoutConfirm = () => {
@@ -233,6 +231,10 @@ export default function AdminPanel() {
         return <Branches selectedBranchId={selectedBranchId} />;
       case "reports":
         return <Reports selectedBranchId={selectedBranchId} />;
+      case "sales":
+        return <Sales selectedBranchId={selectedBranchId} />;
+      case "customers":
+        return <Customers selectedBranchId={selectedBranchId} />;
       case "geolocation":
         return (
           <LocationApp

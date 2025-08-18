@@ -125,17 +125,17 @@ const Kirim = () => {
       const selectedProduct = products.find((p) => p.id === Number(selectedProductId));
       const payload = {
         userId,
-        type: 'STOCK_ADJUSTMENT',
+        type: 'PURCHASE',
         status: 'PENDING',
-        total: 0,
-        finalTotal: 0,
-        branchId: Number(branch),
+        total: selectedProduct.price * Number(quantity),
+        finalTotal: selectedProduct.price * Number(quantity),
+        fromBranchId: Number(branch),
         items: [
           {
             productId: Number(selectedProductId),
             quantity: Number(quantity),
             price: selectedProduct.price || 0,
-            total: 0,
+            total: selectedProduct.price * Number(quantity),
           },
         ],
       };

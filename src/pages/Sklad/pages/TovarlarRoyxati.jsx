@@ -17,6 +17,8 @@ const Notification = ({ message, type, onClose }) => (
 
 const TovarlarRoyxati = () => {
   const [products, setProducts] = useState([]);
+  const [defectiveProducts, setDefectiveProducts] = useState([]);
+  const [fixedProducts, setFixedProducts] = useState([]);
   const [branches, setBranches] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
@@ -27,6 +29,7 @@ const TovarlarRoyxati = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showDefectiveModal, setShowDefectiveModal] = useState(false);
+  const [showBulkDefectiveModal, setShowBulkDefectiveModal] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadBranch, setUploadBranch] = useState('');
   const [uploadCategory, setUploadCategory] = useState('');
@@ -51,9 +54,13 @@ const TovarlarRoyxati = () => {
   const [createMarketPrice, setCreateMarketPrice] = useState('');
   const [defectiveCount, setDefectiveCount] = useState('');
   const [defectiveDescription, setDefectiveDescription] = useState('');
+  const [bulkDefectiveDescription, setBulkDefectiveDescription] = useState('');
+  const [isFullDefective, setIsFullDefective] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [selectedProducts, setSelectedProducts] = useState([]);
+  const [selectedDefectiveProducts, setSelectedDefectiveProducts] = useState([]);
+  const [activeTab, setActiveTab] = useState('all');
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
   const API_URL = 'https://suddocs.uz';
@@ -68,16 +75,15 @@ const TovarlarRoyxati = () => {
     { value: 'DEFECTIVE', label: 'Nuqsonli' },
     { value: 'RETURNED', label: 'Qaytarilgan' },
     { value: 'CARRIER', label: 'Tashuvchi' },
+    { value: 'FIXED', label: 'Tuzatilgan' },
   ];
 
-  const generateReceipt = (product, quantity, price, branchId) => {
+  const generateReceipt = (product, quantity, price) => {
     const date = new Date().toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
-    const branchName = branches.find(b => b.id.toString() === branchId.toString())?.name || 'Noma\'lum';
     const receiptContent = `
       Chek
       -----------------------
       Tovar: ${product.name}
-      Filial: ${branchName}
       Soni: ${formatQuantity(quantity)}
       Narxi: ${formatPrice(price)}
       Sana: ${date}
@@ -143,7 +149,7 @@ const TovarlarRoyxati = () => {
     fetchBranchesAndCategories();
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadAllProducts = useCallback(async () => {
     setLoading(true);
     const branchId = Number(selectedBranchId);
     const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
@@ -174,11 +180,67 @@ const TovarlarRoyxati = () => {
     }
   }, [searchTerm, selectedBranchId]);
 
+  const loadDefectiveProducts = useCallback(async () => {
+    setLoading(true);
+    const branchId = Number(selectedBranchId);
+    const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
+
+    if (!isValidBranchId) {
+      setDefectiveProducts([]);
+      setSelectedDefectiveProducts([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('branchId', branchId.toString());
+      const defectiveRes = await axiosWithAuth({
+        method: 'get',
+        url: `${API_URL}/products/defective?${queryParams.toString()}`,
+      });
+      setDefectiveProducts(defectiveRes.data);
+      setSelectedDefectiveProducts([]);
+    } catch (err) {
+      setNotification({ message: err.message || "Defective mahsulotlarni yuklashda xatolik", type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedBranchId]);
+
+  const loadFixedProducts = useCallback(async () => {
+    setLoading(true);
+    const branchId = Number(selectedBranchId);
+    const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
+
+    if (!isValidBranchId) {
+      setFixedProducts([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('branchId', branchId.toString());
+      const fixedRes = await axiosWithAuth({
+        method: 'get',
+        url: `${API_URL}/products/fixed?${queryParams.toString()}`,
+      });
+      setFixedProducts(fixedRes.data);
+    } catch (err) {
+      setNotification({ message: err.message || "Fixed mahsulotlarni yuklashda xatolik", type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedBranchId]);
+
   useEffect(() => {
     if (selectedBranchId) {
-      loadData();
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
     }
-  }, [loadData, selectedBranchId]);
+  }, [loadAllProducts, loadDefectiveProducts, loadFixedProducts, selectedBranchId, searchTerm]);
 
   const openEditModal = (product) => {
     setSelectedProduct(product);
@@ -208,12 +270,23 @@ const TovarlarRoyxati = () => {
     setShowCreateModal(true);
   };
 
-  const openDefectiveModal = (product) => {
+  const openDefectiveModal = (product, fullDefective = false) => {
     setSelectedProduct(product);
-    setDefectiveCount(product.quantity.toString());
+    setDefectiveCount(fullDefective ? product.quantity.toString() : '1');
     setDefectiveDescription('');
+    setIsFullDefective(fullDefective);
     setErrors({});
     setShowDefectiveModal(true);
+  };
+
+  const openBulkDefectiveModal = () => {
+    if (selectedProducts.length === 0) {
+      setNotification({ message: "Hech qanday mahsulot tanlanmadi", type: 'error' });
+      return;
+    }
+    setBulkDefectiveDescription('');
+    setErrors({});
+    setShowBulkDefectiveModal(true);
   };
 
   const closeEditModal = () => {
@@ -258,6 +331,13 @@ const TovarlarRoyxati = () => {
     setSelectedProduct(null);
     setDefectiveCount('');
     setDefectiveDescription('');
+    setIsFullDefective(false);
+    setErrors({});
+  };
+
+  const closeBulkDefectiveModal = () => {
+    setShowBulkDefectiveModal(false);
+    setBulkDefectiveDescription('');
     setErrors({});
   };
 
@@ -305,6 +385,15 @@ const TovarlarRoyxati = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const validateBulkDefectiveFields = () => {
+    const newErrors = {};
+    if (!bulkDefectiveDescription.trim()) {
+      newErrors.bulkDefectiveDescription = 'Sabab kiritilishi shart';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!validateFields()) {
@@ -328,28 +417,14 @@ const TovarlarRoyxati = () => {
           categoryId: Number(editCategory),
         },
       });
-
-      if (wasSold) {
-        await axiosWithAuth({
-          method: 'post',
-          url: `${API_URL}/transactions`,
-          data: {
-            productId: selectedProduct.id,
-            productName: editName,
-            quantity: Number(editQuantity),
-            price: Number(editPrice),
-            total: Number(editPrice) * Number(editQuantity),
-            branchId: Number(editBranch),
-            transactionDate: new Date().toISOString(),
-            status: 'SOLD',
-          },
-        });
-        generateReceipt(selectedProduct, Number(editQuantity), Number(editPrice), Number(editBranch));
-      }
-
       setNotification({ message: 'Mahsulot muvaffaqiyatli yangilandi', type: 'success' });
+      if (wasSold) {
+        generateReceipt(selectedProduct, Number(editQuantity), Number(editPrice));
+      }
       closeEditModal();
-      loadData();
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
     } catch (err) {
       setNotification({
         message: err.response?.data?.message || 'Mahsulotni yangilashda xatolik',
@@ -385,7 +460,9 @@ const TovarlarRoyxati = () => {
       });
       setNotification({ message: "Mahsulot muvaffaqiyatli qo'shildi", type: 'success' });
       closeCreateModal();
-      loadData();
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
     } catch (err) {
       setNotification({
         message: err.response?.data?.message || "Mahsulot qo'shishda xatolik",
@@ -396,50 +473,105 @@ const TovarlarRoyxati = () => {
     }
   };
 
-  const handleDefectiveSubmit = async () => {
-    if (!validateDefectiveFields()) {
-      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
+const handleDefectiveSubmit = async () => {
+  if (!validateDefectiveFields()) {
+    setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
+    return;
+  }
+  setSubmitting(true);
+  try {
+    const count = Number(defectiveCount);
+    let url, data;
+    
+    if (isFullDefective || count === selectedProduct.quantity) {
+      url = `${API_URL}/products/${selectedProduct.id}/mark-defective`;
+      data = { 
+        description: defectiveDescription 
+      };
+    } else {
+      url = `${API_URL}/products/${selectedProduct.id}/partial-defective`;
+      data = { 
+        defectiveCount: count, 
+        description: defectiveDescription 
+      };
+    }
+    
+    console.log('Sending request to:', url, 'with data:', data);
+    
+    const response = await axiosWithAuth({
+      method: 'put',
+      url,
+      data,
+    });
+    
+    setNotification({ 
+      message: 'Mahsulot muvaffaqiyatli defective qilib belgilandi', 
+      type: 'success' 
+    });
+    closeDefectiveModal();
+    loadAllProducts();
+    loadDefectiveProducts();
+    loadFixedProducts();
+  } catch (err) {
+    console.error('Error in handleDefectiveSubmit:', err.response?.data || err.message);
+    setNotification({
+      message: err.response?.data?.message || 'Mahsulotni defective qilishda xatolik',
+      type: 'error',
+    });
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+  const handleBulkDefectiveSubmit = async () => {
+    if (!validateBulkDefectiveFields()) {
+      setNotification({ message: "Sabab kiritilishi shart", type: 'error' });
       return;
     }
     setSubmitting(true);
     try {
-      const count = Number(defectiveCount);
-      let url, data;
-      if (count === selectedProduct.quantity) {
-        url = `${API_URL}/products/${selectedProduct.id}/mark-defective`;
-        data = { description: defectiveDescription };
-      } else {
-        url = `${API_URL}/products/${selectedProduct.id}/partial-defective`;
-        data = { defectiveCount: count, description: defectiveDescription };
-      }
-      await axiosWithAuth({
-        method: 'put',
-        url,
-        data,
-      });
-
       await axiosWithAuth({
         method: 'post',
-        url: `${API_URL}/transactions`,
-        data: {
-          productId: selectedProduct.id,
-          productName: selectedProduct.name,
-          quantity: count,
-          price: selectedProduct.price,
-          total: selectedProduct.price * count,
-          branchId: Number(selectedProduct.branchId || editBranch),
-          transactionDate: new Date().toISOString(),
-          status: 'DEFECTIVE',
-          description: defectiveDescription,
-        },
+        url: `${API_URL}/products/bulk-defective`,
+        data: { ids: selectedProducts.map((id) => id.toString()), description: bulkDefectiveDescription },
       });
-
-      setNotification({ message: 'Mahsulot muvaffaqiyatli defective qilib belgilandi', type: 'success' });
-      closeDefectiveModal();
-      loadData();
+      setNotification({ message: 'Tanlangan mahsulotlar defective qilib belgilandi', type: 'success' });
+      closeBulkDefectiveModal();
+      setSelectedProducts([]);
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || 'Mahsulotni defective qilishda xatolik',
+        message: err.response?.data?.message || 'Bulk defective qilishda xatolik',
+        type: 'error',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkRestore = async () => {
+    if (selectedDefectiveProducts.length === 0) {
+      setNotification({ message: "Hech qanday mahsulot tanlanmadi", type: 'error' });
+      return;
+    }
+    if (!window.confirm(`${selectedDefectiveProducts.length} ta defective mahsulotni tuzatishni xohlaysizmi?`)) return;
+    setSubmitting(true);
+    try {
+      await axiosWithAuth({
+        method: 'post',
+        url: `${API_URL}/products/bulk-restore-defective`,
+        data: { ids: selectedDefectiveProducts.map((id) => id.toString()) },
+      });
+      setNotification({ message: 'Tanlangan defective mahsulotlar tuzatildi', type: 'success' });
+      setSelectedDefectiveProducts([]);
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
+    } catch (err) {
+      setNotification({
+        message: err.response?.data?.message || 'Bulk tuzatishda xatolik',
         type: 'error',
       });
     } finally {
@@ -456,7 +588,9 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products/${product.id}`,
       });
       setNotification({ message: "Mahsulot o'chirildi", type: 'success' });
-      loadData();
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
     } catch (err) {
       setNotification({
         message: err.response?.data?.message || "Mahsulotni o'chirishda xatolik",
@@ -478,11 +612,13 @@ const TovarlarRoyxati = () => {
       await axiosWithAuth({
         method: 'delete',
         url: `${API_URL}/products/bulk`,
-        data: { ids: selectedProducts },
+        data: { ids: selectedProducts.map((id) => id.toString()) },
       });
       setNotification({ message: "Tanlangan mahsulotlar o'chirildi", type: 'success' });
       setSelectedProducts([]);
-      loadData();
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
     } catch (err) {
       setNotification({
         message: err.response?.data?.message || "Mahsulotlarni o'chirishda xatolik",
@@ -501,11 +637,27 @@ const TovarlarRoyxati = () => {
     );
   };
 
-  const handleSelectAll = () => {
-    if (selectedProducts.length === products.length) {
-      setSelectedProducts([]);
-    } else {
-      setSelectedProducts(products.map((product) => product.id));
+  const handleSelectDefectiveProduct = (productId) => {
+    setSelectedDefectiveProducts((prev) =>
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId]
+    );
+  };
+
+  const handleSelectAll = (type) => {
+    if (type === 'all') {
+      if (selectedProducts.length === products.length) {
+        setSelectedProducts([]);
+      } else {
+        setSelectedProducts(products.map((product) => product.id));
+      }
+    } else if (type === 'defective') {
+      if (selectedDefectiveProducts.length === defectiveProducts.length) {
+        setSelectedDefectiveProducts([]);
+      } else {
+        setSelectedDefectiveProducts(defectiveProducts.map((product) => product.id));
+      }
     }
   };
 
@@ -537,10 +689,136 @@ const TovarlarRoyxati = () => {
       });
       setNotification({ message: "Mahsulotlar muvaffaqiyatli qo'shildi", type: 'success' });
       closeUploadModal();
-      loadData();
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
     } catch (err) {
       setNotification({
         message: err.response?.data?.message || "Mahsulotlar qo'shishda xatolik",
+        type: 'error',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const renderTable = (data, selected, onSelect, onSelectAll, type) => (
+    <div className="overflow-x-auto">
+      <table className="w-full bg-white border border-gray-200 rounded-lg shadow-md">
+        <thead>
+          <tr className="bg-gray-100 text-gray-700">
+            <th className="p-4 text-left font-semibold">
+              <input
+                type="checkbox"
+                checked={selected.length === data.length && data.length > 0}
+                onChange={() => onSelectAll(type)}
+              />
+            </th>
+            <th className="p-4 text-left font-semibold">ID</th>
+            <th className="p-4 text-left font-semibold">Nomi</th>
+            <th className="p-4 text-left font-semibold">Shtrix</th>
+            <th className="p-4 text-left font-semibold">Model</th>
+            <th className="p-4 text-left font-semibold">Filial</th>
+            <th className="p-4 text-left font-semibold">Kategoriya</th>
+            <th className="p-4 text-left font-semibold">Narx</th>
+            <th className="p-4 text-left font-semibold">Miqdor</th>
+            <th className="p-4 text-left font-semibold">Defective Miqdor</th>
+            <th className="p-4 text-left font-semibold">Status</th>
+            <th className="p-4 text-left font-semibold min-w-[280px] w-72">Amallar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((product) => (
+            <tr key={product.id} className="border-b border-gray-200 last:border-none">
+              <td className="p-4">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(product.id)}
+                  onChange={() => onSelect(product.id)}
+                />
+              </td>
+              <td className="p-4 text-gray-800">#{product.id}</td>
+              <td className="p-4 text-gray-800">{product.name}</td>
+              <td className="p-4 text-gray-800">{product.barcode || 'N/A'}</td>
+              <td className="p-4 text-gray-800">{product.model || 'N/A'}</td>
+              <td className="p-4 text-gray-800">{product.branch?.name || "Noma'lum"}</td>
+              <td className="p-4 text-gray-800">{product.category?.name || "Noma'lum"}</td>
+              <td className="p-4 text-gray-800">{formatPrice(product.price)}</td>
+              <td className="p-4 text-gray-800">{formatQuantity(product.quantity)}</td>
+              <td className="p-4 text-gray-800">{formatQuantity(product.defectiveQuantity)}</td>
+              <td className="p-4 text-gray-800">
+                {statusOptions.find((opt) => opt.value === product.status)?.label || product.status}
+              </td>
+              <td className="p-4 min-w-[280px] w-72">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => openEditModal(product)}
+                    className="btn btn-primary w-full"
+                    disabled={submitting}
+                  >
+                    Tahrirlash
+                  </button>
+                  <button
+                    onClick={() => handleDelete(product)}
+                    className="btn btn-danger w-full"
+                    disabled={submitting}
+                  >
+                    O'chirish
+                  </button>
+                  {type === 'all' && product.quantity > 0 && (
+                    <>
+                      <button
+                        onClick={() => openDefectiveModal(product, true)}
+                        className="btn btn-warning w-full"
+                        disabled={submitting}
+                      >
+                        To'liq Brak
+                      </button>
+                      <button
+                        onClick={() => openDefectiveModal(product, false)}
+                        className="btn btn-orange w-full"
+                        disabled={submitting}
+                      >
+                        Qisman Brak
+                      </button>
+                    </>
+                  )}
+                  {type === 'defective' && product.defectiveQuantity > 0 && (
+                    <button
+                      onClick={() => {
+                        const restoreCount = product.defectiveQuantity;
+                        handleRestore(product.id, restoreCount);
+                      }}
+                      className="btn btn-success w-full"
+                      disabled={submitting}
+                    >
+                      Tuzatish
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const handleRestore = async (id, restoreCount) => {
+    setSubmitting(true);
+    try {
+      await axiosWithAuth({
+        method: 'put',
+        url: `${API_URL}/products/${id}/restore-defective`,
+        data: { restoreCount },
+      });
+      setNotification({ message: 'Defective mahsulot tuzatildi', type: 'success' });
+      loadAllProducts();
+      loadDefectiveProducts();
+      loadFixedProducts();
+    } catch (err) {
+      setNotification({
+        message: err.response?.data?.message || 'Tuzatishda xatolik',
         type: 'error',
       });
     } finally {
@@ -569,35 +847,22 @@ const TovarlarRoyxati = () => {
         ))}
       </select>
       <div className="flex gap-4 mb-6">
-  <button
-    onClick={openCreateModal}
-    className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 disabled:bg-gray-400"
-    disabled={submitting}
-  >
-    Yangi Mahsulot Qo'shish
-  </button>
-  <button
-    onClick={() => fileInputRef.current.click()}
-    className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-gray-400"
-    disabled={submitting}
-  >
-    Excel fayl yuklash
-  </button>
-  <input
-    type="file"
-    accept=".xlsx, .xls"
-    onChange={handleFileUpload}
-    className="hidden"
-    ref={fileInputRef}
-  />
-  <button
-    onClick={handleBulkDelete}
-    className="bg-red-500 text-white px-4 py-2 rounded-md hover:bg-red-600 disabled:bg-gray-400"
-    disabled={submitting || selectedProducts.length === 0}
-  >
-    Hammasini O'chirish
-  </button>
-</div>
+        <button
+          onClick={openCreateModal}
+          className="btn btn-success"
+          disabled={submitting}
+        >
+          Yangi Mahsulot Qo'shish
+        </button>
+        <input
+          type="file"
+          accept=".xlsx, .xls"
+          onChange={handleFileUpload}
+          className="file-input"
+          ref={fileInputRef}
+        />
+        {/* Bulk delete button removed as requested */}
+      </div>
       <input
         type="text"
         value={searchTerm}
@@ -606,320 +871,144 @@ const TovarlarRoyxati = () => {
         className="w-full max-w-xs p-2 border border-gray-300 rounded-md mb-6 bg-white text-gray-700 focus:outline-none focus:border-blue-500"
       />
       {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
+      <div className="flex mb-4">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`${activeTab === 'all' ? 'tab tab-active' : 'tab tab-inactive'} rounded-l-md`}
+        >
+          Barchasi
+        </button>
+        <button
+          onClick={() => setActiveTab('defective')}
+          className={`${activeTab === 'defective' ? 'tab tab-active' : 'tab tab-inactive'}`}
+        >
+          Defective
+        </button>
+        <button
+          onClick={() => setActiveTab('fixed')}
+          className={`${activeTab === 'fixed' ? 'tab tab-active' : 'tab tab-inactive'} rounded-r-md`}
+        >
+          Fixed
+        </button>
+      </div>
       {loading ? (
         <div className="text-center text-gray-600">Yuklanmoqda...</div>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="w-full bg-white border border-gray-200 rounded-lg shadow-md">
-              <thead>
-                <tr className="bg-gray-100 text-gray-700">
-                  <th className="p-4 text-left font-semibold">
-                    <input
-                      type="checkbox"
-                      checked={selectedProducts.length === products.length && products.length > 0}
-                      onChange={handleSelectAll}
-                    />
-                  </th>
-                  <th className="p-4 text-left font-semibold">ID</th>
-                  <th className="p-4 text-left font-semibold">Nomi</th>
-                  <th className="p-4 text-left font-semibold">Shtrix</th>
-                  <th className="p-4 text-left font-semibold">Model</th>
-                  <th className="p-4 text-left font-semibold">Kategoriya</th>
-                  <th className="p-4 text-left font-semibold">Narx</th>
-                  <th className="p-4 text-left font-semibold">Miqdor</th>
-                  <th className="p-4 text-left font-semibold">Defective Miqdor</th>
-                  <th className="p-4 text-left font-semibold">Status</th>
-                  <th className="p-4 text-left font-semibold">Amallar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {products.map((product) => (
-                  <tr key={product.id} className="border-b border-gray-200 last:border-none">
-                    <td className="p-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedProducts.includes(product.id)}
-                        onChange={() => handleSelectProduct(product.id)}
-                      />
-                    </td>
-                    <td className="p-4 text-gray-800">#{product.id}</td>
-                    <td className="p-4 text-gray-800">{product.name}</td>
-                    <td className="p-4 text-gray-800">{product.barcode || 'N/A'}</td>
-                    <td className="p-4 text-gray-800">{product.model || 'N/A'}</td>
-                    <td className="p-4 text-gray-800">{product.category?.name || "Noma'lum"}</td>
-                    <td className="p-4 text-gray-800">{formatPrice(product.price)}</td>
-                    <td className="p-4 text-gray-800">{formatQuantity(product.quantity)}</td>
-                    <td className="p-4 text-gray-800">{formatQuantity(product.defectiveQuantity)}</td>
-                    <td className="p-4 text-gray-800">
-                      {statusOptions.find((opt) => opt.value === product.status)?.label || product.status}
-                    </td>
-                    <td className="p-4">
-                      <button
-                        onClick={() => openEditModal(product)}
-                        className="bg-blue-500 text-white px-3 py-1 rounded-md mr-2 hover:bg-blue-600 disabled:bg-gray-400"
-                        disabled={submitting}
-                      >
-                        Tahrirlash
-                      </button>
-                      <button
-                        onClick={() => handleDelete(product)}
-                        className="bg-red-500 text-white px-3 py-1 rounded-md mr-2 hover:bg-blue-600 disabled:bg-gray-400"
-                        disabled={submitting}
-                      >
-                        O'chirish
-                      </button>
-                      {product.quantity > 0 && (
-                        <button
-                          onClick={() => openDefectiveModal(product)}
-                          className="bg-yellow-500 text-white px-3 py-1 rounded-md hover:bg-yellow-600 disabled:bg-gray-400"
-                          disabled={submitting}
-                        >
-                          Defective
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {showEditModal && selectedProduct && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-4 w-full max-w-md">
-                <div className="flex justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-gray-800">Mahsulotni Tahrirlash</h3>
-                  <button onClick={closeEditModal} className="text-gray-600 hover:text-gray-900">
-                    X
-                  </button>
-                </div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr>
-                      <td className="py-2 text-gray-700">Nomi</td>
-                      <td>
-                        <input
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.name ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        />
-                        {errors.name && <span className="text-red-500 text-xs">{errors.name}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Shtrix</td>
-                      <td>
-                        <input
-                          value={editBarcode}
-                          onChange={(e) => setEditBarcode(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.barcode ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        />
-                        {errors.barcode && <span className="text-red-500 text-xs">{errors.barcode}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Model</td>
-                      <td>
-                        <input
-                          value={editModel}
-                          onChange={(e) => setEditModel(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.model ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        />
-                        {errors.model && <span className="text-red-500 text-xs">{errors.model}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Narx</td>
-                      <td>
-                        <input
-                          type="number"
-                          value={editPrice}
-                          onChange={(e) => setEditPrice(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.price ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        />
-                        {errors.price && <span className="text-red-500 text-xs">{errors.price}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Miqdor</td>
-                      <td>
-                        <input
-                          type="number"
-                          value={editQuantity}
-                          onChange={(e) => setEditQuantity(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.quantity ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        />
-                        {errors.quantity && <span className="text-red-500 text-xs">{errors.quantity}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Status</td>
-                      <td>
-                        <select
-                          value={editStatus}
-                          onChange={(e) => setEditStatus(e.target.value)}
-                          className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
-                        >
-                          {statusOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Filial</td>
-                      <td>
-                        <select
-                          value={editBranch}
-                          onChange={(e) => setEditBranch(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.branch ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        >
-                          <option value="">Tanlang</option>
-                          {branches.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.name}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.branch && <span className="text-red-500 text-xs">{errors.branch}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Kategoriya</td>
-                      <td>
-                        <select
-                          value={editCategory}
-                          onChange={(e) => setEditCategory(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.category ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        >
-                          <option value="">Tanlang</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.category && <span className="text-red-500 text-xs">{errors.category}</span>}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div className="flex gap-2 mt-4">
-                  <button
-                    onClick={handleEditSubmit}
-                    disabled={submitting}
-                    className="flex-1 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-gray-400"
-                  >
-                    {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
-                  </button>
-                  <button
-                    onClick={closeEditModal}
-                    className="flex-1 bg-gray-200 px-4 py-2 rounded-md hover:bg-gray-300"
-                  >
-                    Bekor
-                  </button>
-                </div>
-              </div>
-            </div>
+          {activeTab === 'all' && (
+            <>
+              <button
+                onClick={openBulkDefectiveModal}
+                className="btn btn-warning mb-4"
+                disabled={submitting || selectedProducts.length === 0}
+              >
+                Tanlanganlarni Defective Qilish
+              </button>
+              {renderTable(products, selectedProducts, handleSelectProduct, handleSelectAll, 'all')}
+            </>
           )}
-          {showCreateModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-4 w-full max-w-sm">
-                <div className="flex justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-800">Yangi Mahsulot Qo'shish</h3>
-                  <button onClick={closeCreateModal} className="text-gray-600 hover:text-gray-900 text-base font-bold">
-                    X
-                  </button>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Nomi</label>
+          {activeTab === 'defective' && (
+            <>
+              <button
+                onClick={handleBulkRestore}
+                className="btn btn-success mb-4"
+                disabled={submitting || selectedDefectiveProducts.length === 0}
+              >
+                Tanlanganlarni Tuzatish
+              </button>
+              {renderTable(defectiveProducts, selectedDefectiveProducts, handleSelectDefectiveProduct, handleSelectAll, 'defective')}
+            </>
+          )}
+          {activeTab === 'fixed' && (
+            renderTable(fixedProducts, [], () => {}, () => {}, 'fixed')
+          )}
+        </>
+      )}
+      {showEditModal && selectedProduct && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 border-b pb-3">
+              <h3 className="text-xl font-semibold text-gray-800">Mahsulotni Tahrirlash</h3>
+              <button onClick={closeEditModal} className="text-gray-500 hover:text-gray-700">
+                X
+              </button>
+            </div>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-2 text-gray-700">Nomi</td>
+                  <td>
                     <input
-                      value={createName}
-                      onChange={(e) => setCreateName(e.target.value)}
-                      className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
                         errors.name ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {errors.name && <span className="text-red-500 text-xs">{errors.name}</span>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Shtrix</label>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Shtrix</td>
+                  <td>
                     <input
-                      value={createBarcode}
-                      onChange={(e) => setCreateBarcode(e.target.value)}
-                      className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                      value={editBarcode}
+                      onChange={(e) => setEditBarcode(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
                         errors.barcode ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {errors.barcode && <span className="text-red-500 text-xs">{errors.barcode}</span>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Model</label>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Model</td>
+                  <td>
                     <input
-                      value={createModel}
-                      onChange={(e) => setCreateModel(e.target.value)}
-                      className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                      value={editModel}
+                      onChange={(e) => setEditModel(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
                         errors.model ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {errors.model && <span className="text-red-500 text-xs">{errors.model}</span>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Narx</label>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Narx</td>
+                  <td>
                     <input
                       type="number"
-                      value={createPrice}
-                      onChange={(e) => setCreatePrice(e.target.value)}
-                      className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                      value={editPrice}
+                      onChange={(e) => setEditPrice(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
                         errors.price ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {errors.price && <span className="text-red-500 text-xs">{errors.price}</span>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Bozor Narxi</label>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Miqdor</td>
+                  <td>
                     <input
                       type="number"
-                      value={createMarketPrice}
-                      onChange={(e) => setCreateMarketPrice(e.target.value)}
-                      className="w-full p-1.5 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Miqdor</label>
-                    <input
-                      type="number"
-                      value={createQuantity}
-                      onChange={(e) => setCreateQuantity(e.target.value)}
-                      className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                      value={editQuantity}
+                      onChange={(e) => setEditQuantity(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
                         errors.quantity ? 'border-red-500' : 'border-gray-300'
                       }`}
                     />
                     {errors.quantity && <span className="text-red-500 text-xs">{errors.quantity}</span>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Status</td>
+                  <td>
                     <select
-                      value={createStatus}
-                      onChange={(e) => setCreateStatus(e.target.value)}
-                      className="w-full p-1.5 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
                     >
                       {statusOptions.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -927,13 +1016,15 @@ const TovarlarRoyxati = () => {
                         </option>
                       ))}
                     </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Filial</label>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Filial</td>
+                  <td>
                     <select
-                      value={createBranch}
-                      onChange={(e) => setCreateBranch(e.target.value)}
-                      className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                      value={editBranch}
+                      onChange={(e) => setEditBranch(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
                         errors.branch ? 'border-red-500' : 'border-gray-300'
                       }`}
                     >
@@ -945,13 +1036,15 @@ const TovarlarRoyxati = () => {
                       ))}
                     </select>
                     {errors.branch && <span className="text-red-500 text-xs">{errors.branch}</span>}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Kategoriya</label>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Kategoriya</td>
+                  <td>
                     <select
-                      value={createCategory}
-                      onChange={(e) => setCreateCategory(e.target.value)}
-                      className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                      value={editCategory}
+                      onChange={(e) => setEditCategory(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
                         errors.category ? 'border-red-500' : 'border-gray-300'
                       }`}
                     >
@@ -963,175 +1056,371 @@ const TovarlarRoyxati = () => {
                       ))}
                     </select>
                     {errors.category && <span className="text-red-500 text-xs">{errors.category}</span>}
-                  </div>
-                </div>
-                <div className="flex gap-2 mt-4">
-                  <button
-                    onClick={handleCreateSubmit}
-                    disabled={submitting}
-                    className="flex-1 bg-blue-500 text-white px-3 py-1.5 rounded-md hover:bg-blue-600 disabled:bg-gray-400"
-                  >
-                    {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
-                  </button>
-                  <button
-                    onClick={closeCreateModal}
-                    className="flex-1 bg-gray-200 px-3 py-1.5 rounded-md hover:bg-gray-300"
-                  >
-                    Bekor
-                  </button>
-                </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleEditSubmit}
+                disabled={submitting}
+                className="btn btn-primary flex-1"
+              >
+                {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
+              </button>
+              <button
+                onClick={closeEditModal}
+                className="btn btn-secondary flex-1"
+              >
+                Bekor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 border-b pb-3">
+              <h3 className="text-lg font-semibold text-gray-800">Yangi Mahsulot Qo'shish</h3>
+              <button onClick={closeCreateModal} className="text-gray-500 hover:text-gray-700 text-base font-bold">
+                X
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Nomi</label>
+                <input
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                    errors.name ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {errors.name && <span className="text-red-500 text-xs">{errors.name}</span>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Shtrix</label>
+                <input
+                  value={createBarcode}
+                  onChange={(e) => setCreateBarcode(e.target.value)}
+                  className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                    errors.barcode ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {errors.barcode && <span className="text-red-500 text-xs">{errors.barcode}</span>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Model</label>
+                <input
+                  value={createModel}
+                  onChange={(e) => setCreateModel(e.target.value)}
+                  className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                    errors.model ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {errors.model && <span className="text-red-500 text-xs">{errors.model}</span>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Narx</label>
+                <input
+                  type="number"
+                  value={createPrice}
+                  onChange={(e) => setCreatePrice(e.target.value)}
+                  className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                    errors.price ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {errors.price && <span className="text-red-500 text-xs">{errors.price}</span>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Bozor Narxi</label>
+                <input
+                  type="number"
+                  value={createMarketPrice}
+                  onChange={(e) => setCreateMarketPrice(e.target.value)}
+                  className="w-full p-1.5 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Miqdor</label>
+                <input
+                  type="number"
+                  value={createQuantity}
+                  onChange={(e) => setCreateQuantity(e.target.value)}
+                  className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                    errors.quantity ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {errors.quantity && <span className="text-red-500 text-xs">{errors.quantity}</span>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={createStatus}
+                  onChange={(e) => setCreateStatus(e.target.value)}
+                  className="w-full p-1.5 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
+                >
+                  {statusOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Filial</label>
+                <select
+                  value={createBranch}
+                  onChange={(e) => setCreateBranch(e.target.value)}
+                  className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                    errors.branch ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                >
+                  <option value="">Tanlang</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.branch && <span className="text-red-500 text-xs">{errors.branch}</span>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Kategoriya</label>
+                <select
+                  value={createCategory}
+                  onChange={(e) => setCreateCategory(e.target.value)}
+                  className={`w-full p-1.5 border rounded-md focus:outline-none focus:border-blue-500 ${
+                    errors.category ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                >
+                  <option value="">Tanlang</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.category && <span className="text-red-500 text-xs">{errors.category}</span>}
               </div>
             </div>
-          )}
-          {showUploadModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-4 w-full max-w-md">
-                <div className="flex justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-gray-800">Excel orqali qo'shish</h3>
-                  <button onClick={closeUploadModal} className="text-gray-600 hover:text-gray-900">
-                    X
-                  </button>
-                </div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr>
-                      <td className="py-2 text-gray-700">Filial</td>
-                      <td>
-                        <select
-                          value={uploadBranch}
-                          onChange={(e) => setUploadBranch(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.branch ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        >
-                          <option value="">Tanlang</option>
-                          {branches.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.name}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.branch && <span className="text-red-500 text-xs">{errors.branch}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Kategoriya</td>
-                      <td>
-                        <select
-                          value={uploadCategory}
-                          onChange={(e) => setUploadCategory(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.category ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        >
-                          <option value="">Tanlang</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.category && <span className="text-red-500 text-xs">{errors.category}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Status</td>
-                      <td>
-                        <select
-                          value={uploadStatus}
-                          onChange={(e) => setUploadStatus(e.target.value)}
-                          className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
-                        >
-                          {statusOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div className="flex gap-2 mt-4">
-                  <button
-                    onClick={handleUploadSubmit}
-                    disabled={submitting}
-                    className="flex-1 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-gray-400"
-                  >
-                    {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
-                  </button>
-                  <button
-                    onClick={closeUploadModal}
-                    className="flex-1 bg-gray-200 px-4 py-2 rounded-md hover:bg-gray-300"
-                  >
-                    Bekor
-                  </button>
-                </div>
-              </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleCreateSubmit}
+                disabled={submitting}
+                className="btn btn-primary flex-1"
+              >
+                {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
+              </button>
+              <button
+                onClick={closeCreateModal}
+                className="btn btn-secondary flex-1"
+              >
+                Bekor
+              </button>
             </div>
-          )}
-          {showDefectiveModal && selectedProduct && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-4 w-full max-w-md">
-                <div className="flex justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-gray-800">Mahsulotni Defective qilish</h3>
-                  <button onClick={closeDefectiveModal} className="text-gray-600 hover:text-gray-900">
-                    X
-                  </button>
-                </div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    <tr>
-                      <td className="py-2 text-gray-700">Defective Miqdor</td>
-                      <td>
-                        <input
-                          type="number"
-                          value={defectiveCount}
-                          onChange={(e) => setDefectiveCount(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.defectiveCount ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                          min="1"
-                          max={selectedProduct.quantity}
-                        />
-                        {errors.defectiveCount && <span className="text-red-500 text-xs">{errors.defectiveCount}</span>}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="py-2 text-gray-700">Sabab</td>
-                      <td>
-                        <textarea
-                          value={defectiveDescription}
-                          onChange={(e) => setDefectiveDescription(e.target.value)}
-                          className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
-                            errors.defectiveDescription ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                          rows="3"
-                        />
-                        {errors.defectiveDescription && <span className="text-red-500 text-xs">{errors.defectiveDescription}</span>}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div className="flex gap-2 mt-4">
-                  <button
-                    onClick={handleDefectiveSubmit}
-                    disabled={submitting}
-                    className="flex-1 bg-yellow-500 text-white px-4 py-2 rounded-md hover:bg-yellow-600 disabled:bg-gray-400"
-                  >
-                    {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
-                  </button>
-                  <button
-                    onClick={closeDefectiveModal}
-                    className="flex-1 bg-gray-200 px-4 py-2 rounded-md hover:bg-gray-300"
-                  >
-                    Bekor
-                  </button>
-                </div>
-              </div>
+          </div>
+        </div>
+      )}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 border-b pb-3">
+              <h3 className="text-xl font-semibold text-gray-800">Excel orqali qo'shish</h3>
+              <button onClick={closeUploadModal} className="text-gray-500 hover:text-gray-700">
+                X
+              </button>
             </div>
-          )}
-        </>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-2 text-gray-700">Filial</td>
+                  <td>
+                    <select
+                      value={uploadBranch}
+                      onChange={(e) => setUploadBranch(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                        errors.branch ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    >
+                      <option value="">Tanlang</option>
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.branch && <span className="text-red-500 text-xs">{errors.branch}</span>}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Kategoriya</td>
+                  <td>
+                    <select
+                      value={uploadCategory}
+                      onChange={(e) => setUploadCategory(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                        errors.category ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    >
+                      <option value="">Tanlang</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.category && <span className="text-red-500 text-xs">{errors.category}</span>}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Status</td>
+                  <td>
+                    <select
+                      value={uploadStatus}
+                      onChange={(e) => setUploadStatus(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500"
+                    >
+                      {statusOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleUploadSubmit}
+                disabled={submitting}
+                className="btn btn-primary flex-1"
+              >
+                {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
+              </button>
+              <button
+                onClick={closeUploadModal}
+                className="btn btn-secondary flex-1"
+              >
+                Bekor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDefectiveModal && selectedProduct && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 border-b pb-3">
+              <h3 className="text-xl font-semibold text-gray-800">
+                {isFullDefective ? 'Mahsulotni To\'liq Brak Qilish' : 'Mahsulotni Qisman Brak Qilish'}
+              </h3>
+              <button onClick={closeDefectiveModal} className="text-gray-500 hover:text-gray-700">
+                X
+              </button>
+            </div>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-2 text-gray-700">Mahsulot</td>
+                  <td className="py-2 text-gray-800">{selectedProduct.name}</td>
+                </tr>
+                <tr>
+                  <td className="py-2 text-gray-700">Jami Miqdor</td>
+                  <td className="py-2 text-gray-800">{formatQuantity(selectedProduct.quantity)}</td>
+                </tr>
+                {!isFullDefective && (
+                  <tr>
+                    <td className="py-2 text-gray-700">Brak Miqdori</td>
+                    <td>
+                      <input
+                        type="number"
+                        value={defectiveCount}
+                        onChange={(e) => setDefectiveCount(e.target.value)}
+                        className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                          errors.defectiveCount ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                        min="1"
+                        max={selectedProduct.quantity}
+                      />
+                      {errors.defectiveCount && <span className="text-red-500 text-xs">{errors.defectiveCount}</span>}
+                    </td>
+                  </tr>
+                )}
+                <tr>
+                  <td className="py-2 text-gray-700">Sabab</td>
+                  <td>
+                    <textarea
+                      value={defectiveDescription}
+                      onChange={(e) => setDefectiveDescription(e.target.value)}
+                      className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                        errors.defectiveDescription ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      rows="3"
+                    />
+                    {errors.defectiveDescription && <span className="text-red-500 text-xs">{errors.defectiveDescription}</span>}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleDefectiveSubmit}
+                disabled={submitting}
+                className="btn btn-warning flex-1"
+              >
+                {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
+              </button>
+              <button
+                onClick={closeDefectiveModal}
+                className="btn btn-secondary flex-1"
+              >
+                Bekor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showBulkDefectiveModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 border-b pb-3">
+              <h3 className="text-xl font-semibold text-gray-800">Tanlangan Mahsulotlarni Defective Qilish</h3>
+              <button onClick={closeBulkDefectiveModal} className="text-gray-500 hover:text-gray-700">
+                X
+              </button>
+            </div>
+            <div className="py-2">
+              <label className="block text-gray-700">Sabab</label>
+              <textarea
+                value={bulkDefectiveDescription}
+                onChange={(e) => setBulkDefectiveDescription(e.target.value)}
+                className={`w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 ${
+                  errors.bulkDefectiveDescription ? 'border-red-500' : 'border-gray-300'
+                }`}
+                rows="3"
+              />
+              {errors.bulkDefectiveDescription && <span className="text-red-500 text-xs">{errors.bulkDefectiveDescription}</span>}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={handleBulkDefectiveSubmit}
+                disabled={submitting}
+                className="btn btn-warning flex-1"
+              >
+                {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
+              </button>
+              <button
+                onClick={closeBulkDefectiveModal}
+                className="btn btn-secondary flex-1"
+              >
+                Bekor
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

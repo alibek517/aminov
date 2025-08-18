@@ -267,7 +267,6 @@ function DeliveryPanel({ token }) {
           />
           <Route path="/orders" element={<Orders t={t} orders={orders} setOrders={setOrders} />} />
           <Route path="/profile" element={<Profile t={t} />} />
-          <Route path="/settings" element={<Settings t={t} language={language} setLanguage={setLanguage} />} />
           <Route path="*" element={<Navigate to="/dastafka/dashboard" replace />} />
         </Routes>
       </main>

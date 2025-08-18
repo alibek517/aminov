@@ -94,11 +94,7 @@ function SkladPanel() {
         });
         if (!response.ok) throw new Error('Failed to fetch branches');
         const data = await response.json();
-        setBranches([{ id: '', name: 'Барча филиаллар' }, ...data]);
-        if (selectedBranchId && !data.some((branch) => branch.id.toString() === selectedBranchId)) {
-          setSelectedBranchId('');
-          localStorage.setItem('selectedBranchId', '');
-        }
+        setBranches([{ id: '', name: 'Барча филиаллар' }, ... (Array.isArray(data) ? data : data.branches || [])]);  // Safe extraction
       } catch (err) {
         setBranches([
           { id: '', name: 'Барча филиаллар' },
@@ -237,6 +233,7 @@ function SkladPanel() {
           </header>
 
           <main className="flex-1 p-6">
+            {error && <div className="text-red-600 mb-4">{error}</div>}  {/* Display branch fetch errors */}
             <ErrorBoundary>
               {renderContent()}
             </ErrorBoundary>

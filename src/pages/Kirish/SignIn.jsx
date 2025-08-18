@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, User, Lock, Calculator, DollarSign } from 'lucide-react';
 import axios from 'axios';
@@ -15,8 +15,12 @@ const SignIn = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [focusedField, setFocusedField] = useState('');
   const [errors, setErrors] = useState({ username: '', password: '' });
+  const hasCheckedAuthRef = useRef(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
+    if (hasCheckedAuthRef.current) return;
+    hasCheckedAuthRef.current = true;
     const role = localStorage.getItem('userRole');
     const token = localStorage.getItem('access_token');
 
@@ -37,7 +41,7 @@ const SignIn = () => {
         setErrors({ username: '', password: 'Noto‘g‘ri token. Iltimos, qayta kiring.' });
       }
     }
-  }, [isLoading, location.pathname]);
+  }, []);
 
   const redirectByRole = (role) => {
     console.log('Redirecting to role:', role);
@@ -62,6 +66,7 @@ const SignIn = () => {
 
   const handleSignIn = async (e) => {
     e.preventDefault();
+    if (isSubmittingRef.current) return;
     console.log('Form submitted, handleSignIn called');
     console.log('Entered Email:', username.trim());
     console.log('Entered Password:', password.trim());
@@ -75,6 +80,7 @@ const SignIn = () => {
     }
 
     setIsLoading(true);
+    isSubmittingRef.current = true;
     setErrors({ username: '', password: '' });
 
     try {
@@ -201,6 +207,7 @@ const SignIn = () => {
       });
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

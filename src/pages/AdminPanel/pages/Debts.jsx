@@ -1,414 +1,352 @@
-import React, { useState } from 'react';
-import { 
-  Search, 
-  Filter, 
-  Plus, 
-  Phone, 
-  Mail, 
-  Calendar,
-  Eye,
-  Edit3,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  DollarSign,
-  CreditCard,
-  User,
-  TrendingUp,
-  TrendingDown
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { RefreshCw, Search, Eye, CheckCircle, X, Loader2, CreditCard } from 'lucide-react';
 
-const Debts = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('all');
-  const [selectedBranch, setSelectedBranch] = useState('all');
+const Debts = ({ selectedBranchId: propSelectedBranchId }) => {
+  const BASE_URL = 'https://suddocs.uz';
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [creditTransactions, setCreditTransactions] = useState([]);
+  const [summary, setSummary] = useState({ totalCredit: 0, totalTransactions: 0 });
+  const [search, setSearch] = useState('');
+  const [selectedBranchId, setSelectedBranchId] = useState(
+    propSelectedBranchId || localStorage.getItem('selectedBranchId') || ''
+  );
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
 
-  const debts = [
-    {
-      id: 'D001',
-      customerName: 'Азиз Каримов',
-      customerPhone: '+998 90 123 45 67',
-      customerEmail: 'aziz.karimov@email.com',
-      totalAmount: 15000000,
-      paidAmount: 5000000,
-      remainingAmount: 10000000,
-      dueDate: '2024-02-15',
-      createdDate: '2024-01-15',
-      status: 'active',
-      description: 'iPhone 14 Pro ва аксессуарлар',
-      branch: 'Марказий филиал'
-    },
-    {
-      id: 'D002',
-      customerName: 'Малика Тошева',
-      customerPhone: '+998 91 234 56 78',
-      customerEmail: 'malika.tosheva@email.com',
-      totalAmount: 8500000,
-      paidAmount: 0,
-      remainingAmount: 8500000,
-      dueDate: '2024-01-20',
-      createdDate: '2023-12-20',
-      status: 'overdue',
-      description: 'Samsung Galaxy S23',
-      branch: 'Чилонзор филиали'
-    },
-    {
-      id: 'D003',
-      customerName: 'Жаҳонгир Умаров',
-      customerPhone: '+998 93 345 67 89',
-      customerEmail: 'jahongir.umarov@email.com',
-      totalAmount: 25000000,
-      paidAmount: 25000000,
-      remainingAmount: 0,
-      dueDate: '2024-01-10',
-      createdDate: '2023-12-10',
-      status: 'paid',
-      description: 'MacBook Air M2',
-      branch: 'Юнусобод филиали'
-    },
-    {
-      id: 'D004',
-      customerName: 'Нилуфар Саидова',
-      customerPhone: '+998 94 456 78 90',
-      customerEmail: 'nilufar.saidova@email.com',
-      totalAmount: 12000000,
-      paidAmount: 7000000,
-      remainingAmount: 5000000,
-      dueDate: '2024-02-01',
-      createdDate: '2024-01-01',
-      status: 'partial',
-      description: 'Dell XPS 13 ва аксессуарлар',
-      branch: 'Сергели филиали'
-    },
-    {
-      id: 'D005',
-      customerName: 'Бобур Раҳимов',
-      customerPhone: '+998 95 567 89 01',
-      customerEmail: 'bobur.rahimov@email.com',
-      totalAmount: 6500000,
-      paidAmount: 2000000,
-      remainingAmount: 4500000,
-      dueDate: '2024-01-25',
-      createdDate: '2023-12-25',
-      status: 'overdue',
-      description: 'iPad Air ва Apple Pencil',
-      branch: 'Марказий филиал'
-    },
-    {
-      id: 'D006',
-      customerName: 'Дилдора Назарова',
-      customerPhone: '+998 97 678 90 12',
-      customerEmail: 'dildora.nazarova@email.com',
-      totalAmount: 4200000,
-      paidAmount: 1500000,
-      remainingAmount: 2700000,
-      dueDate: '2024-02-20',
-      createdDate: '2024-01-20',
-      status: 'active',
-      description: 'AirPods Pro 2 ва аксессуарлар',
-      branch: 'Олмазор филиали'
+  const formatCurrency = (amount) => new Intl.NumberFormat('uz-UZ', { style: 'currency', currency: 'UZS' }).format(amount || 0);
+
+  const fetchCreditTransactions = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        navigate('/login');
+        return;
+      }
+      
+      const params = new URLSearchParams();
+      if (selectedBranchId) params.append('branchId', selectedBranchId);
+      params.append('type', 'SALE'); // Only get sales transactions
+      params.append('paymentMethod', 'CREDIT'); // Filter for credit payments
+      
+      const res = await fetch(`${BASE_URL}/transactions?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      
+      if (res.status === 401) {
+        localStorage.removeItem('access_token');
+        navigate('/login');
+        return;
+      }
+      
+      if (!res.ok) throw new Error('Ma\'lumotlarni olishda xatolik');
+      
+      const data = await res.json();
+      console.log('Raw transaction data from backend:', data);
+      
+      const creditData = Array.isArray(data) ? data.filter(t => 
+        t.paymentMethod === 'CREDIT' || t.paymentStatus === 'PENDING'
+      ) : [];
+      
+      console.log('Filtered credit transactions:', creditData);
+      setCreditTransactions(creditData);
+      
+      // Calculate summary
+      const totalCredit = creditData.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
+      console.log('Calculated summary:', { totalCredit, totalTransactions: creditData.length });
+      setSummary({ totalCredit, totalTransactions: creditData.length });
+      
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
-  ];
+  }, [selectedBranchId, BASE_URL, navigate]);
 
-  const branches = ['all', 'Марказий филиал', 'Чилонзор филиали', 'Юнусобод филиали', 'Сергели филиали', 'Олмазор филиали'];
+  useEffect(() => { 
+    fetchCreditTransactions(); 
+  }, [fetchCreditTransactions]);
 
-  const getStatusBadge = (status) => {
+  useEffect(() => {
+    if (propSelectedBranchId !== undefined) {
+      setSelectedBranchId(propSelectedBranchId);
+    }
+  }, [propSelectedBranchId]);
+
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'selectedBranchId') {
+        setSelectedBranchId(e.newValue || '');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const filteredTransactions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return creditTransactions;
+    return creditTransactions.filter((t) =>
+      (t.customer?.firstName || '').toLowerCase().includes(q) ||
+      (t.customer?.lastName || '').toLowerCase().includes(q) ||
+      (t.customer?.phone || '').includes(q) ||
+      (t.id?.toString() || '').includes(q)
+    );
+  }, [creditTransactions, search]);
+
+  const openTransactionModal = (transaction) => {
+    setSelectedTransaction(transaction);
+    setShowTransactionModal(true);
+  };
+
+  const closeTransactionModal = () => {
+    setShowTransactionModal(false);
+    setSelectedTransaction(null);
+  };
+
+  const getPaymentStatusBadge = (status) => {
     switch (status) {
-      case 'active':
-        return 'bg-blue-100 text-blue-800';
-      case 'overdue':
-        return 'bg-red-100 text-red-800';
-      case 'paid':
+      case 'PAID':
         return 'bg-green-100 text-green-800';
-      case 'partial':
+      case 'PENDING':
         return 'bg-yellow-100 text-yellow-800';
+      case 'OVERDUE':
+        return 'bg-red-100 text-red-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const getStatusText = (status) => {
+  const getPaymentStatusText = (status) => {
     switch (status) {
-      case 'active':
-        return 'Фаол';
-      case 'overdue':
-        return 'Муддати ўтган';
-      case 'paid':
-        return 'Тўланган';
-      case 'partial':
-        return 'Қисман тўланган';
+      case 'PAID':
+        return 'To\'langan';
+      case 'PENDING':
+        return 'Kutilmoqda';
+      case 'OVERDUE':
+        return 'Muddati o\'tgan';
       default:
-        return 'Номаълум';
+        return 'Noma\'lum';
     }
   };
-
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'active':
-        return <Clock className="text-blue-500" size={16} />;
-      case 'overdue':
-        return <AlertTriangle className="text-red-500" size={16} />;
-      case 'paid':
-        return <CheckCircle className="text-green-500" size={16} />;
-      case 'partial':
-        return <CreditCard className="text-yellow-500" size={16} />;
-      default:
-        return <Clock className="text-gray-500" size={16} />;
-    }
-  };
-
-  const isOverdue = (dueDate) => {
-    return new Date(dueDate) < new Date();
-  };
-
-  const filteredDebts = debts.filter(debt => {
-    const matchesSearch = debt.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         debt.customerPhone.includes(searchTerm) ||
-                         debt.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = selectedStatus === 'all' || debt.status === selectedStatus;
-    const matchesBranch = selectedBranch === 'all' || debt.branch === selectedBranch;
-    return matchesSearch && matchesStatus && matchesBranch;
-  });
-
-  const totalDebts = debts.length;
-  const activeDebts = debts.filter(d => d.status === 'active' || d.status === 'partial').length;
-  const overdueDebts = debts.filter(d => d.status === 'overdue').length;
-  const totalDebtAmount = debts.filter(d => d.status !== 'paid').reduce((sum, debt) => sum + debt.remainingAmount, 0);
-  const totalPaidAmount = debts.reduce((sum, debt) => sum + debt.paidAmount, 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Қарздорлик Бошқаруви</h1>
-          <p className="text-gray-500 mt-1">Мижозлар қарзи ва тўловларни кузатиш</p>
-        </div>
-        <button className="flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
-          <Plus size={20} className="mr-2" />
-          Янги Қарз
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-blue-50 rounded-lg">
-              <CreditCard className="text-blue-600" size={20} />
-            </div>
+    <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
-              <p className="text-sm font-medium text-gray-600">Жами Қарзлар</p>
-              <p className="text-2xl font-semibold text-gray-900">{totalDebts}</p>
+              <h1 className="text-2xl font-semibold text-gray-900">Кредит сотишлар</h1>
+              <p className="text-gray-500 mt-1">Кредит бўлиб сотилган товарлар</p>
             </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-yellow-50 rounded-lg">
-              <Clock className="text-yellow-600" size={20} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Фаол Қарзлар</p>
-              <p className="text-2xl font-semibold text-gray-900">{activeDebts}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-red-50 rounded-lg">
-              <AlertTriangle className="text-red-600" size={20} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Муддати Ўтган</p>
-              <p className="text-2xl font-semibold text-gray-900">{overdueDebts}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-orange-50 rounded-lg">
-              <TrendingDown className="text-orange-600" size={20} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Қолган Қарз</p>
-              <p className="text-xl font-semibold text-gray-900">{(totalDebtAmount / 1000000).toFixed(1)}M</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-50 rounded-lg">
-              <TrendingUp className="text-green-600" size={20} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Тўланган</p>
-              <p className="text-xl font-semibold text-gray-900">{(totalPaidAmount / 1000000).toFixed(1)}M</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="text"
-              placeholder="Мижоз номи, телефон ёки маҳсулот..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div className="flex gap-4">
-            <div className="flex items-center">
-              <Filter className="text-gray-400 mr-2" size={20} />
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            <div className="flex items-center gap-3">
+              <button
+                onClick={fetchCreditTransactions}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
               >
-                <option value="all">Барча ҳолатлар</option>
-                <option value="active">Фаол</option>
-                <option value="partial">Қисман тўланган</option>
-                <option value="overdue">Муддати ўтган</option>
-                <option value="paid">Тўланган</option>
-              </select>
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                Yangilash
+              </button>
             </div>
-            <select
-              value={selectedBranch}
-              onChange={(e) => setSelectedBranch(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              {branches.map(branch => (
-                <option key={branch} value={branch}>
-                  {branch === 'all' ? 'Барча филиаллар' : branch}
-                </option>
-              ))}
-            </select>
+          </div>
+
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+            <div className="bg-blue-50 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <CreditCard className="text-blue-600" size={24} />
+                <div>
+                  <p className="text-sm text-blue-600 font-medium">Жами кредит</p>
+                  <p className="text-2xl font-bold text-blue-900">{formatCurrency(summary.totalCredit)}</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 text-sm font-bold">{summary.totalTransactions}</span>
+                </div>
+                <div>
+                  <p className="text-sm text-green-600 font-medium">Кредит транзакциялар</p>
+                  <p className="text-2xl font-bold text-green-900">{summary.totalTransactions}</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Мижоз
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Алоқа
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Маҳсулот
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Жами Сумма
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Тўланган
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Қолган
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Муддат
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Филиал
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Ҳолат
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Амаллар
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredDebts.map((debt) => (
-                <tr key={debt.id} className={`hover:bg-gray-50 transition-colors duration-150 ${debt.status === 'overdue' ? 'bg-red-50' : ''}`}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-semibold mr-4">
-                        {debt.customerName.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{debt.customerName}</div>
-                        <div className="text-sm text-gray-500">ID: {debt.id}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="space-y-1">
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Phone size={14} className="mr-2" />
-                        {debt.customerPhone}
-                      </div>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Mail size={14} className="mr-2" />
-                        <span className="truncate">{debt.customerEmail}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">{debt.description}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-semibold text-gray-900">
-                      {debt.totalAmount.toLocaleString()} сўм
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-semibold text-green-600">
-                      {debt.paidAmount.toLocaleString()} сўм
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className={`text-sm font-semibold ${debt.remainingAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {debt.remainingAmount.toLocaleString()} сўм
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center text-sm">
-                      <Calendar size={14} className="mr-2" />
-                      <span className={isOverdue(debt.dueDate) && debt.status !== 'paid' ? 'text-red-600 font-medium' : 'text-gray-600'}>
-                        {debt.dueDate}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                      {debt.branch}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      {getStatusIcon(debt.status)}
-                      <span className={`ml-2 px-2 py-1 text-xs font-medium rounded-full ${getStatusBadge(debt.status)}`}>
-                        {getStatusText(debt.status)}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
-                      <button className="text-blue-600 hover:text-blue-900 p-1 rounded hover:bg-blue-50">
-                        <Eye size={16} />
-                      </button>
-                      <button className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50">
-                        <Edit3 size={16} />
-                      </button>
-                      <button className="text-purple-600 hover:text-purple-900 p-1 rounded hover:bg-purple-50">
-                        <DollarSign size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Search and Filters */}
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <input
+                  type="text"
+                  placeholder="Мижоз исми, телефони ёки транзакция ID сини киритинг..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* Transactions Table */}
+        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ID
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Мижоз
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Сумма
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ҳолат
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Сана
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Амаллар
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <Loader2 className="animate-spin" size={20} />
+                        <span>Юкланимоқда...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                      Кредит транзакциялар топилмади
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTransactions.map((transaction) => (
+                    <tr key={transaction.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        #{transaction.id}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {transaction.customer ? 
+                            `${transaction.customer.firstName || ''} ${transaction.customer.lastName || ''}`.trim() || 'N/A' 
+                            : 'N/A'
+                          }
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {transaction.customer?.phone || 'Telefon yo\'q'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+                        {formatCurrency(transaction.totalAmount)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getPaymentStatusBadge(transaction.paymentStatus)}`}>
+                          {getPaymentStatusText(transaction.paymentStatus)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {transaction.createdAt ? new Date(transaction.createdAt).toLocaleDateString('uz-UZ') : 'N/A'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => openTransactionModal(transaction)}
+                          className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
+                        >
+                          <Eye size={16} />
+                          Кўриш
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Transaction Details Modal */}
+        {showTransactionModal && selectedTransaction && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Транзакция #{selectedTransaction.id}
+                  </h3>
+                  <button
+                    onClick={closeTransactionModal}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-2">Мижоз маълумотлари</h4>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p><span className="font-medium">Исм:</span> {selectedTransaction.customer?.firstName} {selectedTransaction.customer?.lastName}</p>
+                      <p><span className="font-medium">Телефон:</span> {selectedTransaction.customer?.phone || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-2">Товарлар</h4>
+                    <div className="space-y-2">
+                      {selectedTransaction.products?.map((product, index) => (
+                        <div key={index} className="bg-gray-50 rounded-lg p-3">
+                          <p><span className="font-medium">Номи:</span> {product.product?.name || product.name}</p>
+                          <p><span className="font-medium">Миқдори:</span> {product.quantity}</p>
+                          <p><span className="font-medium">Нархи:</span> {formatCurrency(product.price)}</p>
+                          <p><span className="font-medium">Жами:</span> {formatCurrency(product.price * product.quantity)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-2">Тўлов маълумотлари</h4>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p><span className="font-medium">Жами сумма:</span> {formatCurrency(selectedTransaction.totalAmount)}</p>
+                      <p><span className="font-medium">Тўлов усули:</span> {selectedTransaction.paymentMethod || 'N/A'}</p>
+                      <p><span className="font-medium">Ҳолат:</span> {getPaymentStatusText(selectedTransaction.paymentStatus)}</p>
+                      <p><span className="font-medium">Сана:</span> {selectedTransaction.createdAt ? new Date(selectedTransaction.createdAt).toLocaleDateString('uz-UZ') : 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={closeTransactionModal}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    Yopish
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

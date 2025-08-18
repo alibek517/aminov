@@ -4,88 +4,98 @@ import { useNavigate } from 'react-router-dom';
 
 const Chiqim = () => {
   const [products, setProducts] = useState([]);
+  const [modalProducts, setModalProducts] = useState([]);
   const [branches, setBranches] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [transactionType, setTransactionType] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [tempQuantity, setTempQuantity] = useState('');
+  const [tempPrice, setTempPrice] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('');
   const [toBranch, setToBranch] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
+  const [operationType, setOperationType] = useState('SALE');
   const [paymentType, setPaymentType] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
+  const [downPayment, setDownPayment] = useState(''); // Boshlang'ich to'lov
   const [months, setMonths] = useState('');
+  const [interestRate, setInterestRate] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showTransferHistory, setShowTransferHistory] = useState(false);
+  const [transferHistory, setTransferHistory] = useState([]);
+  const [pendingTransfers, setPendingTransfers] = useState([]);
+  const [modalSearch, setModalSearch] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const navigate = useNavigate();
   const API_URL = 'https://suddocs.uz';
 
-  const formatCurrency = (amount) => 
-    amount != null && Number.isFinite(Number(amount)) 
-      ? new Intl.NumberFormat('uz-UZ').format(Number(amount)) + " so'm" 
+  const formatCurrency = (amount) =>
+    amount != null && Number.isFinite(Number(amount))
+      ? new Intl.NumberFormat('uz-UZ').format(Number(amount)) + " so'm"
       : "Noma'lum";
-  const formatQuantity = (qty) => 
-    qty != null && Number.isFinite(Number(qty)) 
-      ? new Intl.NumberFormat('uz-UZ').format(Number(qty)) + ' dona' 
+
+  const formatQuantity = (qty) =>
+    qty != null && Number.isFinite(Number(qty))
+      ? new Intl.NumberFormat('uz-UZ').format(Number(qty)) + ' dona'
       : '0 dona';
-  const formatDate = (date) => 
+
+  const formatDate = (date) =>
     date ? new Date(date).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' }) : "Noma'lum";
 
-  const getInterestRate = (months) => {
-    const m = Number(months);
-    if (!m || m <= 0) return 0;
-    if (m <= 3) return 0.05; // 5% for 3 months
-    if (m <= 6) return 0.10; // 10% for 6 months
-    if (m <= 12) return 0.15; // 15% for 12 months
-    return 0.20; // 20% for 24+ months
-  };
-
   const calculatePaymentSchedule = () => {
-    const qty = Number(quantity);
-    const prc = Number(price);
     const m = Number(months);
-    if (!qty || !prc || !m || m <= 0) return { totalWithInterest: 0, monthlyPayment: 0, schedule: [] };
+    const rate = Number(interestRate) / 100;
+    const downPaymentAmount = Number(downPayment) || 0;
+    
+    if (!m || m <= 0 || selectedItems.length === 0 || operationType !== 'SALE' || rate < 0) {
+      return { totalWithInterest: 0, monthlyPayment: 0, schedule: [], downPaymentAmount: 0 };
+    }
 
-    const baseTotal = qty * prc;
-    const interestRate = getInterestRate(m);
-    const totalWithInterest = baseTotal * (1 + interestRate);
-    const monthlyPayment = totalWithInterest / m;
+    const baseTotal = selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
+    const totalWithInterest = baseTotal * (1 + rate);
+    const remainingAfterDownPayment = totalWithInterest - downPaymentAmount;
+    const monthlyPayment = remainingAfterDownPayment / m;
     const schedule = [];
 
-    let remainingBalance = totalWithInterest;
+    let remainingBalance = remainingAfterDownPayment;
     for (let i = 1; i <= m; i++) {
       schedule.push({
         month: i,
         payment: monthlyPayment,
-        remainingBalance: Math.max(0, remainingBalance - monthlyPayment)
+        remainingBalance: Math.max(0, remainingBalance - monthlyPayment),
       });
       remainingBalance -= monthlyPayment;
     }
 
-    return { totalWithInterest, monthlyPayment, schedule };
+    return { totalWithInterest, monthlyPayment, schedule, downPaymentAmount, remainingAfterDownPayment };
   };
 
   const generatePDF = () => {
-    if (!selectedProduct) return;
-    const qty = Number(quantity);
-    const prc = Number(price);
+    if (selectedItems.length === 0 || operationType !== 'SALE') return;
     const m = Number(months);
+    const rate = Number(interestRate);
     const { totalWithInterest, monthlyPayment, schedule } = calculatePaymentSchedule();
-    const branchName = branches.find(b => b.id === Number(selectedBranch))?.name || 'Noma\'lum';
+    const branchName = branches.find((b) => b.id === Number(selectedBranch))?.name || 'Noma\'lum';
     const date = formatDate(new Date());
 
     const escapeLatex = (str) => {
       if (!str) return 'Noma\'lum';
-      return str.replace(/[&%$#_{}~^\\]/g, '\\$&')
-               .replace(/ā/g, '\\=a')
-               .replace(/ū/g, '\\=u');
+      return str
+        .replace(/[&%$#_{}~^\\]/g, '\\$&')
+        .replace(/ā/g, '\\=a')
+        .replace(/ū/g, '\\=u');
     };
+
+    const productList = selectedItems
+      .map((item) => `${escapeLatex(item.name)} (${formatQuantity(item.quantity)}, ${formatCurrency(item.price)})`)
+      .join(', ');
 
     const latexContent = `
 \\documentclass[a4paper,12pt]{article}
@@ -100,14 +110,12 @@ const Chiqim = () => {
 \\begin{center}
   \\textbf{To'lov Jadvali (Kredit yoki Bo'lib To'lash)}\\\\
   \\vspace{0.5cm}
-  Mahsulot: ${escapeLatex(selectedProduct.name)}\\\\
+  Mahsulotlar: ${productList}\\\\
   Filial: ${escapeLatex(branchName)}\\\\
   Sana: ${escapeLatex(date)}\\\\
-  Miqdor: ${formatQuantity(qty)}\\\\
-  Narx: ${formatCurrency(prc)}\\\\
-  To'lov Turi: ${paymentType === 'CREDIT' ? 'Kredit' : 'Bolib Tolash'}\\\\
+  To'lov Turi: ${paymentType === 'CREDIT' ? 'Kredit' : 'Bo\'lib To\'lash'}\\\\
   Muddat: ${m} oy\\\\
-  Foiz: ${(getInterestRate(m) * 100).toFixed(2)}\\%\\\\
+  Foiz: ${rate.toFixed(2)}\\%\\\\
   Umumiy Summa (foiz bilan): ${formatCurrency(totalWithInterest)}\\\\
   Oylik To'lov: ${formatCurrency(monthlyPayment)}\\\\
   Mijoz: ${escapeLatex(firstName)} ${escapeLatex(lastName)}, Telefon: ${escapeLatex(phone)}
@@ -121,7 +129,7 @@ const Chiqim = () => {
 \\toprule
 Oylik & To'lov Summasi & Qoldiq Summa \\\\
 \\midrule
-${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatCurrency(row.remainingBalance)}\\\\`).join('\n')}
+${schedule.map((row) => `${row.month} & ${formatCurrency(row.payment)} & ${formatCurrency(row.remainingBalance)}\\\\`).join('\n')}
 \\bottomrule
 \\end{tabular}
 \\caption{To'lov Jadvali}
@@ -134,7 +142,7 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `payment_schedule_${selectedProduct.id}_${Date.now()}.tex`;
+    link.download = `payment_schedule_${Date.now()}.tex`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -164,17 +172,41 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
     }
   };
 
+  const handleBranchChange = (branchId) => {
+    setSelectedBranchId(branchId);
+    localStorage.setItem('branchId', branchId);
+    setProducts([]); // Mahsulotlarni tozalash
+    setNotification(null); // Xabarlarni tozalash
+    
+    // Agar branch tanlangan bo'lsa, ma'lumotlarni yuklash
+    if (branchId) {
+      setTimeout(() => {
+        loadData();
+        loadPendingTransfers();
+      }, 100);
+    }
+  };
+
   useEffect(() => {
     const fetchBranches = async () => {
       try {
         const branchesRes = await axiosWithAuth({ method: 'get', url: `${API_URL}/branches` });
         const branchesData = Array.isArray(branchesRes.data) ? branchesRes.data : branchesRes.data.branches || [];
         setBranches(branchesData);
-        const omborBranch = branchesData.find((b) => b.name?.toLowerCase() === 'ombor');
-        if (omborBranch) {
-          setSelectedBranchId(omborBranch.id.toString());
+        
+        // Foydalanuvchining branchId sini localStorage dan olish
+        const userBranchId = localStorage.getItem('branchId');
+        if (userBranchId) {
+          setSelectedBranchId(userBranchId);
         } else {
-          setNotification({ message: '"Ombor" filiali topilmadi', type: 'warning' });
+          // Agar localStorage da yo'q bo'lsa, ombor filialini tanlash
+          const omborBranch = branchesData.find((b) => b.name?.toLowerCase() === 'ombor');
+          if (omborBranch) {
+            setSelectedBranchId(omborBranch.id.toString());
+            localStorage.setItem('branchId', omborBranch.id.toString());
+          } else {
+            setNotification({ message: '"Ombor" filiali topilmadi', type: 'warning' });
+          }
         }
       } catch (err) {
         setNotification({ message: err.message || 'Filiallarni yuklashda xatolik', type: 'error' });
@@ -200,25 +232,39 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
       queryParams.append('branchId', branchId.toString());
       if (searchTerm.trim()) queryParams.append('search', searchTerm);
       queryParams.append('includeZeroQuantity', 'true');
+      
+      console.log(`Loading products for branch ${branchId} (${branches.find(b => b.id === branchId)?.name})`);
+      
       let allProducts = [];
       let page = 1;
       while (true) {
-        const productsRes = await axiosWithAuth({ 
-          method: 'get', 
-          url: `${API_URL}/products?${queryParams.toString()}&page=${page}` 
+        const productsRes = await axiosWithAuth({
+          method: 'get',
+          url: `${API_URL}/products?${queryParams.toString()}&page=${page}`,
         });
         const productsData = Array.isArray(productsRes.data) ? productsRes.data : productsRes.data.products || [];
         allProducts = [...allProducts, ...productsData];
         if (!productsRes.data.nextPage) break;
         page++;
       }
-      setProducts(allProducts.map(product => ({
-        ...product,
-        name: product.name ?? product.productName ?? product.title ?? product.item_name ?? 
-              product.product_title ?? product.item_title ?? `Product ${product.id}`,
-        price: Number(product.price) || 0,
-        quantity: Number(product.quantity) || 0,
-      })));
+      
+      console.log(`Loaded ${allProducts.length} products for branch ${branchId}`);
+      
+      setProducts(
+        allProducts.map((product) => ({
+          ...product,
+          name:
+            product.name ??
+            product.productName ??
+            product.title ??
+            product.item_name ??
+            product.product_title ??
+            product.item_title ??
+            `Product ${product.id}`,
+          price: Number(product.price) || 0,
+          quantity: Number(product.quantity) || 0,
+        })),
+      );
     } catch (err) {
       setNotification({ message: err.message || 'Ma\'lumotlarni yuklashda xatolik', type: 'error' });
       console.error('Load products error:', err);
@@ -231,72 +277,261 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
     if (selectedBranchId) loadData();
   }, [loadData, selectedBranchId]);
 
-  const openModal = (product, type) => {
-    setSelectedProduct({
-      ...product,
-      name: product.name ?? product.productName ?? product.title ?? product.item_name ?? 
-            product.product_title ?? product.item_title ?? `Product ${product.id}`,
-    });
-    setTransactionType(type);
-    setQuantity('');
-    setPrice(product.price && Number.isFinite(Number(product.price)) ? product.price.toString() : '0');
-    setSelectedBranch(product.branchId ? product.branchId.toString() : selectedBranchId || '');
+  // Branch o'zgarganda ma'lumotlarni yangilash
+  useEffect(() => {
+    if (selectedBranchId) {
+      setProducts([]);
+      loadData();
+      loadPendingTransfers(); // Pending transferlarni ham yuklash
+    }
+  }, [selectedBranchId]);
+
+  const loadModalData = useCallback(async () => {
+    const branchId = Number(selectedBranch);
+    if (!branchId || isNaN(branchId) || !Number.isInteger(branchId)) {
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('branchId', branchId.toString());
+      queryParams.append('includeZeroQuantity', 'true');
+      
+      let allProducts = [];
+      let page = 1;
+      while (true) {
+        const productsRes = await axiosWithAuth({
+          method: 'get',
+          url: `${API_URL}/products?${queryParams.toString()}&page=${page}`,
+        });
+        const productsData = Array.isArray(productsRes.data) ? productsRes.data : productsRes.data.products || [];
+        allProducts = [...allProducts, ...productsData];
+        if (!productsRes.data.nextPage) break;
+        page++;
+      }
+      setModalProducts(
+        allProducts.map((product) => ({
+          ...product,
+          name:
+            product.name ??
+            product.productName ??
+            product.title ??
+            product.item_name ??
+            product.product_title ??
+            product.item_title ??
+            `Product ${product.id}`,
+          price: Number(product.price) || 0,
+          quantity: Number(product.quantity) || 0,
+        })),
+      );
+    } catch (err) {
+      console.error('Load modal products error:', err);
+    }
+  }, [selectedBranch]);
+
+  useEffect(() => {
+    if (showModal && selectedBranch) loadModalData();
+  }, [showModal, selectedBranch, loadModalData]);
+
+  // Current user ni olish
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+          const response = await axios.get(`${API_URL}/auth/profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setCurrentUser(response.data);
+        }
+      } catch (error) {
+        console.error('Error loading current user:', error);
+        setNotification({ message: 'Joriy foydalanuvchini yuklashda xatolik', type: 'error' });
+      }
+    };
+    
+    loadCurrentUser();
+  }, []);
+
+  // Sotuvchi tanlash olib tashlandi, alohida marketing foydalanuvchilarni yuklashga hojat yo'q
+
+  // Transfer tarixini yuklash
+  const loadTransferHistory = async () => {
+    if (!selectedBranchId) return;
+    
+    try {
+      const response = await axiosWithAuth({
+        method: 'get',
+        url: `${API_URL}/transactions?type=TRANSFER&branchId=${selectedBranchId}&limit=50`
+      });
+      
+      const transfers = response.data.transactions || [];
+      setTransferHistory(transfers);
+    } catch (error) {
+      console.error('Error loading transfer history:', error);
+      setNotification({ message: 'Transfer tarixini yuklashda xatolik', type: 'error' });
+    }
+  };
+
+  // Pending transferlarni yuklash
+  const loadPendingTransfers = async () => {
+    if (!selectedBranchId) return;
+    
+    try {
+      const response = await axiosWithAuth({
+        method: 'get',
+        url: `${API_URL}/transactions/pending-transfers?branchId=${selectedBranchId}`
+      });
+      
+      const pending = response.data || [];
+      setPendingTransfers(pending);
+      
+      // Agar pending transferlar bo'lsa, xabar ko'rsatish
+      if (pending.length > 0) {
+        const incomingTransfers = pending.filter(t => t.toBranchId === Number(selectedBranchId));
+        const outgoingTransfers = pending.filter(t => t.fromBranchId === Number(selectedBranchId));
+        
+        if (incomingTransfers.length > 0) {
+          setNotification({ 
+            message: `${incomingTransfers.length} ta kiruvchi o'tkazma kutilmoqda`, 
+            type: 'info' 
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading pending transfers:', error);
+    }
+  };
+
+  const openModal = () => {
+    setSelectedItems([]);
+    setSelectedBranch(selectedBranchId || ''); // Joriy filialni avtomatik tanlash
     setToBranch('');
+    setOperationType('SALE');
     setFirstName('');
     setLastName('');
     setPhone('');
     setPaymentType('');
     setMonths('');
+    setInterestRate('');
+    setDownPayment('');
+    // Sotuvchi tanlash olib tashlandi
     setErrors({});
+    setSelectedProductId('');
+    setTempQuantity('');
+    setTempPrice('');
+    setModalProducts(products);
+    setModalSearch('');
+    setShowSuggestions(false);
     setShowModal(true);
+  };
+
+  const addItem = () => {
+    if (!selectedProductId || !tempQuantity) return;
+    const product = modalProducts.find((p) => p.id === Number(selectedProductId));
+    if (!product) return;
+    if (selectedItems.find((item) => item.id === product.id)) {
+      setNotification({ message: 'Bu mahsulot allaqachon tanlangan', type: 'warning' });
+      return;
+    }
+    const price = tempPrice || product.price.toString();
+    if (Number(price) <= 0) {
+      setNotification({ message: 'Narx 0 dan katta bo\'lishi kerak', type: 'error' });
+      return;
+    }
+    setSelectedItems([
+      ...selectedItems,
+      {
+        id: product.id,
+        name: product.name,
+        quantity: tempQuantity,
+        price,
+        maxQuantity: product.quantity,
+      },
+    ]);
+    setSelectedProductId('');
+    setTempQuantity('');
+    setTempPrice('');
+    setModalSearch('');
+    setShowSuggestions(false);
+  };
+
+  const updateItem = (index, field, value) => {
+    setSelectedItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, [field]: value } : item)),
+    );
+  };
+
+  const removeItem = (index) => {
+    setSelectedItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const closeModal = () => {
     setShowModal(false);
-    setSelectedProduct(null);
-    setTransactionType('');
-    setQuantity('');
-    setPrice('');
+    setSelectedItems([]);
     setSelectedBranch('');
     setToBranch('');
+    setOperationType('SALE');
     setFirstName('');
     setLastName('');
     setPhone('');
     setPaymentType('');
     setMonths('');
+    setInterestRate('');
+    setDownPayment('');
     setErrors({});
     setNotification(null);
+    setSelectedProductId('');
+    setTempQuantity('');
+    setTempPrice('');
+    setModalProducts([]);
+    setModalSearch('');
+    setShowSuggestions(false);
   };
 
   const validateFields = () => {
     const newErrors = {};
-    if (!transactionType) newErrors.transactionType = 'Tranzaksiya turi tanlanishi shart';
-    if (!quantity || isNaN(quantity) || Number(quantity) <= 0 || !Number.isInteger(Number(quantity))) {
-      newErrors.quantity = 'Miqdor 0 dan katta butun son bo\'lishi kerak';
-    } else if (selectedProduct && Number(quantity) > selectedProduct.quantity) {
-      newErrors.quantity = `Maksimal miqdor: ${selectedProduct.quantity} dona`;
-    }
-    if (transactionType === 'SALE' && (!price || isNaN(price) || Number(price) < 0)) {
-      newErrors.price = 'Narx 0 dan katta yoki teng bo\'lishi kerak';
-    }
+    if (selectedItems.length === 0) newErrors.items = 'Kamida bitta mahsulot tanlanishi shart';
+    selectedItems.forEach((item, index) => {
+      if (!item.quantity || isNaN(item.quantity) || Number(item.quantity) <= 0 || !Number.isInteger(Number(item.quantity))) {
+        newErrors[`quantity_${index}`] = 'Miqdor 0 dan katta butun son bo\'lishi kerak';
+      } else if (Number(item.quantity) > item.maxQuantity) {
+        newErrors[`quantity_${index}`] = `Maksimal miqdor: ${item.maxQuantity} dona`;
+      }
+      if (!item.price || isNaN(item.price) || Number(item.price) <= 0) {
+        newErrors[`price_${index}`] = 'Narx 0 dan katta bo\'lishi kerak';
+      }
+    });
     if (!selectedBranch) {
       newErrors.branch = 'Filial tanlanishi shart';
     }
-    if (transactionType === 'TRANSFER' && !toBranch) {
-      newErrors.toBranch = 'O\'tkaziladigan filial tanlanishi shart';
-    }
-    if (transactionType === 'TRANSFER' && Number(toBranch) === Number(selectedBranch)) {
-      newErrors.toBranch = 'O\'tkaziladigan filial boshqa bo\'lishi kerak';
-    }
-    if (transactionType === 'SALE') {
+    if (operationType === 'SALE') {
       if (!firstName.trim()) newErrors.firstName = 'Ism kiritilishi shart';
       if (!lastName.trim()) newErrors.lastName = 'Familiya kiritilishi shart';
       if (!phone.trim() || !/^\+?[1-9]\d{1,14}$/.test(phone)) newErrors.phone = 'Telefon raqami to\'g\'ri kiritilishi shart';
+      // Sotuvchi tanlash majburiy emas
       if (!paymentType) newErrors.paymentType = 'To\'lov turi tanlanishi shart';
-      if ((paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') && 
-          (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months)) || Number(months) > 24)) {
-        newErrors.months = 'Oylar soni 1 dan 24 gacha butun son bo\'lishi kerak';
+      if ((paymentType === 'CREDIT' || paymentType === 'INSTALLMENT')) {
+        if (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months)) || Number(months) > 24) {
+          newErrors.months = 'Oylar soni 1 dan 24 gacha butun son bo\'lishi kerak';
+        }
+        if (!interestRate || isNaN(interestRate) || Number(interestRate) < 0 || Number(interestRate) > 100) {
+          newErrors.interestRate = 'Foiz 0 dan 100 gacha bo\'lishi kerak';
+        }
+        if (downPayment && (isNaN(downPayment) || Number(downPayment) < 0)) {
+          newErrors.downPayment = 'Boshlang\'ich to\'lov 0 dan katta bo\'lishi kerak';
+        }
       }
+    } else if (operationType === 'TRANSFER') {
+      if (!toBranch) newErrors.toBranch = 'Qabul qiluvchi filial tanlanishi shart';
+      else if (toBranch === selectedBranch) newErrors.toBranch = 'Qabul qiluvchi filial boshqa bo\'lishi kerak';
+      
+      // Transfer uchun miqdor tekshirish
+      selectedItems.forEach((item, index) => {
+        if (item.quantity && item.maxQuantity && Number(item.quantity) > item.maxQuantity) {
+          newErrors[`quantity_${index}`] = `Transfer uchun maksimal miqdor: ${item.maxQuantity} dona (mavjud qoldiq)`;
+        }
+      });
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -308,105 +543,171 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
       setNotification({ message: 'Barcha maydonlarni to\'g\'ri to\'ldiring', type: 'error' });
       return;
     }
+    
+    // Transfer uchun tasdiqlash so'rovi
+    if (operationType === 'TRANSFER') {
+      const confirmMessage = `Haqiqatan ham ${branches.find(b => b.id === Number(selectedBranch))?.name} filialidan ${branches.find(b => b.id === Number(toBranch))?.name} filialiga ${selectedItems.map(item => `${item.name} (${formatQuantity(item.quantity)})`).join(', ')} ko'chirmoqchimisiz?`;
+      
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+    }
+    
     setSubmitting(true);
     setNotification(null);
     try {
-      const userId = Number(localStorage.getItem('userId')) || 1;
-      if (transactionType === 'SALE') {
-        const qty = Number(quantity);
-        const prc = Number(price);
+      const baseTotal = selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
+      let finalTotal = baseTotal;
+      let customerData = undefined;
+      let toBranchId = undefined;
+
+      if (operationType === 'SALE') {
         const m = Number(months);
-        const baseTotal = qty * prc;
-        const interestRate = (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? getInterestRate(m) : 0;
-        const finalTotal = baseTotal * (1 + interestRate);
-        const payload = {
-          userId,
-          type: 'SALE',
-          status: 'PENDING',
-          total: baseTotal,
-          finalTotal,
-          paymentType: paymentType === 'INSTALLMENT' ? 'CREDIT' : paymentType,
-          customer: {
-            firstName,
-            lastName,
-            phone,
-          },
-          branchId: Number(selectedBranch),
-          items: [{
-            productId: selectedProduct.id,
-            productName: selectedProduct.name,
-            quantity: qty,
-            price: prc,
-            total: baseTotal,
-          }],
-          ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' ? { months: m, interestRate } : {}),
+        const rate = Number(interestRate) / 100;
+        if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
+          finalTotal = baseTotal * (1 + rate);
+        }
+        customerData = {
+          fullName: `${firstName} ${lastName}`.trim(),
+          phone,
         };
-        console.log('Submitting SALE transaction:', payload);
-        const response = await axiosWithAuth({
+      } else if (operationType === 'TRANSFER') {
+        toBranchId = Number(toBranch);
+      }
+
+      const payload = {
+        type: operationType,
+        status: 'PENDING',
+        total: baseTotal,
+        finalTotal,
+        downPayment: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? Number(downPayment) || 0 : undefined,
+        paymentType: operationType === 'SALE' ? paymentType : undefined,
+        customer: customerData,
+        fromBranchId: Number(selectedBranch),
+        toBranchId,
+        // Sotuvchi tanlash olib tashlandi, soldByUserId avtomatik profil asosida saqlanadi
+        soldByUserId: parseInt(localStorage.getItem('userId')) || null,
+        items: selectedItems.map((item) => ({
+          productId: item.id,
+          quantity: Number(item.quantity),
+          price: Number(item.price),
+          creditMonth: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? Number(months) : undefined,
+          creditPercent: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? Number(interestRate) / 100 : undefined,
+          monthlyPayment: (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? 
+            (Number(item.quantity) * Number(item.price) * (1 + Number(interestRate) / 100)) / Number(months) : undefined,
+        })),
+      };
+
+      console.log('Submitting transaction:', JSON.stringify(payload, null, 2));
+      
+      let response;
+      if (operationType === 'TRANSFER') {
+        console.log('🚚 Starting transfer process...');
+        console.log('Source branch:', branches.find(b => b.id === Number(selectedBranch))?.name);
+        console.log('Destination branch:', branches.find(b => b.id === Number(toBranch))?.name);
+        console.log('Items to transfer:', selectedItems);
+        
+        // Transfer oldidan maqsad filialdagi mavjud mahsulotlarni tekshirish
+        try {
+          const existingProductsResponse = await axiosWithAuth({
+            method: 'get',
+            url: `${API_URL}/products?branchId=${toBranch}&includeZeroQuantity=true`
+          });
+          const existingProducts = existingProductsResponse.data.products || existingProductsResponse.data || [];
+          console.log('🔍 Existing products in destination branch:', existingProducts);
+          
+          // Transfer qilinayotgan mahsulotlar mavjudmi tekshirish (barcode/model/nomi bo'yicha)
+          selectedItems.forEach(item => {
+            const existingProduct = existingProducts.find(p => 
+              (p.barcode && item.barcode && p.barcode.toString().toLowerCase() === item.barcode.toString().toLowerCase()) ||
+              (p.model && item.model && p.model.toString().toLowerCase() === item.model.toString().toLowerCase()) ||
+              p.name?.toLowerCase() === item.name?.toLowerCase() ||
+              p.name?.toLowerCase().includes(item.name?.toLowerCase()) ||
+              item.name?.toLowerCase().includes(p.name?.toLowerCase())
+            );
+            if (existingProduct) {
+              console.log(`✅ Found existing product: ${existingProduct.name} (current quantity: ${existingProduct.quantity})`);
+            } else {
+              console.log(`❌ No existing product found for: ${item.name}`);
+            }
+          });
+        } catch (error) {
+          console.log('Could not check existing products:', error);
+        }
+        
+        response = await axiosWithAuth({
+          method: 'post',
+          url: `${API_URL}/transactions/transfer`,
+          data: {
+            fromBranchId: Number(selectedBranch),
+            toBranchId: Number(toBranch),
+            soldByUserId: parseInt(localStorage.getItem('userId')) || null,
+            items: selectedItems.map((item) => ({
+              productId: item.id,
+              quantity: Number(item.quantity),
+              price: Number(item.price),
+            })),
+          },
+        });
+        
+        console.log('✅ Transfer completed successfully:', response.data);
+        
+        // Transfer muvaffaqiyatli bo'lgach, maqsad filialdagi mahsulotlarni ham yangilash
+        const transferredItems = selectedItems.map(item => 
+          `${item.name} (${formatQuantity(item.quantity)})`
+        ).join(', ');
+        
+        const destinationBranchName = branches.find(b => b.id === Number(toBranch))?.name;
+        const sourceBranchName = branches.find(b => b.id === Number(selectedBranch))?.name;
+        
+        setNotification({ 
+          message: `✅ O'tkazma muvaffaqiyatli amalga oshirildi! ${sourceBranchName} filialidan ${destinationBranchName} filialiga ko'chirildi: ${transferredItems}. Mahsulotlar maqsad filialda mavjud bo'lsa, soniga qo'shildi, yo'q bo'lsa yangi yaratildi.`, 
+          type: 'success' 
+        });
+      } else {
+        // SALE uchun oddiy transaction endpoint ishlatamiz
+        response = await axiosWithAuth({
           method: 'post',
           url: `${API_URL}/transactions`,
           data: payload,
         });
-        console.log('SALE transaction response:', response.data);
-        if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
-          generatePDF();
-        }
-        setNotification({ message: 'Sotuv muvaffaqiyatli amalga oshirildi', type: 'success' });
-      } else if (transactionType === 'TRANSFER') {
-        const qty = Number(quantity);
-        const toBranchName = branches.find(b => b.id === Number(toBranch))?.name || 'Noma\'lum';
-        const transferPayload = {
-          productId: selectedProduct.id,
-          productName: selectedProduct.name,
-          fromBranchId: Number(selectedBranch),
-          toBranchId: Number(toBranch),
-          quantity: qty,
-          initiatedById: userId,
-          transferDate: new Date().toISOString(),
-        };
-        const transactionPayload = {
-          userId,
-          type: 'TRANSFER',
-          status: 'PENDING',
-          total: 0,
-          finalTotal: 0,
-          branchId: Number(selectedBranch),
-          toBranchId: Number(toBranch),
-          toBranchName,
-          items: [{
-            productId: selectedProduct.id,
-            productName: selectedProduct.name,
-            quantity: qty,
-            price: 0,
-            total: 0,
-          }],
-        };
-        console.log('Submitting TRANSFER to /product-transfers:', transferPayload);
-        console.log('Submitting TRANSFER to /transactions:', transactionPayload);
-        const [transferResponse, transactionResponse] = await Promise.all([
-          axiosWithAuth({
-            method: 'post',
-            url: `${API_URL}/product-transfers`,
-            data: transferPayload,
-          }).catch(err => {
-            throw new Error(`Product transfer failed: ${err.response?.data?.message || err.message}`);
-          }),
-          axiosWithAuth({
-            method: 'post',
-            url: `${API_URL}/transactions`,
-            data: transactionPayload,
-          }).catch(err => {
-            throw new Error(`Transaction recording failed: ${err.response?.data?.message || err.message}`);
-          }),
-        ]);
-        console.log('TRANSFER /product-transfers response:', transferResponse.data);
-        console.log('TRANSFER /transactions response:', transactionResponse.data);
-        setNotification({ message: 'Tovar o\'tkazmasi muvaffaqiyatli amalga oshirildi', type: 'success' });
+        
+        setNotification({ message: 'Amal muvaffaqiyatli amalga oshirildi', type: 'success' });
       }
+
+      console.log('Transaction response:', response.data);
+      
+      if (operationType === 'SALE' && (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT')) {
+        generatePDF();
+      }
+      
       closeModal();
-      loadData();
+      
+      // Ma'lumotlarni yangilash - transfer bo'lsa ham, sotish bo'lsa ham
+      await loadData();
+      
+      // Transferdan so'ng bitta marta yangilash kifoya
+      
     } catch (err) {
-      const message = err.message || 'Tranzaksiya yaratishda xatolik';
+      let message = 'Tranzaksiya yaratishda xatolik';
+      
+      if (err.response?.data?.message) {
+        message = err.response.data.message;
+      } else if (err.message) {
+        message = err.message;
+      }
+      
+      // Transfer xatoliklari uchun maxsus xabarlar
+      if (operationType === 'TRANSFER') {
+        if (err.response?.status === 400) {
+          message = 'Transfer ma\'lumotlari noto\'g\'ri. Iltimos tekshiring.';
+        } else if (err.response?.status === 404) {
+          message = 'Filial yoki mahsulot topilmadi.';
+        } else if (err.response?.status === 409) {
+          message = 'Mahsulot miqdori yetarli emas transfer uchun.';
+        }
+      }
+      
       setNotification({ message, type: 'error' });
       console.error('Submit error:', err);
     } finally {
@@ -415,27 +716,66 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
   };
 
   const { totalWithInterest, monthlyPayment, schedule } = calculatePaymentSchedule();
+  
+  const filteredModalProducts = modalProducts
+    .filter((p) => p.quantity > 0)
+    .filter((p) => {
+      const q = (modalSearch || '').toLowerCase();
+      if (!q) return true;
+      return (
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.barcode || '').toLowerCase().includes(q) ||
+        (p.model || '').toLowerCase().includes(q)
+      );
+    })
+    .slice(0, 20);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Chiqim</h1>
-      <select
-        value={selectedBranchId}
-        onChange={(e) => setSelectedBranchId(e.target.value)}
-        className="w-full p-2 border rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
-      >
-        <option value="">Filial tanlang</option>
-        {branches.map((b) => (
-          <option key={b.id} value={b.id}>{b.name}</option>
-        ))}
-      </select>
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Filial tanlang
+        </label>
+        <div className="flex gap-2">
+          <select
+            value={selectedBranchId}
+            onChange={(e) => handleBranchChange(e.target.value)}
+            className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+          >
+            <option value="">Filial tanlang</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          {selectedBranchId && (
+            <button
+              onClick={() => {
+                if (window.confirm('Bu filialni standart filial sifatida saqlashni xohlaysizmi?')) {
+                  localStorage.setItem('branchId', selectedBranchId);
+                  setNotification({ message: 'Filial standart sifatida saqlandi', type: 'success' });
+                }
+              }}
+              className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all duration-200 text-sm"
+              title="Standart filial sifatida saqlash"
+            >
+              💾
+            </button>
+          )}
+        </div>
+      </div>
       {notification && (
-        <div className={`p-4 rounded-lg flex items-center gap-3 mb-4 ${
-          notification.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 
-          'bg-green-50 text-green-700 border border-green-200'
-        }`}>
+        <div
+          className={`p-4 rounded-lg flex items-center gap-3 mb-4 ${
+            notification.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
+            notification.type === 'warning' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
+            'bg-green-50 text-green-700 border border-green-200'
+          }`}
+        >
           <span>{notification.message}</span>
-          <button className="text-sm underline hover:no-underline transition-all" onClick={() => setNotification(null)}>Yopish</button>
+          <button className="text-sm underline hover:no-underline transition-all" onClick={() => setNotification(null)}>
+            Yopish
+          </button>
         </div>
       )}
       <input
@@ -453,6 +793,47 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
       ) : (
         <>
           <h2 className="text-xl font-bold mb-2 text-gray-800">Mahsulotlar Qoldig'i</h2>
+          {selectedBranchId && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800 font-medium">
+                Joriy Filial: <span className="font-bold">{branches.find(b => b.id === Number(selectedBranchId))?.name}</span>
+              </p>
+              <p className="text-blue-600 text-sm mt-1">
+                Filialdan filialga o'tkazish qilish uchun "Chiqim Qilish" tugmasini bosing va "Filialga O'tkazish" turini tanlang
+              </p>
+            </div>
+          )}
+          <div className="flex gap-4 mb-4">
+            <button
+              onClick={openModal}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 disabled:bg-gray-400 transition-all duration-200"
+              disabled={submitting || !selectedBranchId}
+            >
+              Chiqim Qilish
+            </button>
+            <button
+              onClick={loadData}
+              disabled={loading}
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-all duration-200"
+            >
+              {loading ? 'Yuklanmoqda...' : 'Yangilash'}
+            </button>
+            <button
+              onClick={() => {
+                setShowTransferHistory(true);
+                loadTransferHistory();
+              }}
+              disabled={!selectedBranchId}
+              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-400 transition-all duration-200 relative"
+            >
+              O'tkazmalar Tarixi
+              {pendingTransfers.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center">
+                  {pendingTransfers.length}
+                </span>
+              )}
+            </button>
+          </div>
           <div className="overflow-x-auto bg-white rounded-lg shadow">
             <table className="w-full border">
               <thead>
@@ -462,7 +843,6 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                   <th className="p-3">Filial</th>
                   <th className="p-3">Narx</th>
                   <th className="p-3">Miqdor</th>
-                  <th className="p-3">Amallar</th>
                 </tr>
               </thead>
               <tbody>
@@ -474,47 +854,48 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                       <td className="p-3">{product.branch?.name || 'Noma\'lum'}</td>
                       <td className="p-3">{formatCurrency(product.price)}</td>
                       <td className="p-3">{formatQuantity(product.quantity)}</td>
-                      <td className="p-3 flex gap-2">
-                        <button
-                          onClick={() => openModal(product, 'SALE')}
-                          className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 disabled:bg-gray-400 transition-all duration-200"
-                          disabled={submitting || product.quantity === 0}
-                        >
-                          Mijozga Sotish
-                        </button>
-                        <button
-                          onClick={() => openModal(product, 'TRANSFER')}
-                          className="bg-blue-500 text-white px-3 py-1 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-all duration-200"
-                          disabled={submitting || product.quantity === 0}
-                        >
-                          Filialga O'tkazish
-                        </button>
-                      </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="p-3 text-center">Tovarlar topilmadi</td>
+                    <td colSpan="5" className="p-3 text-center">Tovarlar topilmadi</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-          {showModal && selectedProduct && (
+          {showModal && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+              <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
                 <div className="flex justify-between mb-4">
-                  <h3 className="text-lg font-bold">{transactionType === 'SALE' ? 'Mijozga Sotish' : 'Filialga O\'tkazish'}</h3>
+                  <div>
+                    <h3 className="text-lg font-bold">Chiqim Qilish</h3>
+                    {currentUser && (
+                      <p className="text-sm text-gray-600">
+                        Sotuvchi: {currentUser.firstName || currentUser.lastName || 'Noma\'lum'} 
+                        ({currentUser.role})
+                      </p>
+                    )}
+                  </div>
                   <button onClick={closeModal} className="text-gray-600 hover:text-gray-800 transition-all">X</button>
                 </div>
                 <table className="w-full text-sm">
                   <tbody>
                     <tr>
-                      <td className="py-2">Mahsulot</td>
-                      <td className="py-2">{selectedProduct.name}</td>
+                      <td className="py-2">Chiqim Turi</td>
+                      <td>
+                        <select
+                          value={operationType}
+                          onChange={(e) => setOperationType(e.target.value)}
+                          className="w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="SALE">Mijozga Sotish</option>
+                          <option value="TRANSFER">Filialga O'tkazish</option>
+                        </select>
+                      </td>
                     </tr>
                     <tr>
-                      <td className="py-2">Filial (dan)</td>
+                      <td className="py-2">Chiqim Filiali</td>
                       <td>
                         <select
                           value={selectedBranch}
@@ -529,9 +910,9 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                         {errors.branch && <span className="text-red-500 text-xs">{errors.branch}</span>}
                       </td>
                     </tr>
-                    {transactionType === 'TRANSFER' && (
+                    {operationType === 'TRANSFER' && (
                       <tr>
-                        <td className="py-2">Filial (ga)</td>
+                        <td className="py-2">Qabul Filiali</td>
                         <td>
                           <select
                             value={toBranch}
@@ -539,7 +920,7 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                             className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.toBranch ? 'border-red-500' : ''}`}
                           >
                             <option value="">Tanlang</option>
-                            {branches.filter(b => b.id !== Number(selectedBranch)).map((b) => (
+                            {branches.filter((b) => b.id !== Number(selectedBranch)).map((b) => (
                               <option key={b.id} value={b.id}>{b.name}</option>
                             ))}
                           </select>
@@ -547,7 +928,55 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                         </td>
                       </tr>
                     )}
-                    {transactionType === 'SALE' && (
+                    
+                    {/* Transfer ma'lumotlari ko'rsatish */}
+                    {operationType === 'TRANSFER' && selectedBranch && toBranch && (
+                      <tr>
+                        <td colSpan="2" className="py-2">
+                          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <p className="text-yellow-800 font-medium text-sm">
+                              📤 <strong>{branches.find(b => b.id === Number(selectedBranch))?.name}</strong> filialidan
+                              📥 <strong>{branches.find(b => b.id === Number(toBranch))?.name}</strong> filialiga o'tkazish
+                            </p>
+                            <p className="text-yellow-700 text-xs mt-1">
+                              Manba filialdan mahsulotlar kamayadi, maqsad filialga qo'shiladi
+                            </p>
+                            <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                              <p className="text-blue-800 font-medium">ℹ️ Transfer qoidalari:</p>
+                              <ul className="text-blue-700 mt-1 space-y-1">
+                                <li>• Agar mahsulot maqsad filialda mavjud bo'lsa, soniga qo'shiladi</li>
+                                <li>• Agar mahsulot mavjud bo'lmasa, yangi yaratiladi</li>
+                                <li>• Bir xil nomdagi mahsulotlar birlashtiriladi</li>
+                              </ul>
+                            </div>
+                            
+                            {/* Transfer summary */}
+                            {selectedItems.length > 0 && (
+                              <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
+                                <p className="text-green-800 font-medium">📋 Transfer qilish uchun tayyor:</p>
+                                <ul className="text-green-700 mt-1 space-y-1">
+                                  {selectedItems.map((item, index) => (
+                                    <li key={index}>
+                                      • {item.name} - {formatQuantity(item.quantity)} 
+                                      ({formatCurrency(item.price)} dona)
+                                    </li>
+                                  ))}
+                                </ul>
+                                <p className="text-green-700 mt-2 font-medium">
+                                  Jami: {formatQuantity(selectedItems.reduce((sum, item) => sum + Number(item.quantity), 0))}
+                                </p>
+                                <div className="mt-2 p-1 bg-blue-50 border border-blue-200 rounded text-xs">
+                                  <p className="text-blue-700">
+                                    💡 Transfer jarayoni: Mahsulotlar mavjud bo'lsa soniga qo'shiladi, yo'q bo'lsa yangi yaratiladi
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {operationType === 'SALE' && (
                       <>
                         <tr>
                           <td className="py-2">Ism</td>
@@ -582,6 +1011,7 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                             {errors.phone && <span className="text-red-500 text-xs">{errors.phone}</span>}
                           </td>
                         </tr>
+                        {/* Sotuvchi tanlash olib tashlandi */}
                         <tr>
                           <td className="py-2">To'lov Turi</td>
                           <td>
@@ -617,76 +1047,246 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                               </td>
                             </tr>
                             <tr>
-                              <td className="py-2">Foiz</td>
-                              <td>{Number(months) > 0 ? (getInterestRate(months) * 100).toFixed(2) + '%' : 'Noma\'lum'}</td>
+                              <td className="py-2">Foiz (%)</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  value={interestRate}
+                                  onChange={(e) => setInterestRate(e.target.value)}
+                                  className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : ''}`}
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  placeholder="Foiz kiritng (masalan, 5.5)"
+                                />
+                                {errors.interestRate && <span className="text-red-500 text-xs">{errors.interestRate}</span>}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="py-2">Boshlang'ich To'lov</td>
+                              <td>
+                                <input
+                                  type="number"
+                                  value={downPayment}
+                                  onChange={(e) => setDownPayment(e.target.value)}
+                                  className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.downPayment ? 'border-red-500' : ''}`}
+                                  min="0"
+                                  step="0.01"
+                                  placeholder="Boshlang'ich to'lov miqdori"
+                                />
+                                {errors.downPayment && <span className="text-red-500 text-xs">{errors.downPayment}</span>}
+                              </td>
                             </tr>
                             <tr>
                               <td className="py-2">Umumiy Summa</td>
-                              <td>{formatCurrency(totalWithInterest)}</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().totalWithInterest)}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2">Boshlang'ich To'lov</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().downPaymentAmount)}</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2">Qolgan Summa</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().remainingAfterDownPayment)}</td>
                             </tr>
                             <tr>
                               <td className="py-2">Oylik To'lov</td>
-                              <td>{formatCurrency(monthlyPayment)}</td>
+                              <td>{formatCurrency(calculatePaymentSchedule().monthlyPayment)}</td>
                             </tr>
                           </>
                         )}
-                        <tr>
-                          <td className="py-2">Narx</td>
-                          <td>
-                            <input
-                              type="number"
-                              value={price}
-                              onChange={(e) => setPrice(e.target.value)}
-                              className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.price ? 'border-red-500' : ''}`}
-                              step="0.01"
-                              min="0"
-                            />
-                            {errors.price && <span className="text-red-500 text-xs">{errors.price}</span>}
-                          </td>
-                        </tr>
                       </>
                     )}
                     <tr>
-                      <td className="py-2">Miqdor</td>
-                      <td>
-                        <input
-                          type="number"
-                          value={quantity}
-                          onChange={(e) => setQuantity(e.target.value)}
-                          className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.quantity ? 'border-red-500' : ''}`}
-                          min="1"
-                          step="1"
-                        />
-                        {errors.quantity && <span className="text-red-500 text-xs">{errors.quantity}</span>}
+                      <td colSpan="2" className="py-2">
+                        <h4 className="text-md font-bold mb-2">Mahsulot Tanlash</h4>
+                        {operationType === 'TRANSFER' && (
+                          <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                            <p className="text-blue-800">
+                              📍 <strong>{branches.find(b => b.id === Number(selectedBranch))?.name}</strong> filialidagi mavjud mahsulotlar:
+                            </p>
+                            <p className="text-blue-700 text-xs mt-1">
+                              ⚠️ Eslatma: Maqsad filialda bir xil nomdagi mahsulot mavjud bo'lsa, soniga qo'shiladi
+                            </p>
+                            <p className="text-blue-700 text-xs mt-1">
+                              🔄 Transfer jarayoni: Manba filialdan kamayadi → Maqsad filialga qo'shiladi
+                            </p>
+                            <p className="text-blue-700 text-xs mt-1">
+                              🔍 Mahsulot qidirish: Nomi bilan (katta-kichik harflar hisobga olinmaydi)
+                            </p>
+                          </div>
+                        )}
+                        <div className="flex gap-2 mb-2">
+                          <div className="relative flex-1">
+                            <input
+                              type="text"
+                              value={modalSearch}
+                              onChange={(e) => {
+                                setModalSearch(e.target.value);
+                                setShowSuggestions(true);
+                              }}
+                              onFocus={() => setShowSuggestions(true)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const first = filteredModalProducts[0];
+                                  if (first) {
+                                    setSelectedProductId(first.id.toString());
+                                    setTempPrice(first.price.toString());
+                                    setModalSearch(first.name);
+                                    setShowSuggestions(false);
+                                  }
+                                }
+                              }}
+                              placeholder="Shtrix / Model / Nomi bo'yicha qidirish"
+                              className="w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            {showSuggestions && (
+                              <div className="absolute z-10 mt-1 w-full max-h-56 overflow-auto bg-white border rounded-lg shadow">
+                                {filteredModalProducts.length > 0 ? (
+                                  filteredModalProducts.map((p) => (
+                                    <button
+                                      type="button"
+                                      key={p.id}
+                                      className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between gap-2"
+                                      onClick={() => {
+                                        setSelectedProductId(p.id.toString());
+                                        setTempPrice(p.price.toString());
+                                        setModalSearch(p.name);
+                                        setShowSuggestions(false);
+                                      }}
+                                    >
+                                      <span className="truncate">
+                                        {p.name}
+                                      </span>
+                                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                                        {(p.barcode ? `#${p.barcode} · ` : '') + formatQuantity(p.quantity)}
+                                      </span>
+                                    </button>
+                                  ))
+                                ) : (
+                                  <div className="px-3 py-2 text-sm text-gray-500">Topilmadi</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            type="number"
+                            value={tempQuantity}
+                            onChange={(e) => setTempQuantity(e.target.value)}
+                            placeholder="Miqdor"
+                            className="w-24 p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            min="1"
+                            step="1"
+                          />
+                          <input
+                            type="number"
+                            value={tempPrice}
+                            onChange={(e) => setTempPrice(e.target.value)}
+                            placeholder="Narx"
+                            className="w-24 p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            step="0.01"
+                            min="0.01"
+                          />
+                          <button
+                            onClick={addItem}
+                            className="bg-green-500 text-white px-2 py-1 rounded-lg hover:bg-green-600 transition-all duration-200"
+                            disabled={!selectedProductId || !tempQuantity}
+                          >
+                            Qo'shish
+                          </button>
+                        </div>
+                        {errors.items && <span className="text-red-500 text-xs">{errors.items}</span>}
                       </td>
                     </tr>
+                    <tr>
+                      <td colSpan="2" className="py-2">
+                        <h4 className="text-md font-bold mb-2">Tanlangan Mahsulotlar</h4>
+                        {selectedItems.length === 0 ? (
+                          <p className="text-gray-500">Mahsulot tanlanmadi</p>
+                        ) : (
+                          <table className="w-full text-sm border">
+                            <thead>
+                              <tr className="bg-gray-100">
+                                <th className="p-2">Mahsulot</th>
+                                <th className="p-2">Narx</th>
+                                <th className="p-2">Miqdor</th>
+                                <th className="p-2">Amallar</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedItems.map((item, index) => (
+                                <tr key={index} className="border-t">
+                                  <td className="p-2">{item.name}</td>
+                                  <td className="p-2">
+                                    <input
+                                      type="number"
+                                      value={item.price}
+                                      onChange={(e) => updateItem(index, 'price', e.target.value)}
+                                      className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : ''}`}
+                                      step="0.01"
+                                      min="0.01"
+                                    />
+                                    {errors[`price_${index}`] && (
+                                      <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
+                                    )}
+                                  </td>
+                                  <td className="p-2">
+                                    <input
+                                      type="number"
+                                      value={item.quantity}
+                                      onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                                      className={`w-full p-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`quantity_${index}`] ? 'border-red-500' : ''}`}
+                                      min="1"
+                                      step="1"
+                                    />
+                                    {errors[`quantity_${index}`] && (
+                                      <span className="text-red-500 text-xs">{errors[`quantity_${index}`]}</span>
+                                    )}
+                                  </td>
+                                  <td className="p-2">
+                                    <button
+                                      onClick={() => removeItem(index)}
+                                      className="bg-red-500 text-white px-2 py-1 rounded-lg hover:bg-red-600 transition-all duration-200"
+                                    >
+                                      O'chirish
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                    {operationType === 'SALE' && ['CREDIT', 'INSTALLMENT'].includes(paymentType) && months && Number(months) > 0 && (
+                      <tr>
+                        <td colSpan="2" className="py-2">
+                          <h4 className="text-md font-bold mb-2">To'lov Jadvali</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm border">
+                              <thead>
+                                <tr className="bg-gray-100">
+                                  <th className="p-2">Oylik</th>
+                                  <th className="p-2">To'lov Summasi</th>
+                                  <th className="p-2">Qoldiq Summa</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {schedule.map((row) => (
+                                  <tr key={row.month} className="border-t">
+                                    <td className="p-2">{row.month}</td>
+                                    <td className="p-2">{formatCurrency(row.payment)}</td>
+                                    <td className="p-2">{formatCurrency(row.remainingBalance)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
-                {['CREDIT', 'INSTALLMENT'].includes(paymentType) && months && Number(months) > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-md font-bold mb-2">To'lov Jadvali</h4>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm border">
-                        <thead>
-                          <tr className="bg-gray-100">
-                            <th className="p-2">Oylik</th>
-                            <th className="p-2">To'lov Summasi</th>
-                            <th className="p-2">Qoldiq Summa</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {schedule.map((row) => (
-                            <tr key={row.month} className="border-t">
-                              <td className="p-2">{row.month}</td>
-                              <td className="p-2">{formatCurrency(row.payment)}</td>
-                              <td className="p-2">{formatCurrency(row.remainingBalance)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
                 <div className="flex gap-2 mt-4">
                   <button
                     onClick={handleSubmit}
@@ -700,6 +1300,98 @@ ${schedule.map(row => `${row.month} & ${formatCurrency(row.payment)} & ${formatC
                     className="flex-1 bg-gray-200 p-2 rounded-lg hover:bg-gray-300 transition-all duration-200"
                   >
                     Bekor
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Transfer History Modal */}
+          {showTransferHistory && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto">
+                <div className="flex justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-bold">O'tkazmalar Tarixi</h3>
+                    <p className="text-sm text-gray-600">
+                      Filial: {branches.find(b => b.id === Number(selectedBranchId))?.name}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setShowTransferHistory(false)} 
+                    className="text-gray-600 hover:text-gray-800 transition-all"
+                  >
+                    X
+                  </button>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full border">
+                    <thead>
+                      <tr className="bg-gray-100 text-left">
+                        <th className="p-3">Sana</th>
+                        <th className="p-3">Turi</th>
+                        <th className="p-3">Manba Filial</th>
+                        <th className="p-3">Maqsad Filial</th>
+                        <th className="p-3">Mahsulotlar</th>
+                        <th className="p-3">Holat</th>
+                        <th className="p-3">Kim Ko'chirgan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transferHistory.length > 0 ? (
+                        transferHistory.map((transfer) => (
+                          <tr key={transfer.id} className="border-t hover:bg-gray-50">
+                            <td className="p-3">{formatDate(transfer.createdAt)}</td>
+                            <td className="p-3">
+                              {transfer.fromBranchId === Number(selectedBranchId) ? 'Chiqim' : 'Kirim'}
+                            </td>
+                            <td className="p-3">
+                              {transfer.fromBranch?.name || 'Noma\'lum'}
+                            </td>
+                            <td className="p-3">
+                              {transfer.toBranch?.name || 'Noma\'lum'}
+                            </td>
+                            <td className="p-3">
+                              {transfer.items?.map(item => 
+                                `${item.product?.name || 'Noma\'lum'} (${formatQuantity(item.quantity)})`
+                              ).join(', ') || 'Noma\'lum'}
+                            </td>
+                            <td className="p-3">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                transfer.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                                transfer.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-red-100 text-red-800'
+                              }`}>
+                                {transfer.status === 'COMPLETED' ? 'Tugallangan' :
+                                 transfer.status === 'PENDING' ? 'Kutilmoqda' : 'Bekor qilingan'}
+                              </span>
+                              {transfer.status === 'COMPLETED' && (
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Mahsulotlar ko'chirildi
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              {transfer.soldBy?.firstName || transfer.soldBy?.lastName || 'Noma\'lum'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="7" className="p-3 text-center">O'tkazmalar topilmadi</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                
+                <div className="flex justify-end mt-4">
+                  <button
+                    onClick={() => setShowTransferHistory(false)}
+                    className="bg-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 transition-all duration-200"
+                  >
+                    Yopish
                   </button>
                 </div>
               </div>

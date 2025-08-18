@@ -29,7 +29,6 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("all");
   const [employees, setEmployees] = useState([]);
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,7 +39,8 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
     propSelectedBranchId || localStorage.getItem("selectedBranchId") || ""
   );
   const [formData, setFormData] = useState({
-    name: "",
+    firstName: "",
+    lastName: "",
     email: "",
     phone: "",
     role: UserRole.ADMIN,
@@ -50,7 +50,14 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
   });
   const [formErrors, setFormErrors] = useState({});
 
-  const departments = ["Хамма бўлимлар", "Бошқарув", "Савдо", "Омбор", "Молия"];
+  const departments = [
+    "all",
+    "Бошқарув",
+    "Савдо",
+    "Омбор",
+    "Доставка",
+    "Молия",
+  ];
 
   // Phone number formatting function
   const formatPhoneNumber = (value) => {
@@ -84,6 +91,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       throw new Error("Unauthorized: Session expired. Please login again.");
     }
     if (!response.ok) {
+      throw new Error(await response.text() || "Request failed");
     }
     return response;
   };
@@ -122,7 +130,9 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
         ]);
         const mappedEmployees = usersData.map((user) => ({
           id: user.id.toString(),
-          name: user.name,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          name: `${user.firstName} ${user.lastName}`,
           email: user.email,
           phone: user.phone,
           position: getPositionFromRole(user.role),
@@ -163,7 +173,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.WAREHOUSE:
         return "Омборчи";
       case UserRole.AUDITOR:
-        return "Доставкачи";
+        return "Аудитор";
       default:
         return "Ходим";
     }
@@ -180,7 +190,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.WAREHOUSE:
         return "Омбор";
       case UserRole.AUDITOR:
-        return "Доставка";
+        return "Молия";
       default:
         return "Бошқарув";
     }
@@ -210,7 +220,8 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
 
   const validateForm = () => {
     const errors = {};
-    if (!formData.name.trim()) errors.name = "Ном киритиш мажбурий";
+    if (!formData.firstName.trim()) errors.firstName = "Исмингизни киритинг";
+    if (!formData.lastName.trim()) errors.lastName = "Фамилиянгизни киритинг";
     if (!formData.email.trim() || !/\S+@\S+\.\S+/.test(formData.email))
       errors.email = "Тўғри email киритинг";
     if (
@@ -237,7 +248,8 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       return;
     }
     const employeeData = {
-      name: formData.name,
+      firstName: formData.firstName,
+      lastName: formData.lastName,
       email: formData.email,
       phone: formData.phone.replace(/\s/g, ""),
       role: formData.role,
@@ -271,7 +283,9 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
           ...prev,
           {
             id: updatedEmployee.id.toString(),
-            name: updatedEmployee.name,
+            firstName: updatedEmployee.firstName,
+            lastName: updatedEmployee.lastName,
+            name: `${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
             email: updatedEmployee.email,
             phone: updatedEmployee.phone,
             position: getPositionFromRole(updatedEmployee.role),
@@ -291,7 +305,9 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
             emp.id === selectedEmployee.id
               ? {
                   ...emp,
-                  name: updatedEmployee.name,
+                  firstName: updatedEmployee.firstName,
+                  lastName: updatedEmployee.lastName,
+                  name: `${updatedEmployee.firstName} ${updatedEmployee.lastName}`,
                   email: updatedEmployee.email,
                   phone: updatedEmployee.phone,
                   role: updatedEmployee.role,
@@ -339,7 +355,8 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
   const openEditModal = (employee) => {
     setSelectedEmployee(employee);
     setFormData({
-      name: employee.name,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
       email: employee.email,
       phone: employee.phone,
       role: employee.role,
@@ -353,7 +370,8 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
     setModalType(null);
     setSelectedEmployee(null);
     setFormData({
-      name: "",
+      firstName: "",
+      lastName: "",
       email: "",
       phone: "",
       role: UserRole.ADMIN,
@@ -424,7 +442,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.WAREHOUSE:
         return "Омборчи";
       case UserRole.AUDITOR:
-        return "Доставкачи";
+        return "Аудитор";
       default:
         return "Ходим";
     }
@@ -438,11 +456,9 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
     const matchesDepartment =
       selectedDepartment === "all" ||
       employee.department === selectedDepartment;
-    const matchesStatus =
-      selectedStatus === "all" || employee.status === selectedStatus;
     const matchesBranch =
       !selectedBranchId || employee.branchId.toString() === selectedBranchId;
-    return matchesSearch && matchesDepartment && matchesStatus && matchesBranch;
+    return matchesSearch && matchesDepartment && matchesBranch;
   });
 
   const totalEmployees = filteredEmployees.length;
@@ -540,19 +556,37 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Исм Фамилия
+                    Исми
                   </label>
                   <input
                     type="text"
-                    name="name"
-                    value={formData.name}
+                    name="firstName"
+                    value={formData.firstName}
                     onChange={handleInputChange}
                     className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Исм Фамилияси"
+                    placeholder="Исми"
                   />
-                  {formErrors.name && (
+                  {formErrors.firstName && (
                     <p className="text-red-600 text-sm mt-1">
-                      {formErrors.name}
+                      {formErrors.firstName}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Фамилияси
+                  </label>
+                  <input
+                    type="text"
+                    name="lastName"
+                    value={formData.lastName}
+                    onChange={handleInputChange}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Фамилияси"
+                  />
+                  {formErrors.lastName && (
+                    <p className="text-red-600 text-sm mt-1">
+                      {formErrors.lastName}
                     </p>
                   )}
                 </div>
@@ -704,7 +738,8 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
           onClick={() => {
             setModalType("add");
             setFormData({
-              name: "",
+              firstName: "",
+              lastName: "",
               email: "",
               phone: "",
               role: UserRole.ADMIN,
@@ -859,9 +894,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center text-sm text-gray-600">
-                      <Calendar
-
- size={14} className="mr-2" />
+                      <Calendar size={14} className="mr-2" />
                       {employee.hireDate}
                     </div>
                   </td>

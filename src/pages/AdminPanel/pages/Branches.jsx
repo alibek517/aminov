@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
   Filter,
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const Branches = () => {
+const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
@@ -23,6 +23,9 @@ const Branches = () => {
   const [newBranch, setNewBranch] = useState({ name: '', location: '', phone: '' });
   const [editBranch, setEditBranch] = useState({ name: '', location: '', phone: '' });
   const [error, setError] = useState(null);
+  const [selectedBranchId, setSelectedBranchId] = useState(
+    propSelectedBranchId || localStorage.getItem('selectedBranchId') || ''
+  );
 
   const fetchWithAuth = async (url, options = {}) => {
     const token = localStorage.getItem('access_token');
@@ -48,39 +51,87 @@ const Branches = () => {
     }
 
     if (!response.ok) {
+      throw new Error('Request failed');
     }
 
     return response;
   };
 
   useEffect(() => {
-    fetchBranches();
+    const handleStorageChange = (e) => {
+      if (e.key === 'selectedBranchId') {
+        setSelectedBranchId(e.newValue || '');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
-  const fetchBranches = async () => {
+  useEffect(() => {
+    if (propSelectedBranchId !== undefined) {
+      setSelectedBranchId(propSelectedBranchId);
+    }
+  }, [propSelectedBranchId]);
+
+  useEffect(() => {
+    fetchBranches();
+  }, [fetchBranches]);
+
+  const fetchBranches = useCallback(async () => {
     try {
       const response = await fetchWithAuth('https://suddocs.uz/branches');
       const data = await response.json();
-      const enhancedBranches = data.map((branch) => ({
-        ...branch,
-        id: branch.id,
-        address: branch.location,
-        status: branch.products.length > 0 ? 'active' : 'unknown',
-        employeeCount: branch.users.length,
-        inventoryValue: branch.products.reduce(
-          (sum, product) => sum + product.price * product.quantity,
-          0
-        ),
-        monthlyRevenue: 0,
-        monthlyTarget: 10000000,
-        workingHours: '09:00 - 18:00',
-        area: 200,
-      }));
+      
+      // Filter branches by selectedBranchId if provided
+      let filteredData = data;
+      if (selectedBranchId) {
+        filteredData = data.filter(branch => branch.id.toString() === selectedBranchId);
+      }
+      
+      const enhancedBranches = filteredData.map((branch) => {
+        console.log('Processing branch:', branch);
+        
+        // Safely calculate inventory value
+        let inventoryValue = 0;
+        if (branch.products && Array.isArray(branch.products)) {
+          console.log(`Branch ${branch.id} has ${branch.products.length} products`);
+          inventoryValue = branch.products.reduce((sum, product) => {
+            const price = parseFloat(product.price) || 0;
+            const quantity = parseInt(product.quantity) || 0;
+            const productValue = price * quantity;
+            console.log(`Product ${product.id}: price=${price}, quantity=${quantity}, value=${productValue}`);
+            return sum + productValue;
+          }, 0);
+        } else {
+          console.log(`Branch ${branch.id} has no products or products is not an array:`, branch.products);
+        }
+        
+        // Safely get employee count
+        const employeeCount = branch.users && Array.isArray(branch.users) ? branch.users.length : 0;
+        console.log(`Branch ${branch.id}: employees=${employeeCount}, inventoryValue=${inventoryValue}`);
+        
+        return {
+          ...branch,
+          id: branch.id,
+          address: branch.location || branch.address || 'Манзил кўрсатилмаган',
+          status: branch.status || 'active', // Use actual status from API
+          employeeCount: employeeCount,
+          inventoryValue: inventoryValue,
+          workingHours: branch.workingHours || '09:00 - 18:00',
+          area: branch.area || 0,
+        };
+      });
+      console.log('Enhanced branches:', enhancedBranches);
       setBranches(enhancedBranches);
     } catch (err) {
       console.error(err);
+      setError(err.message || 'Failed to fetch branches');
     }
-  };
+  }, [selectedBranchId, fetchWithAuth]);
 
   const handleAddBranch = async (e) => {
     e.preventDefault();
@@ -139,6 +190,10 @@ const Branches = () => {
         return 'bg-green-100 text-green-800';
       case 'inactive':
         return 'bg-red-100 text-red-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'suspended':
+        return 'bg-gray-100 text-gray-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -150,8 +205,12 @@ const Branches = () => {
         return 'Фаол';
       case 'inactive':
         return 'Фаол эмас';
+      case 'pending':
+        return 'Кутилмоқда';
+      case 'suspended':
+        return 'Тўхтатилган';
       default:
-        return 'Номаълум';
+        return status || 'Номаълум';
     }
   };
 
@@ -271,8 +330,11 @@ const Branches = () => {
               className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">Барча ҳолатлар</option>
-              <option value="active">Фаол</option>
-              <option value="inactive">Фаол эмас</option>
+              {Array.from(new Set(branches.map(b => b.status))).map(status => (
+                <option key={status} value={status}>
+                  {getStatusText(status)}
+                </option>
+              ))}
             </select>
           </div>
         </div>

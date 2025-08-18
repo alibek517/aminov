@@ -19,6 +19,7 @@ const Dashboard = () => {
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
   const [loading, setLoading] = useState(false);
+  const [branchesLoading, setBranchesLoading] = useState(true);
   const [notification, setNotification] = useState(null);
   const navigate = useNavigate();
   const API_URL = 'https://suddocs.uz';
@@ -51,19 +52,29 @@ const Dashboard = () => {
 
   useEffect(() => {
     const fetchBranches = async () => {
+      setBranchesLoading(true);
       try {
         const branchesRes = await axiosWithAuth({ method: 'get', url: `${API_URL}/branches` });
-        const branchesData = branchesRes.data;
+        const branchesData = branchesRes.data || [];
         setBranches(branchesData);
-        // Automatically select "Ombor" branch (case-insensitive)
-        const omborBranch = branchesData.find((b) => b.name.toLowerCase() === 'ombor');
-        if (omborBranch) {
-          setSelectedBranchId(omborBranch.id.toString());
+        
+        if (branchesData.length > 0) {
+          // Automatically select "Ombor" branch (case-insensitive)
+          const omborBranch = branchesData.find((b) => b.name.toLowerCase() === 'ombor');
+          if (omborBranch) {
+            setSelectedBranchId(omborBranch.id.toString());
+          } else {
+            // If no "Ombor" branch, select the first one
+            setSelectedBranchId(branchesData[0].id.toString());
+          }
         } else {
-          setNotification({ message: '"Ombor" filiali topilmadi', type: 'error' });
+          setNotification({ message: 'Filiallar topilmadi', type: 'error' });
         }
       } catch (err) {
+        console.error('Error fetching branches:', err);
         setNotification({ message: err.message || 'Filiallarni yuklashda xatolik', type: 'error' });
+      } finally {
+        setBranchesLoading(false);
       }
     };
     fetchBranches();
@@ -105,12 +116,23 @@ const Dashboard = () => {
         axiosWithAuth({ method: 'get', url: `${API_URL}/transactions?${queryParams.toString()}` }),
         axiosWithAuth({ method: 'get', url: `${API_URL}/products?${queryParams.toString()}` }),
       ]);
-      setTransactions(transactionsRes.data);
-      setProducts(productsRes.data);
+      
+      // Backend returns { transactions: [...], pagination: {...} } for transactions
+      const transactionsData = transactionsRes.data.transactions || transactionsRes.data || [];
+      const productsData = productsRes.data || [];
+      
+      console.log('Transactions data:', transactionsData);
+      console.log('Products data:', productsData);
+      
+      setTransactions(transactionsData);
+      setProducts(productsData);
     } catch (err) {
-      const message = err.response?.data?.message || 'Ma\'lumotlarni yuklashda xatolik';
+      console.error('Error fetching data:', err);
+      const message = err.response?.data?.message || err.message || 'Ma\'lumotlarni yuklashda xatolik';
       console.error('Error details:', err.response?.data);
       setNotification({ message, type: 'error' });
+      setTransactions([]);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -137,19 +159,19 @@ const Dashboard = () => {
 
     const currentInflows = transactions
       .filter((tx) => tx.type === 'PURCHASE' && new Date(tx.createdAt) >= currentMonth)
-      .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+      .reduce((sum, tx) => sum + (tx.items ? tx.items.reduce((s, item) => s + (item.quantity || 0), 0) : 0), 0);
     const currentOutflows = transactions
       .filter((tx) => (tx.type === 'SALE' || tx.type === 'STOCK_ADJUSTMENT') && new Date(tx.createdAt) >= currentMonth)
-      .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+      .reduce((sum, tx) => sum + (tx.items ? tx.items.reduce((s, item) => s + (item.quantity || 0), 0) : 0), 0);
     const previousInflows = transactions
       .filter((tx) => tx.type === 'PURCHASE' && new Date(tx.createdAt) >= previousMonth && new Date(tx.createdAt) < currentMonth)
-      .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+      .reduce((sum, tx) => sum + (tx.items ? tx.items.reduce((s, item) => s + (item.quantity || 0), 0) : 0), 0);
     const previousOutflows = transactions
       .filter((tx) => (tx.type === 'SALE' || tx.type === 'STOCK_ADJUSTMENT') && new Date(tx.createdAt) >= previousMonth && new Date(tx.createdAt) < currentMonth)
-      .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+      .reduce((sum, tx) => sum + (tx.items ? tx.items.reduce((s, item) => s + (item.quantity || 0), 0) : 0), 0);
     const dailyInflows = transactions
       .filter((tx) => tx.type === 'PURCHASE' && new Date(tx.createdAt) >= startOfDay && new Date(tx.createdAt) <= endOfDay)
-      .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+      .reduce((sum, tx) => sum + (tx.items ? tx.items.reduce((s, item) => s + (item.quantity || 0), 0) : 0), 0);
 
     const inflowGrowth = previousInflows === 0 ? (currentInflows > 0 ? 100 : 0) : ((currentInflows - previousInflows) / previousInflows) * 100;
     const outflowGrowth = previousOutflows === 0 ? (currentOutflows > 0 ? 100 : 0) : ((currentOutflows - previousOutflows) / previousOutflows) * 100;
@@ -172,9 +194,10 @@ const Dashboard = () => {
         <select
           value={selectedBranchId}
           onChange={(e) => setSelectedBranchId(e.target.value)}
-          className="w-full max-w-xs p-2 border border-gray-300 rounded-md bg-white text-gray-700 focus:outline-none focus:border-blue-500"
+          disabled={branchesLoading}
+          className="w-full max-w-xs p-2 border border-gray-300 rounded-md bg-white text-gray-700 focus:outline-none focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
         >
-          <option value="">Filial tanlang</option>
+          <option value="">{branchesLoading ? 'Yuklanmoqda...' : 'Filial tanlang'}</option>
           {branches.map((b) => (
             <option key={b.id} value={b.id}>{b.name}</option>
           ))}
@@ -248,17 +271,29 @@ const Dashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {transactions.slice(0, 5).map((transaction) => (
-                  <tr key={transaction.id} className="border-b border-gray-200 last:border-none">
-                    <td className="p-4 text-gray-800">#{transaction.id}</td>
-                    <td className="p-4 text-gray-800">{transaction.type}</td>
-                    <td className="p-4 text-gray-800">
-                      {transaction.customer ? `${transaction.customer.firstName} ${transaction.customer.lastName}` : 'Noma\'lum'}
+                {transactions && transactions.length > 0 ? (
+                  transactions.slice(0, 5).map((transaction) => (
+                    <tr key={transaction.id} className="border-b border-gray-200 last:border-none">
+                      <td className="p-4 text-gray-800">#{transaction.id}</td>
+                      <td className="p-4 text-gray-800">{transaction.type || 'Noma\'lum'}</td>
+                      <td className="p-4 text-gray-800">
+                        {transaction.customer ? 
+                          (transaction.customer.fullName || 
+                           `${transaction.customer.firstName || ''} ${transaction.customer.lastName || ''}`.trim() || 
+                           'Noma\'lum') : 
+                          'Noma\'lum'}
+                      </td>
+                      <td className="p-4 text-gray-800">{formatCurrency(transaction.finalTotal || 0)}</td>
+                      <td className="p-4 text-gray-800">{transaction.createdAt ? formatDate(transaction.createdAt) : 'Noma\'lum'}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="5" className="p-4 text-center text-gray-600">
+                      Tranzaksiyalar topilmadi
                     </td>
-                    <td className="p-4 text-gray-800">{formatCurrency(transaction.finalTotal)}</td>
-                    <td className="p-4 text-gray-800">{formatDate(transaction.createdAt)}</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

@@ -35,13 +35,14 @@ const StatCard = ({
   </div>
 );
 
-const Dashboard = () => {
+const Dashboard = ({ selectedBranchId: propSelectedBranchId }) => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [branches, setBranches] = useState([]);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const token = localStorage.getItem("access_token");
+  const selectedBranchId = propSelectedBranchId || localStorage.getItem('selectedBranchId') || '';
 
   const soldProducts = products
     .filter((product) => product.status === "SOLD")
@@ -62,8 +63,12 @@ const Dashboard = () => {
         "Content-Type": "application/json",
       };
 
+      const productsUrl = selectedBranchId
+        ? `https://suddocs.uz/products?branchId=${selectedBranchId}`
+        : "https://suddocs.uz/products";
+
       const [productRes, categoryRes, branchRes] = await Promise.all([
-        fetch("https://suddocs.uz/products", { headers }),
+        fetch(productsUrl, { headers }),
         fetch("https://suddocs.uz/categories", { headers }),
         fetch("https://suddocs.uz/branches", { headers }),
       ]);
@@ -94,7 +99,7 @@ const Dashboard = () => {
     } else {
       fetchData();
     }
-  }, [token, navigate]);
+  }, [token, navigate, selectedBranchId]);
 
   if (error) {
     return <div className="text-red-600 text-center">{error}</div>;
@@ -169,87 +174,7 @@ const Dashboard = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-100">
-            <h3 className="text-lg font-semibold text-gray-900">
-              Сўнгги Сотувлар
-            </h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[700px]">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Маҳсулот
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Миқдор
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Нархи
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Филиал
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Сана / Вақт
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {soldProducts.length > 0 ? (
-                  soldProducts.map((item) => {
-                    const branch = branches.find((b) => b.id === item.branchId);
-                    return (
-                      <tr
-                        key={item.id}
-                        className="hover:bg-gray-50 transition-colors duration-150"
-                      >
-                        <td className="px-6 py-4 text-gray-900">{item.name}</td>
-                        <td className="px-6 py-4 text-gray-700">
-                          {item.quantity} шт
-                        </td>
-                        <td className="px-6 py-4 text-gray-700">
-                          {item.price?.toLocaleString()} сўм
-                        </td>
-                        <td className="px-6 py-4 text-gray-700">
-                          {branch ? branch.name : "Филиал топилмади"}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-gray-900">
-                            {new Date(item.updatedAt).toLocaleDateString(
-                              "uz-Cyrl-UZ"
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {new Date(item.updatedAt).toLocaleTimeString(
-                              "uz-Cyrl-UZ",
-                              {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-6 py-4 text-center text-gray-500"
-                    >
-                      Сотилган маҳсулотлар йўқ
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 gap-6">
         {/* Low Stock */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="p-6 border-b border-gray-100 flex items-center">

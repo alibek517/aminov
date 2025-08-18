@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut } from 'lucide-react';
-import Logout from '../Chiqish/logout'; // Adjust path as needed
+import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut, Users, Ban } from 'lucide-react';
+import Logout from '../Chiqish/logout'; 
 
 const Sidebar = ({ token, socket, locationPermission, locationError }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -16,6 +16,8 @@ const Sidebar = ({ token, socket, locationPermission, locationError }) => {
     { id: 'dashboard', label: 'Boshqarma', icon: BarChart3, path: '/kasir/dashboard' },
     { id: 'sales', label: 'Sotish', icon: ShoppingCart, path: '/kasir/sales' },
     { id: 'defective', label: 'Brak/Qaytarish', icon: AlertTriangle, path: '/kasir/defective' },
+    { id: 'braklar', label: 'Brak Maxsulotlar', icon: Ban, path: '/kasir/braks' },  
+    { id: 'mijozlar', label: 'Mijozlar', icon: Users, path: '/kasir/mijozlar' },
   ];
 
   // Fetch branches from API
