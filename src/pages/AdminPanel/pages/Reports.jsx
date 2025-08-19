@@ -7,7 +7,6 @@ import 'react-toastify/dist/ReactToastify.css';
 const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [loadingSales, setLoadingSales] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [filters, setFilters] = useState({ startDate: '', endDate: '', productId: '' });
@@ -41,13 +40,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     if (selectedBranchId !== undefined) {
       fetchTransactions();
     }
-  }, [selectedBranchId, fetchTransactions]);
-
-  useEffect(() => {
-    if (propSelectedBranchId !== undefined) {
-      setSelectedBranchId(propSelectedBranchId);
-    }
-  }, [propSelectedBranchId]);
+  }, [selectedBranchId, filters.startDate, filters.endDate, filters.productId]);
 
   const transactionTypes = {
     SALE: { label: 'Sotuv', color: 'bg-green-100 text-green-800' },
@@ -55,6 +48,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     TRANSFER: { label: 'Otkazma', color: 'bg-blue-100 text-blue-800' },
     WRITE_OFF: { label: 'Yozib tashlash', color: 'bg-red-100 text-red-800' },
     STOCK_ADJUSTMENT: { label: 'Zaxira tuzatish', color: 'bg-purple-100 text-purple-800' },
+    PURCHASE: { label: 'Kirim', color: 'bg-indigo-100 text-indigo-800' },
   };
 
   const formatDate = (dateString) => {
@@ -71,17 +65,40 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
 
   const formatCurrency = (amount) => {
     if (!amount || amount === 0) return '0 сўм';
-    
-    // For large numbers, use custom formatting
-    if (amount >= 1_000_000_000) {
-      return `${(amount / 1_000_000_000).toFixed(1)} миллиард сўм`;
-    } else if (amount >= 1_000_000) {
-      return `${(amount / 1_000_000).toFixed(1)} миллион сўм`;
-    } else if (amount >= 1_000) {
-      return `${(amount / 1_000).toFixed(0)} минг сўм`;
+  
+    // Katta son nomlari massivda
+    const units = [
+      { value: 1e63, name: "вигинтилион" },
+      { value: 1e60, name: "новемдецилион" },
+      { value: 1e57, name: "октодецилион" },
+      { value: 1e54, name: "септендецилион" },
+      { value: 1e51, name: "сексдецилион" },
+      { value: 1e48, name: "квиндецилион" },
+      { value: 1e45, name: "кваттордецилион" },
+      { value: 1e42, name: "тредецилион" },
+      { value: 1e39, name: "дуодецилион" },
+      { value: 1e36, name: "ундецилион" },
+      { value: 1e33, name: "децилион" },
+      { value: 1e30, name: "нониллион" },
+      { value: 1e27, name: "октиллион" },
+      { value: 1e24, name: "септиллион" },
+      { value: 1e21, name: "секстиллион" },
+      { value: 1e18, name: "квинтиллион" },
+      { value: 1e15, name: "квадриллион" },
+      { value: 1e12, name: "триллион" },
+      { value: 1e9,  name: "миллиард" },
+      { value: 1e6,  name: "миллион" },
+      { value: 1e3,  name: "минг" }
+    ];
+  
+    // Massiv bo‘yicha tekshirish
+    for (let unit of units) {
+      if (amount >= unit.value) {
+        return `${(amount / unit.value).toFixed(1)} ${unit.name} сўм`;
+      }
     }
-    
-    // For smaller numbers, use standard formatting
+  
+    // Kichik sonlar uchun
     return new Intl.NumberFormat('uz-UZ', { 
       style: 'currency', 
       currency: 'UZS',
@@ -89,10 +106,10 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       maximumFractionDigits: 0
     }).format(amount);
   };
-
+  
   const getCustomerName = (customer) => {
     if (!customer) return 'N/A';
-    return `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A';
+    return customer.fullName || 'N/A';
   };
 
   const getUserName = (user) => {
@@ -115,6 +132,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       if (filters.endDate) params.append('endDate', filters.endDate);
       if (filters.productId) params.append('productId', filters.productId);
       if (selectedBranchId) params.append('branchId', selectedBranchId);
+      params.append('limit', 'all'); // Fetch all transactions
 
       const response = await fetch(`${BASE_URL}/transactions?${params.toString()}`, {
         method: 'GET',
@@ -185,10 +203,10 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           // Daily sales
           const date = transaction.createdAt ? new Date(transaction.createdAt).toDateString() : 'Unknown';
           if (dailyMap.has(date)) {
-            dailyMap.get(date).amount += transaction.totalAmount || 0;
+            dailyMap.get(date).amount += transaction.finalTotal || transaction.total || 0;
             dailyMap.get(date).count += 1;
           } else {
-            dailyMap.set(date, { date, amount: transaction.totalAmount || 0, count: 1 });
+            dailyMap.set(date, { date, amount: transaction.finalTotal || transaction.total || 0, count: 1 });
           }
         });
       } else {
@@ -288,10 +306,10 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               <button
                 onClick={() => { fetchTransactions(); }}
                 className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm sm:text-base disabled:opacity-50"
-                disabled={loading || loadingSales}
+                disabled={loading}
                 title="Ma'lumotlarni yangilash"
               >
-                <RefreshCw size={16} className={loading || loadingSales ? 'animate-spin' : ''} />
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                 Yangilash
               </button>
             </div>
@@ -321,7 +339,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {loadingSales ? (
+                {loading ? (
                   <tr><td colSpan="3" className="px-4 py-4 text-center">Yuklanmoqda...</td></tr>
                 ) : productSales.length === 0 ? (
                   <tr><td colSpan="3" className="px-4 py-4 text-center text-gray-500">Ma'lumot yo'q</td></tr>
@@ -352,7 +370,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {loadingSales ? (
+                {loading ? (
                   <tr><td colSpan="3" className="px-4 py-4 text-center">Yuklanmoqda...</td></tr>
                 ) : dailySales.length === 0 ? (
                   <tr><td colSpan="3" className="px-4 py-4 text-center text-gray-500">Ma'lumot yo'q</td></tr>
@@ -412,8 +430,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                           {transactionTypes[item.type]?.label || item.type}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-900">{formatCurrency(item.totalAmount || item.total || 0)}</td>
-                      <td className="px-4 py-3 text-gray-900">{formatCurrency(item.totalAmount || item.finalTotal || item.total || 0)}</td>
+                      <td className="px-4 py-3 text-gray-900">{formatCurrency(item.total || 0)}</td>
+                      <td className="px-4 py-3 text-gray-900">{formatCurrency(item.finalTotal || item.total || 0)}</td>
                       <td className="px-4 py-3 text-gray-900">{formatDate(item.createdAt)}</td>
                       <td className="px-4 py-3">
                         <button
@@ -461,11 +479,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   </div>
                   <div>
                     <p className="text-gray-600">Umumiy Summa</p>
-                    <p className="font-medium">{formatCurrency(selectedTransaction.totalAmount || selectedTransaction.total || 0)}</p>
+                    <p className="font-medium">{formatCurrency(selectedTransaction.total || 0)}</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Yakuniy Summa</p>
-                    <p className="font-medium">{formatCurrency(selectedTransaction.totalAmount || selectedTransaction.finalTotal || selectedTransaction.total || 0)}</p>
+                    <p className="font-medium">{formatCurrency(selectedTransaction.finalTotal || selectedTransaction.total || 0)}</p>
                   </div>
                   <div>
                     <p className="text-gray-600">To'lov Turi</p>
@@ -475,13 +493,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 <div>
                   <p className="text-gray-600">Mahsulotlar</p>
                   <ul className="list-disc pl-5">
-                    {selectedTransaction.products?.map((item, index) => (
+                    {selectedTransaction.items?.map((item, index) => (
                       <li key={index}>
                         {item.product?.name || item.name || 'N/A'} - {item.quantity || 0} dona, {formatCurrency(item.price || 0)}
-                      </li>
-                    )) || selectedTransaction.items?.map((item) => (
-                      <li key={item.id}>
-                        {item.product?.name || 'N/A'} - {item.quantity} dona, {formatCurrency(item.total)}
                       </li>
                     )) || <li>Hech qanday mahsulot topilmadi</li>}
                   </ul>

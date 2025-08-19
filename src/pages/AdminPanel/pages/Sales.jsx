@@ -126,5 +126,3 @@ const Sales = ({ selectedBranchId: propSelectedBranchId }) => {
 };
 
 export default Sales;
-
-

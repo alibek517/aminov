@@ -11,6 +11,7 @@ import {
   Users,
   Package,
   X,
+  Trash2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -56,30 +57,6 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
 
     return response;
   };
-
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'selectedBranchId') {
-        setSelectedBranchId(e.newValue || '');
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (propSelectedBranchId !== undefined) {
-      setSelectedBranchId(propSelectedBranchId);
-    }
-  }, [propSelectedBranchId]);
-
-  useEffect(() => {
-    fetchBranches();
-  }, [fetchBranches]);
 
   const fetchBranches = useCallback(async () => {
     try {
@@ -133,6 +110,30 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
     }
   }, [selectedBranchId, fetchWithAuth]);
 
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'selectedBranchId') {
+        setSelectedBranchId(e.newValue || '');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (propSelectedBranchId !== undefined) {
+      setSelectedBranchId(propSelectedBranchId);
+    }
+  }, [propSelectedBranchId]);
+
+  useEffect(() => {
+    fetchBranches();
+  }, [fetchBranches]);
+
   const handleAddBranch = async (e) => {
     e.preventDefault();
     try {
@@ -168,6 +169,24 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
       }
     } catch (err) {
       setError(err.message || 'Failed to update branch');
+      console.error(err);
+    }
+  };
+
+  const handleDeleteBranch = async () => {
+    try {
+      const response = await fetchWithAuth(
+        `https://suddocs.uz/branches/${modalState.branch.id}`,
+        {
+          method: 'DELETE',
+        }
+      );
+      if (response.ok) {
+        setModalState({ isOpen: false, type: null, branch: null });
+        await fetchBranches();
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to delete branch');
       console.error(err);
     }
   };
@@ -228,17 +247,52 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
   const totalInventoryValue = branches.reduce((sum, branch) => sum + branch.inventoryValue, 0);
 
   const formatCurrencyUzbek = (value) => {
-    if (value >= 1_000_000_000_000) {
-      return `${(value / 1_000_000_000_000).toFixed(1)} триллион сўм`;
-    } else if (value >= 1_000_000_000) {
-      return `${(value / 1_000_000_000).toFixed(1)} миллиард сўм`;
-    } else if (value >= 1_000_000) {
-      return `${(value / 1_000_000).toFixed(1)} миллион сўм`;
-    } else if (value >= 1_000) {
-      return `${(value / 1_000).toFixed(1)} минг сўм`;
+    if (value >= 1e63) {
+      return `${(value / 1e63).toFixed(1)} вигинтилион сўм`;
+    } else if (value >= 1e60) {
+      return `${(value / 1e60).toFixed(1)} новемдецилион сўм`;
+    } else if (value >= 1e57) {
+      return `${(value / 1e57).toFixed(1)} окто-децилион сўм`;
+    } else if (value >= 1e54) {
+      return `${(value / 1e54).toFixed(1)} септендецилион сўм`;
+    } else if (value >= 1e51) {
+      return `${(value / 1e51).toFixed(1)} сексдецилион сўм`;
+    } else if (value >= 1e48) {
+      return `${(value / 1e48).toFixed(1)} квиндецилион сўм`;
+    } else if (value >= 1e45) {
+      return `${(value / 1e45).toFixed(1)} кваттордецилион сўм`;
+    } else if (value >= 1e42) {
+      return `${(value / 1e42).toFixed(1)} тредецилион сўм`;
+    } else if (value >= 1e39) {
+      return `${(value / 1e39).toFixed(1)} дуодецилион сўм`;
+    } else if (value >= 1e36) {
+      return `${(value / 1e36).toFixed(1)} ундецилион сўм`;
+    } else if (value >= 1e33) {
+      return `${(value / 1e33).toFixed(1)} децилион сўм`;
+    } else if (value >= 1e30) {
+      return `${(value / 1e30).toFixed(1)} нониллион сўм`;
+    } else if (value >= 1e27) {
+      return `${(value / 1e27).toFixed(1)} октиллион сўм`;
+    } else if (value >= 1e24) {
+      return `${(value / 1e24).toFixed(1)} септиллион сўм`;
+    } else if (value >= 1e21) {
+      return `${(value / 1e21).toFixed(1)} секстиллион сўм`;
+    } else if (value >= 1e18) {
+      return `${(value / 1e18).toFixed(1)} квинтиллион сўм`;
+    } else if (value >= 1e15) {
+      return `${(value / 1e15).toFixed(1)} квадриллион сўм`;
+    } else if (value >= 1e12) {
+      return `${(value / 1e12).toFixed(1)} триллион сўм`;
+    } else if (value >= 1e9) {
+      return `${(value / 1e9).toFixed(1)} миллиард сўм`;
+    } else if (value >= 1e6) {
+      return `${(value / 1e6).toFixed(1)} миллион сўм`;
+    } else if (value >= 1e3) {
+      return `${(value / 1e3).toFixed(1)} минг сўм`;
     }
     return `${value.toFixed(0)} сўм`;
   };
+  
 
   return (
     <div className="space-y-0">
@@ -436,6 +490,12 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                       >
                         <Edit3 size={16} />
                       </button>
+                      <button
+                        onClick={() => openModal('delete', branch)}
+                        className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -454,7 +514,9 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   ? 'Янги Филиал Қўшиш'
                   : modalState.type === 'view'
                   ? 'Филиал Маълумотлари'
-                  : 'Филиални Таҳрирлаш'}
+                  : modalState.type === 'edit'
+                  ? 'Филиални Таҳрирлаш'
+                  : 'Филиални Ўчириш'}
               </h2>
               <button onClick={closeModal} className="text-gray-500 hover:text-gray-700">
                 <X size={24} />
@@ -602,6 +664,29 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   </button>
                 </div>
               </form>
+            )}
+
+            {modalState.type === 'delete' && modalState.branch && (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-900">
+                  Ҳақиқатан ҳам <span className="font-medium">{modalState.branch.name}</span> филиалини ўчиришни хоҳлайсизми?
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                  >
+                    Йўқ
+                  </button>
+                  <button
+                    onClick={handleDeleteBranch}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Ҳа
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </div>
