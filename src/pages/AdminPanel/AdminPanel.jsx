@@ -239,9 +239,12 @@ export default function AdminPanel() {
             className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125" 
           />
           <hr className="my-2" />
-          <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+            <img style={{borderRadius:"50%",width:'60px'}} src="/AminovHolding.jpg" alt="" />
+            <div>
             <h1 className="text-xl font-bold text-white">Аминов</h1>
             <p className="text-sm text-gray-400">Бошқарма Тизими</p>
+            </div>
           </div>
           {error && <span className="mt-2 text-red-500 text-sm">{error}</span>}
           <button
