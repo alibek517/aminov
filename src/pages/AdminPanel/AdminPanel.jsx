@@ -238,6 +238,13 @@ export default function AdminPanel() {
             alt="Zippy логотипи" 
             className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125" 
           />
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden mt-3 p-2 rounded-md text-gray-300 hover:text-white"
+            style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)',position:'absolute',top:'10px',right:'10px' }}
+          >
+            <X size={20} />
+          </button>
           <hr className="my-2" />
           <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
             <img style={{borderRadius:"50%",width:'60px'}} src="/AminovHolding.jpg" alt="" />
@@ -246,13 +253,6 @@ export default function AdminPanel() {
             <p className="text-sm text-gray-400">Бошқарма Тизими</p>
             </div>
           </div>
-          {error && <span className="mt-2 text-red-500 text-sm">{error}</span>}
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden mt-3 p-2 rounded-md text-gray-300 hover:text-white"
-          >
-            <X size={20} />
-          </button>
         </div>
 
         <nav className="flex-1 p-4">
