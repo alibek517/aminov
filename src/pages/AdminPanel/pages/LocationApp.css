@@ -1,0 +1,77 @@
+/* Yandex Maps-inspired styling */
+.leaflet-container {
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.leaflet-control-zoom {
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.leaflet-control-zoom a {
+  background-color: #ffffff;
+  color: #333333;
+  font-weight: bold;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #f0f0f0;
+}
+
+.marker-icon {
+  transition: transform 0.3s ease;
+}
+
+.marker-icon.current-user {
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+}
+
+.marker-icon.pulse {
+  animation: pulse 1s ease-in-out;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.7);
+  }
+  50% {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 10px rgba(0, 0, 0, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Responsive design for mobile */
+@media (max-width: 640px) {
+  .leaflet-container {
+    height: 400px;
+  }
+
+  .bg-white {
+    padding: 12px;
+  }
+
+  .grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

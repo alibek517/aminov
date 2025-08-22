@@ -1,0 +1,1952 @@
+import React, { useState, useEffect, useCallback } from "react";
+import { Eye, RefreshCw, User as UserIcon, X as XIcon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
+const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [filters, setFilters] = useState(() => {
+    const todayStr = new Date().toLocaleDateString("en-CA");
+    return { startDate: todayStr, endDate: todayStr };
+  });
+  const [productSales, setProductSales] = useState([]);
+  const [dailySales, setDailySales] = useState([]);
+  const [salesTotals, setSalesTotals] = useState({
+    totalQuantity: 0,
+    totalAmount: 0,
+  });
+  const [cashierSummaries, setCashierSummaries] = useState([]);
+  const [warehouseSummaries, setWarehouseSummaries] = useState([]);
+  const [overallRepaymentTotal, setOverallRepaymentTotal] = useState(0);
+  const [overallRepaymentCash, setOverallRepaymentCash] = useState(0);
+  const [overallRepaymentCard, setOverallRepaymentCard] = useState(0);
+  const [showCashierModal, setShowCashierModal] = useState(false);
+  const [selectedCashier, setSelectedCashier] = useState(null);
+  const [showWarehouseModal, setShowWarehouseModal] = useState(false);
+  const [selectedWarehouse, setSelectedWarehouse] = useState(null);
+  const [peopleView, setPeopleView] = useState("CASHIERS");
+  const [selectedTransactionItems, setSelectedTransactionItems] =
+    useState(null);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedBranchId, setSelectedBranchId] = useState(
+    propSelectedBranchId || localStorage.getItem("selectedBranchId") || ""
+  );
+  const navigate = useNavigate();
+
+  const BASE_URL = "https://suddocs.uz";
+
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === "selectedBranchId") {
+        setSelectedBranchId(e.newValue || "");
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    if (propSelectedBranchId !== undefined) {
+      setSelectedBranchId(propSelectedBranchId);
+    }
+  }, [propSelectedBranchId]);
+
+  useEffect(() => {
+    if (selectedBranchId !== undefined) {
+      fetchTransactions();
+    }
+  }, [selectedBranchId, filters.startDate, filters.endDate]);
+
+  const transactionTypes = {
+    SALE: { label: "Sotuv", color: "bg-green-100 text-green-800" },
+    RETURN: { label: "Qaytarish", color: "bg-yellow-100 text-yellow-800" },
+    TRANSFER: { label: "Otkazma", color: "bg-blue-100 text-blue-800" },
+    WRITE_OFF: { label: "Yozib tashlash", color: "bg-red-100 text-red-800" },
+    STOCK_ADJUSTMENT: {
+      label: "Zaxira tuzatish",
+      color: "bg-purple-100 text-purple-800",
+    },
+    PURCHASE: { label: "Kirim", color: "bg-indigo-100 text-indigo-800" },
+  };
+
+  const formatDate = (dateString) => {
+    return dateString
+      ? new Date(dateString).toLocaleDateString("uz-UZ", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "N/A";
+  };
+
+  const formatAmount = (value) => {
+    const num = Math.floor(Number(value) || 0);
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  };
+
+  const getPaymentTypeLabel = (pt) => {
+    switch (pt) {
+      case "CASH":
+        return "Нақд";
+      case "CARD":
+        return "Карта";
+      case "CREDIT":
+        return "Кредит";
+      case "INSTALLMENT":
+        return "Бўлиб тўлаш";
+      default:
+        return pt || "N/A";
+    }
+  };
+
+  const getCustomerName = (customer) => {
+    if (!customer) return "Йўқ";
+    return customer.fullName || "Йўқ";
+  };
+
+  const getUserName = (user) => {
+    if (!user) return "Йўқ";
+    return `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Йўқ";
+  };
+
+  const fetchTransactions = useCallback(async () => {
+    setLoading(true);
+    // Reset summaries to avoid showing stale data when backend has no results
+    setProductSales([]);
+    setCashierSummaries([]);
+    setDailySales([]);
+    setSalesTotals({ totalQuantity: 0, totalAmount: 0 });
+    try {
+      const token = localStorage.getItem("access_token");
+      if (!token) {
+        console.error("No access token found in localStorage");
+        navigate("/login");
+        throw new Error("Авторизация токени топилмади");
+      }
+
+      const params = new URLSearchParams();
+      if (filters.startDate) {
+        const startIso = new Date(
+          `${filters.startDate}T00:00:00`
+        ).toISOString();
+        params.append("startDate", startIso);
+      }
+      if (filters.endDate) {
+        const endIso = new Date(`${filters.endDate}T23:59:59`).toISOString();
+        params.append("endDate", endIso);
+      }
+      if (selectedBranchId) params.append("branchId", selectedBranchId);
+      params.append("limit", "all"); // Fetch all transactions
+
+      const response = await fetch(
+        `${BASE_URL}/transactions?${params.toString()}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || "Server error";
+        console.error("Fetch error:", errorMessage);
+        if (response.status === 401) {
+          localStorage.removeItem("access_token");
+          navigate("/login");
+          toast.error("Сессия тугади. Илтимос, қайта киринг.");
+        } else {
+          toast.error(errorMessage);
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      console.log("Raw transaction data:", data);
+
+      // Extract transactions from the response - backend returns { transactions: [], pagination: {} }
+      const transactions = data.transactions || data || [];
+      console.log("Extracted transactions:", transactions);
+
+      setTransactions(transactions);
+
+      // Process the data to create product sales and cashier summaries
+      const productMap = new Map();
+      const dailyMap = new Map();
+      let totalQuantity = 0;
+      let totalAmount = 0;
+      const cashierMap = new Map();
+      const warehouseMap = new Map();
+      const aggregateInMainLoop = false;
+
+      if (Array.isArray(transactions)) {
+        transactions.forEach((transaction, index) => {
+          console.log(`Processing transaction ${index}:`, transaction);
+
+          // Warehouse user aggregation (only if role is WAREHOUSE)
+          const warehouseUser =
+            transaction.user?.role === "WAREHOUSE"
+              ? transaction.user
+              : transaction.soldBy?.role === "WAREHOUSE"
+              ? transaction.soldBy
+              : null;
+          const isWarehouse = !!warehouseUser;
+          if (warehouseUser && isWarehouse) {
+            const wid = warehouseUser.id;
+            if (!warehouseMap.has(wid)) {
+              warehouseMap.set(wid, {
+                id: wid,
+                name:
+                  `${warehouseUser.firstName || ""} ${
+                    warehouseUser.lastName || ""
+                  }`.trim() ||
+                  warehouseUser.username ||
+                  `#${wid}`,
+                purchaseTotal: 0,
+                adjustmentTotal: 0,
+                transferTotal: 0,
+                transferCount: 0,
+                saleTotal: 0,
+                cashTotal: 0,
+                cardTotal: 0,
+                creditTotal: 0,
+                installmentTotal: 0,
+                upfrontTotal: 0,
+                repaymentTotal: 0,
+                repayments: [],
+                soldQuantity: 0,
+                soldAmount: 0,
+                otherTotal: 0,
+                total: 0,
+                transactions: [],
+              });
+            }
+            const wagg = warehouseMap.get(wid);
+            const finalW = Number(
+              transaction.finalTotal || transaction.total || 0
+            );
+            switch (transaction.type) {
+              case "PURCHASE":
+                wagg.purchaseTotal += finalW;
+                break;
+              case "STOCK_ADJUSTMENT":
+                wagg.adjustmentTotal += finalW;
+                break;
+              case "TRANSFER":
+                wagg.transferTotal += finalW;
+                wagg.transferCount += 1;
+                break;
+              case "SALE":
+                wagg.saleTotal += finalW;
+                // Payment distribution similar to cashiers
+                switch (transaction.paymentType) {
+                  case "CASH":
+                    wagg.cashTotal += finalW;
+                    break;
+                  case "CARD":
+                    wagg.cardTotal += finalW;
+                    break;
+                  case "CREDIT":
+                    wagg.creditTotal += finalW;
+                    wagg.upfrontTotal +=
+                      Number(transaction.amountPaid || 0) +
+                      Number(transaction.downPayment || 0);
+                    break;
+                  case "INSTALLMENT":
+                    wagg.installmentTotal += finalW;
+                    wagg.upfrontTotal +=
+                      Number(transaction.amountPaid || 0) +
+                      Number(transaction.downPayment || 0);
+                    break;
+                  default:
+                    break;
+                }
+                if (Array.isArray(transaction.items)) {
+                  for (const it of transaction.items) {
+                    const nameRaw = it.product?.name || it.name || "";
+                    const qty = Number(it.quantity) || 0;
+                    const amount =
+                      it.total != null
+                        ? Number(it.total) || 0
+                        : (Number(it.price) || 0) * qty;
+                    if (!nameRaw || qty <= 0 || amount <= 0) continue;
+                    wagg.soldQuantity += qty;
+                    wagg.soldAmount += amount;
+                  }
+                }
+
+                // Note: warehouse repayments will be aggregated globally below, not only when a warehouse user sold/created
+                break;
+              default:
+                wagg.otherTotal += finalW;
+                break;
+            }
+            wagg.total += finalW;
+            wagg.transactions.push({
+              id: transaction.id,
+              createdAt: transaction.createdAt,
+              type: transaction.type,
+              finalTotal: finalW,
+              soldByName:
+                getUserName(transaction.soldBy) ||
+                getUserName(transaction.user) ||
+                "-",
+              fromBranchName:
+                transaction.fromBranch?.name ||
+                transaction.fromBranchName ||
+                transaction.fromBranchId ||
+                transaction.branchFromId,
+              toBranchName:
+                transaction.toBranch?.name ||
+                transaction.toBranchName ||
+                transaction.toBranchId ||
+                transaction.branchToId,
+            });
+          }
+
+          // Aggregate repayments for WAREHOUSE collectors regardless of who sold/created the transaction
+          if (aggregateInMainLoop && Array.isArray(transaction.paymentSchedules)) {
+            const startBound = filters.startDate
+              ? new Date(`${filters.startDate}T00:00:00`)
+              : null;
+            const endBound = filters.endDate
+              ? new Date(`${filters.endDate}T23:59:59`)
+              : null;
+            for (const s of transaction.paymentSchedules) {
+              if (!s || !s.paidAt) continue;
+              const paidValue = Number((s.paidAmount ?? s.payment) || 0);
+              if (!(s.isPaid || paidValue > 0)) continue;
+              const pDate = new Date(s.paidAt);
+              const inRange =
+                (!startBound || pDate >= startBound) &&
+                (!endBound || pDate <= endBound);
+              if (!inRange) continue;
+              const installment = Number((s.paidAmount ?? s.payment) || 0);
+              if (Number.isNaN(installment) || installment <= 0) continue;
+              const paidByObj = s.paidBy && typeof s.paidBy === "object" ? s.paidBy : null;
+              const recipientRole = String(paidByObj && paidByObj.role ? paidByObj.role : (s.paidByRole || "WAREHOUSE")).toUpperCase();
+              const recipientId = paidByObj && paidByObj.id != null
+                ? paidByObj.id
+                : (s.paidById != null
+                    ? s.paidById
+                    : (s.paidByUserId != null
+                        ? s.paidByUserId
+                        : (s.paidBy != null
+                            ? s.paidBy
+                            : s.collectorId)));
+              if (!recipientId || recipientRole !== "WAREHOUSE") continue;
+              if (!warehouseMap.has(recipientId)) {
+                warehouseMap.set(recipientId, {
+                  id: recipientId,
+                  name:
+                    `${paidByObj?.firstName || ""} ${
+                      paidByObj?.lastName || ""
+                    }`.trim() ||
+                    paidByObj?.username ||
+                    `#${recipientId}`,
+                  purchaseTotal: 0,
+                  adjustmentTotal: 0,
+                  transferTotal: 0,
+                  transferCount: 0,
+                  saleTotal: 0,
+                  cashTotal: 0,
+                  cardTotal: 0,
+                  creditTotal: 0,
+                  installmentTotal: 0,
+                  upfrontTotal: 0,
+                  repaymentTotal: 0,
+                  repayments: [],
+                  soldQuantity: 0,
+                  soldAmount: 0,
+                  otherTotal: 0,
+                  total: 0,
+                  transactions: [],
+                });
+              }
+              const recipAgg = warehouseMap.get(recipientId);
+              recipAgg.repaymentTotal += installment;
+              recipAgg.repayments.push({
+                scheduleId: s.id,
+                paidAt: s.paidAt,
+                amount: installment,
+                channel: s.paidChannel || null,
+                transactionId: transaction.id,
+                month: s.month,
+                customer: transaction.customer || null,
+                paymentType: transaction.paymentType,
+                paidBy: paidByObj || (recipientId ? { id: recipientId } : null),
+                soldBy: transaction.soldBy || null,
+              });
+            }
+          }
+
+          // Aggregate repayments for CASHIER collectors regardless of who sold/created the transaction
+          if (aggregateInMainLoop && Array.isArray(transaction.paymentSchedules)) {
+            const startBound = filters.startDate
+              ? new Date(`${filters.startDate}T00:00:00`)
+              : null;
+            const endBound = filters.endDate
+              ? new Date(`${filters.endDate}T23:59:59`)
+              : null;
+            for (const s of transaction.paymentSchedules) {
+              if (!s || !s.paidAt) continue;
+              const paidValue = Number((s.paidAmount ?? s.payment) || 0);
+              if (!(s.isPaid || paidValue > 0)) continue;
+              const pDate = new Date(s.paidAt);
+              const inRange =
+                (!startBound || pDate >= startBound) &&
+                (!endBound || pDate <= endBound);
+              if (!inRange) continue;
+              const installment = Number((s.paidAmount ?? s.payment) || 0);
+              if (Number.isNaN(installment) || installment <= 0) continue;
+              const ownerObj = s.paidBy && typeof s.paidBy === "object" ? s.paidBy : null;
+              const ownerRole = String(ownerObj && ownerObj.role ? ownerObj.role : (s.paidByRole || "CASHIER")).toUpperCase();
+              const ownerId = ownerObj && ownerObj.id != null
+                ? ownerObj.id
+                : (s.paidById != null
+                    ? s.paidById
+                    : (s.paidByUserId != null
+                        ? s.paidByUserId
+                        : (s.paidBy != null
+                            ? s.paidBy
+                            : s.collectorId)));
+              if (!ownerId || ownerRole !== "CASHIER") continue;
+              const ownerKey = String(ownerId);
+              if (!cashierMap.has(ownerKey)) {
+                cashierMap.set(ownerKey, {
+                  id: ownerKey,
+                  name:
+                    `${ownerObj?.firstName || ""} ${
+                      ownerObj?.lastName || ""
+                    }`.trim() ||
+                    ownerObj?.username ||
+                    `#${ownerKey}`,
+                  cashTotal: 0,
+                  cardTotal: 0,
+                  creditTotal: 0,
+                  installmentTotal: 0,
+                  upfrontTotal: 0,
+                  soldQuantity: 0,
+                  soldAmount: 0,
+                  creditMonths: [],
+                  creditPercents: [],
+                  repaymentTotal: 0,
+                  repayments: [],
+                  transactions: [],
+                });
+              }
+              const ownerAgg = cashierMap.get(ownerKey);
+              ownerAgg.repaymentTotal += installment;
+              ownerAgg.repayments.push({
+                scheduleId: s.id,
+                paidAt: s.paidAt,
+                amount: installment,
+                channel: s.paidChannel || null,
+                transactionId: transaction.id,
+                month: s.month,
+                customer: transaction.customer || null,
+                paymentType: transaction.paymentType,
+                paidBy: ownerObj || (ownerKey ? { id: ownerKey } : null),
+                soldBy: transaction.soldBy || null,
+              });
+            }
+          }
+
+          // faqat sotuvlar (sales-only section for product and cashier summaries)
+          if (transaction.type !== "SALE") {
+            const date = transaction.createdAt
+              ? new Date(transaction.createdAt).toDateString()
+              : "Unknown";
+            if (!dailyMap.has(date)) {
+              dailyMap.set(date, { date, amount: 0, count: 0 });
+            }
+            return;
+          }
+
+          if (transaction.items && Array.isArray(transaction.items)) {
+            transaction.items.forEach((item, pIndex) => {
+              console.log(`Processing item ${pIndex}:`, item);
+              const productId = item.productId || item.id;
+              const productNameRaw = item.product?.name || item.name || "";
+              const itemQty = Number(item.quantity) || 0;
+              const itemAmount =
+                item.total != null
+                  ? Number(item.total) || 0
+                  : (Number(item.price) || 0) * itemQty;
+              // Skip invalid or unnamed items to avoid fake rows
+              if (!productNameRaw || itemQty <= 0 || itemAmount <= 0) {
+                return;
+              }
+              const productName = productNameRaw;
+
+              if (productMap.has(productId)) {
+                productMap.get(productId).quantity += itemQty;
+                productMap.get(productId).amount += itemAmount;
+              } else {
+                productMap.set(productId, {
+                  id: productId,
+                  name: productName,
+                  quantity: itemQty,
+                  amount: itemAmount,
+                });
+              }
+
+              totalQuantity += itemQty;
+              totalAmount += itemAmount;
+            });
+          } else {
+            console.log(
+              `Transaction ${index} has no items or items is not an array:`,
+              transaction.items
+            );
+          }
+
+          // Daily sales
+          const date = transaction.createdAt
+            ? new Date(transaction.createdAt).toDateString()
+            : "Unknown";
+          if (dailyMap.has(date)) {
+            dailyMap.get(date).amount +=
+              transaction.finalTotal || transaction.total || 0;
+            dailyMap.get(date).count += 1;
+          } else {
+            dailyMap.set(date, {
+              date,
+              amount: transaction.finalTotal || transaction.total || 0,
+              count: 1,
+            });
+          }
+
+          // Cashier summaries (only for SALE; prefer soldBy when role is CASHIER)
+          if (transaction.type === "SALE") {
+            const cashierUser =
+              transaction.soldBy?.role === "CASHIER"
+                ? transaction.soldBy
+                : transaction.user?.role === "CASHIER"
+                ? transaction.user
+                : null;
+            const isCashier = !!cashierUser;
+            if (isCashier) {
+              const cashierId = String(cashierUser.id);
+              if (!cashierMap.has(cashierId)) {
+                cashierMap.set(cashierId, {
+                  id: cashierId,
+                  name:
+                    `${cashierUser.firstName || ""} ${
+                      cashierUser.lastName || ""
+                    }`.trim() ||
+                    cashierUser.username ||
+                    `#${cashierId}`,
+                  cashTotal: 0,
+                  cardTotal: 0,
+                  creditTotal: 0,
+                  installmentTotal: 0,
+                  upfrontTotal: 0,
+                  soldQuantity: 0,
+                  soldAmount: 0,
+                  creditMonths: [],
+                  creditPercents: [],
+                  repaymentTotal: 0,
+                  repayments: [],
+                  transactions: [],
+                });
+              }
+              const agg = cashierMap.get(cashierId);
+              const final = Number(
+                transaction.finalTotal || transaction.total || 0
+              );
+              const amountPaid = Number(transaction.amountPaid || 0);
+              const downPayment = Number(transaction.downPayment || 0);
+              const upfront = amountPaid + downPayment;
+              // Payment type distribution
+              switch (transaction.paymentType) {
+                case "CASH":
+                  agg.cashTotal += final;
+                  break;
+                case "CARD":
+                  agg.cardTotal += final;
+                  break;
+                case "CREDIT":
+                  agg.creditTotal += final;
+                  agg.upfrontTotal += upfront;
+                  break;
+                case "INSTALLMENT":
+                  agg.installmentTotal += final;
+                  agg.upfrontTotal += upfront;
+                  break;
+                default:
+                  break;
+              }
+              // Items
+              if (Array.isArray(transaction.items)) {
+                for (const it of transaction.items) {
+                  const qty = Number(it.quantity) || 0;
+                  const amount =
+                    it.total != null
+                      ? Number(it.total) || 0
+                      : (Number(it.price) || 0) * qty;
+                  agg.soldQuantity += qty;
+                  agg.soldAmount += amount;
+                  if (
+                    transaction.paymentType === "CREDIT" ||
+                    transaction.paymentType === "INSTALLMENT"
+                  ) {
+                    if (it.creditMonth)
+                      agg.creditMonths.push(Number(it.creditMonth));
+                    if (typeof it.creditPercent === "number")
+                      agg.creditPercents.push(Number(it.creditPercent));
+                  }
+                }
+              }
+
+              // Repayments for cashiers are handled globally above to avoid double counting
+
+              // Store transaction summary for modal details
+              agg.transactions.push({
+                id: transaction.id,
+                createdAt: transaction.createdAt,
+                paymentType: transaction.paymentType,
+                finalTotal: transaction.finalTotal || transaction.total || 0,
+                total: transaction.total || 0,
+                amountPaid: Number(transaction.amountPaid || 0),
+                downPayment: Number(transaction.downPayment || 0),
+                items: transaction.items || [],
+                customer: transaction.customer || null,
+                deliveryType: transaction.deliveryType,
+                deliveryAddress: transaction.deliveryAddress,
+                soldByName:
+                  getUserName(transaction.soldBy) ||
+                  getUserName(transaction.user) ||
+                  "-",
+                repayments: Array.isArray(transaction.paymentSchedules)
+                  ? transaction.paymentSchedules
+                      .filter((s) => {
+                        if (!s || !s.paidAt) return false;
+                        const paidValue = Number((s.paidAmount ?? s.payment) || 0);
+                        return s.isPaid || paidValue > 0;
+                      })
+                      .map((s) => ({
+                        scheduleId: s.id,
+                        paidAt: s.paidAt,
+                        amount: Number((s.paidAmount ?? s.payment) || 0),
+                        month: s.month,
+                      }))
+                  : [],
+              });
+            }
+          }
+        });
+      } else {
+        console.log(
+          "Transactions is not an array:",
+          typeof transactions,
+          transactions
+        );
+      }
+
+      // Compute repayments by paid date within selected range (global totals and per-person)
+      try {
+        let repaymentSum = 0;
+        let repaymentCash = 0;
+        let repaymentCard = 0;
+        const startBound = filters.startDate
+          ? new Date(`${filters.startDate}T00:00:00`)
+          : null;
+        const endBound = filters.endDate
+          ? new Date(`${filters.endDate}T23:59:59`)
+          : null;
+
+        const token = localStorage.getItem("access_token");
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        };
+        const urlBase = new URL(`${BASE_URL}/transactions`);
+        const paramsCommon = new URLSearchParams();
+        if (selectedBranchId) paramsCommon.append("branchId", selectedBranchId);
+        paramsCommon.append("limit", "all");
+
+        const urls = [
+          `${urlBase}?${new URLSearchParams({
+            ...Object.fromEntries(paramsCommon),
+            paymentType: "CREDIT",
+          }).toString()}`,
+          `${urlBase}?${new URLSearchParams({
+            ...Object.fromEntries(paramsCommon),
+            paymentType: "INSTALLMENT",
+          }).toString()}`,
+        ];
+
+        const [creditRes, installmentRes] = await Promise.all([
+          fetch(urls[0], { headers }),
+          fetch(urls[1], { headers }),
+        ]);
+
+        const creditData = creditRes.ok
+          ? await creditRes.json().catch(() => ({}))
+          : {};
+        const installmentData = installmentRes.ok
+          ? await installmentRes.json().catch(() => ({}))
+          : {};
+        const creditTx = Array.isArray(creditData?.transactions)
+          ? creditData.transactions
+          : Array.isArray(creditData)
+          ? creditData
+          : [];
+        const installmentTx = Array.isArray(installmentData?.transactions)
+          ? installmentData.transactions
+          : Array.isArray(installmentData)
+          ? installmentData
+          : [];
+        const allCreditTx = [...creditTx, ...installmentTx];
+
+        for (const t of allCreditTx) {
+          if (t.type !== "SALE") continue;
+          if (
+            selectedBranchId &&
+            String(t.fromBranchId || t.branchId || "") !== String(selectedBranchId)
+          )
+            continue;
+          const schedules = Array.isArray(t.paymentSchedules)
+            ? t.paymentSchedules
+            : [];
+          for (const s of schedules) {
+            if (!s || !s.paidAt) continue;
+            const paidValue = Number((s.paidAmount ?? s.payment) || 0);
+            if (!(s.isPaid || paidValue > 0)) continue;
+            const pDate = new Date(s.paidAt);
+            const inRange =
+              (!startBound || pDate >= startBound) &&
+              (!endBound || pDate <= endBound);
+            if (!inRange) continue;
+            const installment = Number((s.paidAmount ?? s.payment) || 0);
+            if (Number.isNaN(installment) || installment <= 0) continue;
+
+            // Global totals by paid date
+            repaymentSum += installment;
+            const ch = (s.paidChannel || "CASH").toUpperCase();
+            if (ch === "CARD") repaymentCard += installment;
+            else repaymentCash += installment;
+
+            // Per-person aggregation by paid date
+            const paidByObj = s.paidBy && typeof s.paidBy === "object" ? s.paidBy : null;
+            const roleRaw = paidByObj && paidByObj.role ? paidByObj.role : (s.paidByRole || "CASHIER");
+            const role = String(roleRaw).toUpperCase();
+            const personIdRaw = paidByObj && paidByObj.id != null
+              ? paidByObj.id
+              : (s.paidById != null
+                  ? s.paidById
+                  : (s.paidByUserId != null
+                      ? s.paidByUserId
+                      : (s.paidBy != null
+                          ? s.paidBy
+                          : s.collectorId)));
+            if (!personIdRaw) continue;
+            const personId = String(personIdRaw);
+            if (role === "WAREHOUSE") {
+              if (!warehouseMap.has(personId)) {
+                warehouseMap.set(personId, {
+                  id: personId,
+                  name:
+                    `${paidByObj?.firstName || ""} ${paidByObj?.lastName || ""}`.trim() ||
+                    paidByObj?.username ||
+                    `#${personId}`,
+                  purchaseTotal: 0,
+                  adjustmentTotal: 0,
+                  transferTotal: 0,
+                  transferCount: 0,
+                  saleTotal: 0,
+                  cashTotal: 0,
+                  cardTotal: 0,
+                  creditTotal: 0,
+                  installmentTotal: 0,
+                  upfrontTotal: 0,
+                  repaymentTotal: 0,
+                  repayments: [],
+                  soldQuantity: 0,
+                  soldAmount: 0,
+                  otherTotal: 0,
+                  total: 0,
+                  transactions: [],
+                });
+              }
+              const wag = warehouseMap.get(personId);
+              wag.repaymentTotal += installment;
+              wag.repayments.push({
+                scheduleId: s.id,
+                paidAt: s.paidAt,
+                amount: installment,
+                channel: s.paidChannel || null,
+                transactionId: t.id,
+                month: s.month,
+                customer: t.customer || null,
+                paymentType: t.paymentType,
+                paidBy: paidByObj || { id: personId },
+                soldBy: t.soldBy || null,
+              });
+            } else if (role === "CASHIER") {
+              if (!cashierMap.has(personId)) {
+                cashierMap.set(personId, {
+                  id: personId,
+                  name:
+                    `${paidByObj?.firstName || ""} ${paidByObj?.lastName || ""}`.trim() ||
+                    paidByObj?.username ||
+                    `#${personId}`,
+                  cashTotal: 0,
+                  cardTotal: 0,
+                  creditTotal: 0,
+                  installmentTotal: 0,
+                  upfrontTotal: 0,
+                  soldQuantity: 0,
+                  soldAmount: 0,
+                  creditMonths: [],
+                  creditPercents: [],
+                  repaymentTotal: 0,
+                  repayments: [],
+                  transactions: [],
+                });
+              }
+              const cag = cashierMap.get(personId);
+              cag.repaymentTotal += installment;
+              cag.repayments.push({
+                scheduleId: s.id,
+                paidAt: s.paidAt,
+                amount: installment,
+                channel: s.paidChannel || null,
+                transactionId: t.id,
+                month: s.month,
+                customer: t.customer || null,
+                paymentType: t.paymentType,
+                paidBy: paidByObj || { id: personId },
+                soldBy: t.soldBy || null,
+              });
+            }
+          }
+        }
+
+        setOverallRepaymentTotal(repaymentSum);
+        setOverallRepaymentCash(repaymentCash);
+        setOverallRepaymentCard(repaymentCard);
+      } catch (e) {
+        console.warn("Failed to compute overall repayment total:", e);
+        setOverallRepaymentTotal(0);
+      }
+
+      console.log("Processed data:", {
+        products: Array.from(productMap.values()),
+        daily: Array.from(dailyMap.values()),
+        totals: { totalQuantity, totalAmount },
+      });
+
+      const productArray = Array.from(productMap.values()).filter(
+        (p) => (p.quantity || 0) > 0 && (p.amount || 0) > 0
+      );
+      setProductSales(productArray);
+
+      // Build cashier summaries array
+      const cashierArray = Array.from(cashierMap.values());
+      setCashierSummaries(cashierArray);
+      const warehouseArray = Array.from(warehouseMap.values());
+      setWarehouseSummaries(warehouseArray);
+      setDailySales(Array.from(dailyMap.values()));
+      setSalesTotals({ totalQuantity, totalAmount });
+    } catch (error) {
+      console.error("Error fetching transactions:", error.message);
+      toast.error(error.message || "Маълумотларни олишда хатолик юз берди");
+    } finally {
+      setLoading(false);
+    }
+  }, [filters.startDate, filters.endDate, selectedBranchId, navigate]);
+
+  const fetchTransactionDetails = async (id) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      if (!token) {
+        console.error("No access token found in localStorage");
+        navigate("/login");
+        throw new Error("Авторизация токени топилмади");
+      }
+
+      // Fetch transaction details
+      const transactionResponse = await fetch(
+        `${BASE_URL}/transactions/${id}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!transactionResponse.ok) {
+        const errorData = await transactionResponse.json().catch(() => ({}));
+        const errorMessage = errorData.message || "Server error";
+        console.error("Fetch error:", errorMessage);
+        if (transactionResponse.status === 401) {
+          localStorage.removeItem("access_token");
+          navigate("/login");
+          toast.error("Sessiya tugadi. Iltimos, qayta kiring.");
+        }
+        throw new Error(errorMessage);
+      }
+
+      const transactionData = await transactionResponse.json();
+      setSelectedTransaction(transactionData);
+      setShowDetails(true);
+    } catch (error) {
+      console.error("Error fetching transaction details:", error.message);
+      toast.error(error.message || "Тафсилотларни олишда хатолик юз берди");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-semibold text-gray-800">
+                Транзакциялар Ҳисоботи
+              </h1>
+              {selectedBranchId && (
+                <p className="text-sm text-gray-600 mt-1">
+                  Филиал ID: {selectedBranchId}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <input
+                type="date"
+                value={filters.startDate}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, startDate: e.target.value }))
+                }
+                className="border rounded px-2 py-1 text-sm"
+              />
+              <input
+                type="date"
+                value={filters.endDate}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, endDate: e.target.value }))
+                }
+                className="border rounded px-2 py-1 text-sm"
+              />
+              {/* Product ID search removed as requested */}
+              <button
+                onClick={() => {
+                  fetchTransactions();
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm sm:text-base disabled:opacity-50"
+                disabled={loading}
+                title="Маълумотларни янгилаш"
+              >
+                <RefreshCw
+                  size={16}
+                  className={loading ? "animate-spin" : ""}
+                />
+                Янгилаш
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Product Sales Summary */}
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
+          <h2 className="text-lg font-semibold mb-3">
+            Ҳисобот — содда кўриниш
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="p-3 rounded-lg border bg-white shadow-sm">
+              <div className="text-sm text-gray-600">Жами сотилган дона</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {salesTotals.totalQuantity}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border bg-green-50 shadow-sm">
+              <div className="text-sm text-green-700">Жами тушум</div>
+              <div className="text-2xl font-bold text-green-900">
+                {formatAmount(salesTotals.totalAmount)}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border bg-blue-50 shadow-sm">
+              <div className="text-sm text-blue-700">
+                Кассирлар сони / Омбор ходимлари
+              </div>
+              <div className="text-2xl font-bold text-blue-900">
+                {cashierSummaries.length} / {warehouseSummaries.length}
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-3 rounded-lg border bg-amber-50 shadow-sm">
+              <div className="text-sm text-amber-700">Олдиндан олинган</div>
+              <div className="text-2xl font-bold text-amber-900">
+                {formatAmount(
+                  cashierSummaries.reduce(
+                    (s, c) => s + Number(c.upfrontTotal || 0),
+                    0
+                  ) +
+                    warehouseSummaries.reduce(
+                      (s, w) => s + Number(w.upfrontTotal || 0),
+                      0
+                    )
+                )}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border bg-purple-50 shadow-sm">
+              <div className="text-sm text-purple-700">Кредитдан тўланган</div>
+              <div className="text-2xl font-bold text-purple-900">
+                {formatAmount(overallRepaymentTotal)}
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <div className="text-xs">Naqd</div>
+                  <div className="font-semibold">
+                    {formatAmount(overallRepaymentCash)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs">Karta</div>
+                  <div className="font-semibold">
+                    {formatAmount(overallRepaymentCard)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* People filter and unified table */}
+          <div className="mb-2 flex items-center justify-between">
+            <div className="inline-flex rounded-lg border overflow-hidden">
+              <button
+                onClick={() => setPeopleView("CASHIERS")}
+                className={`${
+                  peopleView === "CASHIERS"
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-gray-700 hover:bg-gray-50"
+                } px-4 py-2 text-sm font-medium`}
+              >
+                Кассирлар ({cashierSummaries.length})
+              </button>
+              <button
+                onClick={() => setPeopleView("WAREHOUSE")}
+                className={`${
+                  peopleView === "WAREHOUSE"
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-gray-700 hover:bg-gray-50"
+                } px-4 py-2 text-sm font-medium border-l`}
+              >
+                Омбор ходимлари ({warehouseSummaries.length})
+              </button>
+            </div>
+            <div className="text-sm text-gray-600">
+              Кассирлар сони / Омбор ходимлари:{" "}
+              <span className="font-semibold">
+                {cashierSummaries.length} / {warehouseSummaries.length}
+              </span>
+            </div>
+          </div>
+          <div className="border-t my-3" />
+          <div className="overflow-x-auto">
+            {peopleView === "CASHIERS" ? (
+              <table className="w-full text-sm rounded-lg overflow-hidden">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Кассир
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Нақд
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Карта
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Кредит
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Бўлиб тўлаш
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Олдиндан олинган
+                    </th>
+                    
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Сотилган дона
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Кассадаги пул
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Кўриш
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {cashierSummaries.map((c) => (
+                    <tr key={c.id} className="hover:bg-blue-50/40">
+                      <td className="px-4 py-3 text-center">{c.name}</td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(c.cashTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(c.cardTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(c.creditTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(c.installmentTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(c.upfrontTotal)}
+                      </td>
+                      
+                      <td className="px-4 py-3 text-center">
+                        {c.soldQuantity}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(
+                          Number(c.cashTotal || 0) +
+                            Number(c.upfrontTotal || 0) +
+                            (Array.isArray(c.repayments)
+                              ? c.repayments
+                                  .filter(
+                                    (r) =>
+                                      (r.channel || "CASH").toUpperCase() ===
+                                      "CASH"
+                                  )
+                                  .reduce(
+                                    (s, r) => s + Number(r.amount || 0),
+                                    0
+                                  )
+                              : 0)
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => {
+                            setSelectedCashier(c);
+                            setShowCashierModal(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 font-medium"
+                        >
+                          <Eye size={14} /> Кўриш
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-sm rounded-lg overflow-hidden">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Омборхона ходими
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Нақд
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Карта
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Кредит
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Бўлиб тўлаш
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Олдиндан олинган
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Сотилган дона
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Кассадаги пул
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Кўриш
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {warehouseSummaries.map((w) => (
+                    <tr key={w.id} className="hover:bg-green-50/40">
+                      <td className="px-4 py-3 text-center">{w.name}</td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(w.cashTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(w.cardTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(w.creditTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(w.installmentTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(w.upfrontTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {w.soldQuantity}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {formatAmount(
+                          Number(w.cashTotal || 0) +
+                            Number(w.upfrontTotal || 0) +
+                            (Array.isArray(w.repayments)
+                              ? w.repayments
+                                  .filter(
+                                    (r) =>
+                                      (r.channel || "CASH").toUpperCase() ===
+                                      "CASH"
+                                  )
+                                  .reduce(
+                                    (s, r) => s + Number(r.amount || 0),
+                                    0
+                                  )
+                              : 0)
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => {
+                            setSelectedWarehouse(w);
+                            setShowWarehouseModal(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 font-medium"
+                        >
+                          <Eye size={14} /> Кўриш
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+                    Маҳсулот
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+                    Сотилган дона
+                  </th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">
+                    Сумма
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan="3" className="px-4 py-4 text-center">
+                      Юкланмоқда...
+                    </td>
+                  </tr>
+                ) : productSales.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan="3"
+                      className="px-4 py-4 text-center text-gray-500"
+                    >
+                      Маълумот йўқ
+                    </td>
+                  </tr>
+                ) : (
+                  productSales.map((p) => (
+                    <tr key={p.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">{p.name || `#${p.id}`}</td>
+                      <td className="px-4 py-3">{p.quantity}</td>
+                      <td className="px-4 py-3">{formatAmount(p.amount)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Cashier full-screen modal */}
+        {showCashierModal && selectedCashier && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
+            <div className="bg-white w-[95vw] h-[95vh] rounded-lg shadow-xl flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="text-lg font-semibold">
+                  {selectedCashier.name} — тўлиқ сотувлар
+                </h3>
+                <button
+                  className="text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    setShowCashierModal(false);
+                    setSelectedCashier(null);
+                  }}
+                >
+                  <XIcon size={20} />
+                </button>
+              </div>
+              <div className="p-4 overflow-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Нақд</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedCashier.cashTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Карта</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedCashier.cardTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Кредит</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedCashier.creditTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Бўлиб тўлаш</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedCashier.installmentTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">
+                      Олдиндан олинган
+                    </div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedCashier.upfrontTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border bg-purple-50">
+                    <div className="text-sm">Кредитдан тўланган</div>
+                    <div className="text-xl font-bold">
+                      {formatAmount(selectedCashier.repaymentTotal || 0)}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <div className="text-xs">Naqd</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (selectedCashier.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "CASH").toUpperCase() === "CASH"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Karta</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (selectedCashier.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "CASH").toUpperCase() === "CARD"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Сотилган дона</div>
+                    <div className="font-semibold">
+                      {selectedCashier.soldQuantity}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">
+                      Топширадиган пул
+                    </div>
+                    <div className="font-semibold">
+                      {formatAmount(
+                        selectedCashier.cashTotal +
+                          (selectedCashier.repayments || [])
+                            .filter(
+                              (r) =>
+                                (r.channel || "CASH").toUpperCase() === "CASH"
+                            )
+                            .reduce((s, r) => s + Number(r.amount || 0), 0) +
+                          selectedCashier.upfrontTotal
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Repayments list for selected cashier */}
+                {Array.isArray(selectedCashier.repayments) &&
+                  selectedCashier.repayments.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-sm font-semibold text-gray-700 mb-2">
+                        Кредитдан тўловлар (oylar bo'yicha)
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Ой</th>
+                              <th className="px-3 py-2 text-left">
+                                Тўланган куни
+                              </th>
+                              <th className="px-3 py-2 text-left">Сумма</th>
+                              <th className="px-3 py-2 text-left">
+                                Транзакция
+                              </th>
+                              <th className="px-3 py-2 text-left">Мижоз</th>
+                              <th className="px-3 py-2 text-left">
+                                Қабул қилган
+                              </th>
+                              <th className="px-3 py-2 text-left">Сотган</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {selectedCashier.repayments.map((r, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-3 py-2">{r.month}</td>
+                                <td className="px-3 py-2">
+                                  {formatDate(r.paidAt)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {formatAmount(r.amount)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  #{r.transactionId}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.customer?.fullName || "-"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.paidBy
+                                    ? `${r.paidBy.firstName || ""} ${
+                                        r.paidBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.soldBy
+                                    ? `${r.soldBy.firstName || ""} ${
+                                        r.soldBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">ID</th>
+                        <th className="px-3 py-2 text-left">Сана</th>
+                        <th className="px-3 py-2 text-left">Тўлов тури</th>
+                        <th className="px-3 py-2 text-left">Сотган</th>
+                        <th className="px-3 py-2 text-left">Олдиндан</th>
+                        <th className="px-3 py-2 text-left">Якуний</th>
+                        <th className="px-3 py-2 text-left">Кўриш</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {(selectedCashier.transactions || []).map((t) => (
+                        <tr key={t.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2">#{t.id}</td>
+                          <td className="px-3 py-2">
+                            {formatDate(t.createdAt)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {getPaymentTypeLabel(t.paymentType)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {t.soldByName ||
+                              (t.soldBy
+                                ? `${t.soldBy.firstName || ""} ${
+                                    t.soldBy.lastName || ""
+                                  }`.trim()
+                                : "-")}
+                          </td>
+                          <td className="px-3 py-2">
+                            {formatAmount(
+                              Number(t.amountPaid || 0) +
+                                Number(t.downPayment || 0)
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {formatAmount(t.finalTotal)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                              onClick={() => {
+                                setSelectedTransactionItems(t);
+                              }}
+                            >
+                              <Eye size={14} /> Кўриш
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Warehouse full-screen modal */}
+        {showWarehouseModal && selectedWarehouse && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
+            <div className="bg-white w-[95vw] h-[95vh] rounded-lg shadow-xl flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="text-lg font-semibold">
+                  {selectedWarehouse.name} — омбор операциялари
+                </h3>
+                <button
+                  className="text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    setShowWarehouseModal(false);
+                    setSelectedWarehouse(null);
+                  }}
+                >
+                  <XIcon size={20} />
+                </button>
+              </div>
+              <div className="p-4 overflow-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Нақд</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedWarehouse.cashTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Карта</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedWarehouse.cardTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Кредит</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedWarehouse.creditTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Бўлиб тўлаш</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedWarehouse.installmentTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">
+                      Олдиндан олинган
+                    </div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedWarehouse.upfrontTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border bg-purple-50">
+                    <div className="text-sm">Кредитдан тўланган</div>
+                    <div className="text-xl font-bold">
+                      {formatAmount(selectedWarehouse.repaymentTotal || 0)}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <div className="text-xs">Naqd</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (selectedWarehouse.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "CASH").toUpperCase() === "CASH"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Karta</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (selectedWarehouse.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "CASH").toUpperCase() === "CARD"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Сотилган дона</div>
+                    <div className="font-semibold">
+                      {selectedWarehouse.soldQuantity}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">
+                      Топширадиган пул
+                    </div>
+                    <div className="font-semibold">
+                      {formatAmount(
+                        selectedWarehouse.cashTotal +
+                          (selectedWarehouse.repayments || [])
+                            .filter(
+                              (r) =>
+                                (r.channel || "CASH").toUpperCase() === "CASH"
+                            )
+                            .reduce((s, r) => s + Number(r.amount || 0), 0) +
+                          selectedWarehouse.upfrontTotal
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {Array.isArray(selectedWarehouse.repayments) &&
+                  selectedWarehouse.repayments.length > 0 && (
+                    <div className="mb-4">
+                      <div className="text-sm font-semibold text-gray-700 mb-2">
+                        Кредитдан тўловлар (oylar bo'yicha)
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Ой</th>
+                              <th className="px-3 py-2 text-left">
+                                Тўланган куни
+                              </th>
+                              <th className="px-3 py-2 text-left">Сумма</th>
+                              <th className="px-3 py-2 text-left">
+                                Транзакция
+                              </th>
+                              <th className="px-3 py-2 text-left">Мижоз</th>
+                              <th className="px-3 py-2 text-left">
+                                Қабул қилган
+                              </th>
+                              <th className="px-3 py-2 text-left">Сотган</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {selectedWarehouse.repayments.map((r, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-3 py-2">{r.month}</td>
+                                <td className="px-3 py-2">
+                                  {formatDate(r.paidAt)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {formatAmount(r.amount)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  #{r.transactionId}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.customer?.fullName || "-"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.paidBy
+                                    ? `${r.paidBy.firstName || ""} ${
+                                        r.paidBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.soldBy
+                                    ? `${r.soldBy.firstName || ""} ${
+                                        r.soldBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">ID</th>
+                        <th className="px-3 py-2 text-left">Сана</th>
+                        <th className="px-3 py-2 text-left">Тури</th>
+                        <th className="px-3 py-2 text-left">Сотган</th>
+                        <th className="px-3 py-2 text-left">Якуний</th>
+                        <th className="px-3 py-2 text-left">Кимдан</th>
+                        <th className="px-3 py-2 text-left">Кимга</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {(selectedWarehouse.transactions || []).map((t) => (
+                        <tr key={t.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2">#{t.id}</td>
+                          <td className="px-3 py-2">
+                            {formatDate(t.createdAt)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {transactionTypes[t.type]?.label || t.type}
+                          </td>
+                          <td className="px-3 py-2">
+                            {t.soldByName ||
+                              (t.soldBy
+                                ? `${t.soldBy.firstName || ""} ${
+                                    t.soldBy.lastName || ""
+                                  }`.trim()
+                                : "-")}
+                          </td>
+                          <td className="px-3 py-2">
+                            {formatAmount(t.finalTotal)}
+                          </td>
+                          <td className="px-3 py-2">
+                            {t.fromBranchName || "-"}
+                          </td>
+                          <td className="px-3 py-2">{t.toBranchName || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Transaction items modal inside cashier modal */}
+        {selectedTransactionItems && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
+            <div className="bg-white w-[90vw] h-[90vh] rounded-lg shadow-xl flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="text-lg font-semibold">
+                  Транзакция #{selectedTransactionItems.id}
+                </h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                    onClick={() => {
+                      const c = selectedTransactionItems.customer || {};
+                      const merged = {
+                        ...c,
+                        address:
+                          c.address ||
+                          selectedTransactionItems.deliveryAddress ||
+                          c.address,
+                        deliveryAddress:
+                          selectedTransactionItems.deliveryAddress ||
+                          c.deliveryAddress ||
+                          c.address,
+                      };
+                      setSelectedCustomer(merged);
+                      setShowCustomerModal(true);
+                    }}
+                  >
+                    <UserIcon size={16} /> Мижоз маълумоти
+                  </button>
+                  <button
+                    className="text-gray-500 hover:text-gray-700"
+                    onClick={() => setSelectedTransactionItems(null)}
+                  >
+                    <XIcon size={20} />
+                  </button>
+                </div>
+              </div>
+              <div className="p-4 overflow-auto flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Тўлов тури</div>
+                    <div className="font-semibold">
+                      {getPaymentTypeLabel(
+                        selectedTransactionItems.paymentType
+                      )}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Якуний</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedTransactionItems.finalTotal)}
+                    </div>
+                  </div>
+                </div>
+
+                {Array.isArray(selectedTransactionItems.repayments) &&
+                  selectedTransactionItems.repayments.length > 0 && (
+                    <div className="mb-4">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Ой</th>
+                              <th className="px-3 py-2 text-left">
+                                Тўланган куни
+                              </th>
+                              <th className="px-3 py-2 text-left">Сумма</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {(selectedTransactionItems.repayments || [])
+                              .filter((r) => {
+                                const p = r?.paidAt ? new Date(r.paidAt) : null;
+                                const sb = filters.startDate
+                                  ? new Date(`${filters.startDate}T00:00:00`)
+                                  : null;
+                                const eb = filters.endDate
+                                  ? new Date(`${filters.endDate}T23:59:59`)
+                                  : null;
+                                if (!p) return false;
+                                const inRange =
+                                  (!sb || p >= sb) && (!eb || p <= eb);
+                                return inRange;
+                              })
+                              .map((r, idx) => (
+                                <tr key={idx} className="hover:bg-gray-50">
+                                  <td className="px-3 py-2">{r.month}</td>
+                                  <td className="px-3 py-2">
+                                    {formatDate(r.paidAt)}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {formatAmount(r.amount)}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Маҳсулот</th>
+                        <th className="px-3 py-2 text-left">Миқдор</th>
+                        <th className="px-3 py-2 text-left">Жами</th>
+                        <th className="px-3 py-2 text-left">Кредит/Бўлиб</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {(selectedTransactionItems.items || []).map((it, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-3 py-2">
+                            {it.product?.name || it.name || "-"}
+                          </td>
+                          <td className="px-3 py-2">{it.quantity}</td>
+                          <td className="px-3 py-2">
+                            {formatAmount(
+                              (Number(it.price) || 0) *
+                                (Number(it.quantity) || 0)
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {it.creditMonth || it.creditPercent ? (
+                              <span>
+                                {it.creditMonth || "-"} ой,{" "}
+                                {typeof it.creditPercent === "number"
+                                  ? `${(it.creditPercent * 100).toFixed(0)}%`
+                                  : "-"}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Customer details modal */}
+        {showCustomerModal && selectedCustomer && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
+            <div className="bg-white w-[600px] max-w-[95vw] rounded-lg shadow-xl">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h3 className="text-lg font-semibold">Мижоз маълумотлари</h3>
+                <button
+                  className="text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    setShowCustomerModal(false);
+                    setSelectedCustomer(null);
+                  }}
+                >
+                  <XIcon size={20} />
+                </button>
+              </div>
+              <div className="p-4 space-y-2 text-sm">
+                <p>
+                  <span className="text-gray-600">Ф.И.Ш:</span>{" "}
+                  <span className="font-medium">
+                    {selectedCustomer.fullName || "-"}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-gray-600">Телефон:</span>{" "}
+                  <span className="font-medium">
+                    {selectedCustomer.phone || "-"}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-gray-600">Паспорт:</span>{" "}
+                  <span className="font-medium">
+                    {selectedCustomer.passportSeries || "-"}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-gray-600">ЖШШИР:</span>{" "}
+                  <span className="font-medium">
+                    {selectedCustomer.jshshir || "-"}
+                  </span>
+                </p>
+                <p>
+                  <span className="text-gray-600">Манзил:</span>{" "}
+                  <span className="font-medium">
+                    {selectedCustomer.address ||
+                      selectedCustomer.deliveryAddress ||
+                      "-"}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Daily sales and detailed transaction list removed as requested */}
+      </div>
+      <ToastContainer position="top-right" autoClose={3000} />
+    </div>
+  );
+};
+
+export default TransactionReport;
