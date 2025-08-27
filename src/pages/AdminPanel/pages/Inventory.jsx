@@ -93,9 +93,9 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
   );
   const nameInputRef = useRef(null);
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | IN_STOCK | SOLD | DEFECTIVE
-     const [showCategoryModal, setShowCategoryModal] = useState(false);
-   const [newCategoryName, setNewCategoryName] = useState('');
-   const [creatingCategory, setCreatingCategory] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [creatingCategory, setCreatingCategory] = useState(false);
 
   const API_BASE_URL = 'https://suddocs.uz';
   const formatAmount = (value) => {
@@ -184,15 +184,12 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
           branchesResponse.json(),
         ]);
 
+        console.log('Products Data:', productsData); // Log to inspect the structure
         setProducts((productsData || []).map((p) => updateProductStatus(p)));
         setCategories(categoriesData);
         setBranches(branchesData);
 
-        if (selectedBranchId && !branchesData.some((b) => b.id.toString() === selectedBranchId)) {
-          setSelectedBranchId('');
-          localStorage.setItem('selectedBranchId', '');
-          setFormData((prev) => ({ ...prev, branchId: '' }));
-        }
+        // ... rest of the code
       } catch (error) {
         console.error('Error loading data:', error);
         toast.danger('Маълумотларни юклашда хатолик юз берди: ' + error.message);
@@ -216,18 +213,27 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     const returned = Number(product.returnedQuantity || 0);
     const exchanged = Number(product.exchangedQuantity || 0);
     const defective = Number(product.defectiveQuantity || 0);
-    // Sold count should include defective items - total sold including defective
+    
     const soldCount = Math.max(0, initial - quantity - returned - exchanged);
     const defectiveCount = defective;
-
+  
     let status = 'IN_WAREHOUSE';
+    
+    // Quantity 0 bo'lgan mahsulotlar uchun ham status berish
     if (defectiveCount > 0) {
       status = 'DEFECTIVE';
     } else if (soldCount > 0) {
       status = 'SOLD';
     } else if (quantity > 0) {
       status = 'IN_STORE';
+    } else if (quantity === 0 && initial > 0) {
+      // Agar quantity 0 bo'lsa va initial mavjud bo'lsa, SOLD deb belgilash
+      status = 'SOLD';
+    } else if (quantity === 0) {
+      // Agar quantity 0 bo'lsa, lekin hali ham ko'rsatish kerak
+      status = 'IN_WAREHOUSE';
     }
+    
     return { ...product, status };
   };
 
@@ -241,29 +247,35 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     return matchesSearch && matchesCategory && matchesBranch;
   });
 
-           const applyStatusFilter = (list) => {
-          switch (statusFilter) {
-        case 'IN_STOCK':
-          return list.filter((p) => p.status === 'IN_WAREHOUSE' || p.status === 'IN_STORE');
-        case 'SOLD':
-          return list.filter((p) => {
-            const initial = Number(p.initialQuantity) || 0;
-            const quantity = Number(p.quantity) || 0;
-            const returned = Number(p.returnedQuantity || 0);
-            const exchanged = Number(p.exchangedQuantity || 0);
-            const defective = Number(p.defectiveQuantity || 0);
-            // Sold count should include defective items - total sold including defective
-            const soldCount = Math.max(0, initial - quantity - returned - exchanged);
-            return p.status === 'SOLD' || soldCount > 0;
-          });
-        case 'DEFECTIVE':
-          return list.filter((p) => p.status === 'DEFECTIVE' || Number(p.defectiveQuantity || 0) > 0);
-        default:
-          return list;
-      }
-   };
+  const applyStatusFilter = (list) => {
+    switch (statusFilter) {
+      case 'IN_STOCK':
+        // Quantity > 0 bo'lganlarni ko'rsatish
+        return list.filter((p) => Number(p.quantity || 0) > 0);
+      case 'SOLD':
+        return list.filter((p) => {
+          const initial = Number(p.initialQuantity) || 0;
+          const quantity = Number(p.quantity) || 0;
+          const returned = Number(p.returnedQuantity || 0);
+          const exchanged = Number(p.exchangedQuantity || 0);
+          const soldCount = Math.max(0, initial - quantity - returned - exchanged);
+          return soldCount > 0 || (quantity === 0 && initial > 0);
+        });
+      case 'DEFECTIVE':
+        return list.filter((p) => Number(p.defectiveQuantity || 0) > 0);
+      case 'ZERO_QUANTITY':
+        // Yangi filter - faqat quantity 0 bo'lganlar
+        return list.filter((p) => Number(p.quantity || 0) === 0);
+      default:
+        // 'ALL' holatida - HAMMA mahsulotlarni ko'rsatish, quantity qanday bo'lishidan qat'iy nazar
+        return list;
+    }
+  };
+  
 
   const filteredProducts = applyStatusFilter(baseFilteredProducts);
+
+  const sortedProducts = [...filteredProducts].sort((a, b) => b.quantity - a.quantity);
 
   const counts = {
     total: baseFilteredProducts.length > 0 ? baseFilteredProducts.length : 0,
@@ -281,8 +293,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     defective: baseFilteredProducts.filter((p) => p.status === 'DEFECTIVE' || Number(p.defectiveQuantity || 0) > 0).length,
   };
 
-  // Total non-sold products: in stock + defective (exclude sold)
-  const totalProducts = counts.inStock + counts.defective;
+  const totalProducts = counts.total;
 
   const handleAddProduct = async () => {
     if (!formData.name || !formData.categoryId || !formData.branchId || !formData.status) {
@@ -558,183 +569,168 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                 ))}
               </select>
             </div>
-                         
+
           </div>
         </div>
       </div>
 
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-         <div onClick={() => setStatusFilter('ALL')} className={`bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow duration-200 cursor-pointer ${statusFilter === 'ALL' ? 'border-blue-400' : 'border-gray-100'}`}>
-           <div className="flex items-center">
-             <div className="p-3 bg-blue-50 rounded-lg mr-4">
-               <Package className="text-blue-600" size={24} />
-             </div>
-             <div>
-               <p className="text-sm font-medium text-gray-600">Жами Маҳсулотлар</p>
-               <p className="text-2xl font-bold text-gray-900">
-                 {totalProducts > 0 ? totalProducts : 0}
-               </p>
-             </div>
-           </div>
-         </div>
-         <div onClick={() => setStatusFilter('SOLD')} className={`bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow duration-200 cursor-pointer ${statusFilter === 'SOLD' ? 'border-blue-400' : 'border-gray-100'}`}>
-           <div className="flex items-center">
-             <div className="p-3 bg-blue-50 rounded-lg mr-4">
-               <Clock className="text-blue-600" size={24} />
-             </div>
-             <div>
-               <p className="text-sm font-medium text-gray-600">Сотилган</p>
-               <p className="text-2xl font-bold text-gray-900">
-                 {counts.sold > 0 ? counts.sold : 0}
-               </p>
-             </div>
-           </div>
-         </div>
-       </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+        <div onClick={() => setStatusFilter('ALL')} className={`bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow duration-200 cursor-pointer ${statusFilter === 'ALL' ? 'border-blue-400' : 'border-gray-100'}`}>
+          <div className="flex items-center">
+            <div className="p-3 bg-blue-50 rounded-lg mr-4">
+              <Package className="text-blue-600" size={24} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-600">Жами Маҳсулотлар</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {totalProducts > 0 ? totalProducts : 0}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div onClick={() => setStatusFilter('SOLD')} className={`bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow duration-200 cursor-pointer ${statusFilter === 'SOLD' ? 'border-blue-400' : 'border-gray-100'}`}>
+          <div className="flex items-center">
+            <div className="p-3 bg-blue-50 rounded-lg mr-4">
+              <Clock className="text-blue-600" size={24} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-600">Сотилган</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {counts.sold > 0 ? counts.sold : 0}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden w-full">
-         <div className="overflow-x-auto">
-           <table className="w-full min-w-full">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden w-full">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-full">
             <thead className="bg-gray-50">
               <tr>
-                                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Маҳсулот
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Категория
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Нарх
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Сотув
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Олдиндан
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Кредит
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Брак
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Сотилган
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                 Қолгани
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Ҳолат
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Филиал
-                 </th>
-                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                   Амаллар
-                 </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Маҳсулот
+                </th>
+              
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Модели
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Нарх
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Сотув
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Олдиндан
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Кредит
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Брак
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Сотилган
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Қолгани
+                </th>
+
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Филиал
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Амаллар
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredProducts.map((product) => (
+              {sortedProducts.map((product) => (
                 <tr
                   key={product.id}
                   className="hover:bg-gray-50 transition-colors duration-150"
                 >
-                                     <td className="px-4 py-3 whitespace-nowrap">
-                     <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                     <div className="text-sm text-gray-500">
-                       ID: {product.id} {product.barcode && `• ${product.barcode}`}
-                     </div>
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap">
-                     <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded-full">
-                       {categories.find((c) => c.id === product.categoryId)?.name || 'Номаълум'}
-                     </span>
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                     {formatAmount(product.price)}
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                     {formatAmount(computeSoldAmount(product))}
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                     {formatAmount(product.advancePayment || 0)}
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                     {formatAmount(product.creditPayment || 0)}
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                     {(() => {
-                       const defectiveCount = Number(product.defectiveQuantity || 0);
-                       if (defectiveCount > 0) {
-                         return (
-                           <div>
-                             <span className="text-red-600">{defectiveCount} дона</span>
-                           </div>
-                         );
-                       }
-                       return <span className="text-gray-400">0 дона</span>;
-                     })()}
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap">
-                     <div className="text-sm font-medium text-gray-900">
-                       {(() => {
-                         const initial = Number(product.initialQuantity) || 0;
-                         const quantity = Number(product.quantity || 0);
-                         const returned = Number(product.returnedQuantity || 0);
-                         const exchanged = Number(product.exchangedQuantity || 0);
-                         const defective = Number(product.defectiveQuantity || 0);
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                    <div className="text-sm text-gray-500">
+                      ID: {product.id} {product.barcode && `• ${product.barcode}`}
+                    </div>
+                  </td>
+                 
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className="text-xs font-medium ">
+                      {product.model || 'Номаълум'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {formatAmount(product.price)}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {formatAmount(computeSoldAmount(product))}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {formatAmount(product.advancePayment || 0)}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {formatAmount(product.creditPayment || 0)}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {(() => {
+                      const defectiveCount = Number(product.defectiveQuantity || 0);
+                      if (defectiveCount > 0) {
+                        return (
+                          <div>
+                            <span className="text-red-600">{defectiveCount} дона</span>
+                          </div>
+                        );
+                      }
+                      return <span className="text-gray-400">0 дона</span>;
+                    })()}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">
+                      {(() => {
+                        const initial = Number(product.initialQuantity) || 0;
+                        const quantity = Number(product.quantity || 0);
+                        const returned = Number(product.returnedQuantity || 0);
+                        const exchanged = Number(product.exchangedQuantity || 0);
+                        const defective = Number(product.defectiveQuantity || 0);
 
-                         // Calculate sold count (including defective items)
-                         const soldCount = Math.max(0, initial - quantity - returned - exchanged);
+                        // Calculate sold count (including defective items)
+                        const soldCount = Math.max(0, initial - quantity - returned - exchanged);
 
-                         // Show sold count in "Сотилган" column
-                         if (soldCount > 0) {
-                           return (
-                             <div>
-                               <span className="text-red-600">{soldCount} дона</span>
-                             </div>
-                           );
-                         }
-                         return <span className="text-gray-400">0 дона</span>;
-                       })()}
-                     </div>
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap">
-                     <div className="text-sm font-medium text-gray-900">
-                       {(() => {
-                         const quantity = Number(product.quantity || 0);
-                         
-                         // Show remaining inventory in "Захира" column
-                         if (quantity > 0) {
-                           return (
-                             <div>
-                               <span className="text-green-600">{quantity} дона</span>
-                             </div>
-                           );
-                         }
-                         return <span className="text-gray-400">0 дона</span>;
-                       })()}
-                     </div>
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap">
-                     <div className="flex items-center">
-                       {getStatusIcon(product.status) && (
-                         React.createElement(getStatusIcon(product.status), {
-                           className: getStatusColor(product.status),
-                           size: 18,
-                         })
-                       )}
-                       <span className="ml-2 text-sm text-gray-700">
-                         {getStatusText(product.status)}
-                       </span>
-                     </div>
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                     {branches.find((b) => b.id === product.branchId)?.name || 'Номаълум'}
-                   </td>
-                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                        // Show sold count in "Сотилган" column
+                        if (soldCount > 0) {
+                          return (
+                            <div>
+                              <span className="text-red-600">{soldCount} дона</span>
+                            </div>
+                          );
+                        }
+                        return <span className="text-gray-400">0 дона</span>;
+                      })()}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">
+                      {(() => {
+                        const quantity = Number(product.quantity || 0);
+
+                        // Show remaining inventory in "Қолгани" column
+                        return (
+                          <div>
+                            <span className={quantity > 0 ? "text-green-600" : "text-gray-400"}>{quantity} дона</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                    {branches.find((b) => b.id === product.branchId)?.name || 'Номаълум'}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-2">
                       <button
                         onClick={() => openViewModal(product)}
@@ -867,7 +863,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-500 mb-1">
-                        Қолгани
+                          Қолгани
                         </label>
                         <p className="text-gray-900">{currentProduct.quantity} дона</p>
                       </div>
@@ -1062,24 +1058,24 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                         placeholder="Олдиндан олинган пул"
                       />
                     </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Кредитдан тўланган
-                        </label>
-                        <input
-                          min="0"
-                          type="number"
-                          value={formData.creditPayment || ''}
-                          onChange={(e) =>
-                            setFormData((prev) => ({
-                              ...prev,
-                              creditPayment: e.target.value ? Number(e.target.value) : null,
-                            }))
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Кредитдан тўланган пул"
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Кредитдан тўланган
+                      </label>
+                      <input
+                        min="0"
+                        type="number"
+                        value={formData.creditPayment || ''}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            creditPayment: e.target.value ? Number(e.target.value) : null,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Кредитдан тўланган пул"
+                      />
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>

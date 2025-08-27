@@ -450,8 +450,7 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="ml-[255px] space-y-6 p-4">
-      {/* Cashier personal report (from Reports.jsx modal) */}
+<div className="p-6 bg-gray-50 min-h-screen">
       {currentUserId && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-4">
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">

@@ -15,7 +15,7 @@ const DefectiveManagement = () => {
   const [defectiveLogs, setDefectiveLogs] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [actionType, setActionType] = useState('DEFECTIVE');
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(0);
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -117,9 +117,13 @@ const DefectiveManagement = () => {
       if (response.ok) {
         const data = await response.json();
         setDefectiveLogs(Array.isArray(data) ? data : []);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setNotification({ message: errorData.message || "Brak jurnallarini olishda xatolik", type: "error" });
       }
     } catch (error) {
       console.error("Brak jurnallarini olishda xatolik:", error);
+      setNotification({ message: "Brak jurnallarini olishda xatolik", type: "error" });
     }
   };
 
@@ -154,12 +158,10 @@ const DefectiveManagement = () => {
     const result = [];
     for (const item of map.values()) {
       const defectiveForProduct = defectiveLogs
-        .filter((log) => log.productId === item.productId && log.actionType === 'DEFECTIVE')
+        .filter((log) => log.productId === item.productId && log.actionType === 'DEFECTIVE' && log.description?.includes('Мijoz:'))
         .reduce((sum, log) => sum + (Number(log.quantity) || 0), 0);
       const remaining = Math.max(0, (Number(item.totalSold) || 0) - defectiveForProduct);
-      if (remaining > 0) {
-        result.push({ ...item, remaining, defective: defectiveForProduct });
-      }
+      result.push({ ...item, remaining, defective: defectiveForProduct });
     }
     return result;
   }, [soldProducts, soldProductSearch, defectiveLogs]);
@@ -181,24 +183,26 @@ const DefectiveManagement = () => {
       setNotification({ message: "Mahsulot topilmadi", type: "error" });
       return;
     }
-
+  
     setLoading(true);
     try {
       let endpoint = '';
       let body = {};
-
+  
       switch (actionType) {
         case 'DEFECTIVE':
           endpoint = `${API_URL}/defective-logs`;
           body = {
             productId: item.productId,
+            actionType: 'DEFECTIVE',
             quantity: parseInt(modalQuantity),
             description: modalDescription || `Мijoz: ${transaction.customer?.fullName || 'Номаълум'} - Брак`,
-            branchId: parseInt(branchId)
+            branchId: parseInt(branchId),
+            isFromSale: true // Indicate this is from a sale
           };
           break;
       }
-
+  
       if (actionType === 'DEFECTIVE') {
         if (!modalDescription.trim()) {
           setLoading(false);
@@ -212,11 +216,15 @@ const DefectiveManagement = () => {
         }
         if (Number(modalQuantity) > Number(item.quantity)) {
           setLoading(false);
-          setNotification({ message: `Миқдор транзакциядаги миқдордан кўп бўлмасин (макс ${item.quantity})`, type: "error" });
+          setNotification({
+            message: `Миқдор транзакциядаги миқдордан кўп бўлмасин (макс ${item.quantity})`,
+            type: "error"
+          });
           return;
         }
       }
-
+  
+      // Post defective log
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -225,11 +233,62 @@ const DefectiveManagement = () => {
         },
         body: JSON.stringify(body),
       });
-
+  
       if (response.ok) {
-        setNotification({ 
-          message: `${actionType === 'DEFECTIVE' ? 'Брак қилиш' : actionType} муваффақиятли амалга оширилди`, 
-          type: "success" 
+        // Update product status to DEFECTIVE and subtract quantity
+        const success = await updateProductStatus(
+          item.productId,
+          'DEFECTIVE',
+          modalDescription || `Мijoz: ${transaction.customer?.fullName || 'Номаълум'} - Брак`
+        );
+  
+        if (success) {
+          // Fetch the current product data to get the latest quantity
+          const productResponse = await fetch(`${API_URL}/products/${item.productId}`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+  
+          if (productResponse.ok) {
+            const product = await productResponse.json();
+            const newQuantity = Math.max(0, product.quantity - parseInt(modalQuantity));
+  
+            // Update product quantity
+            const putRes = await fetch(`${API_URL}/products/${item.productId}`, {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                name: product.name,
+                barcode: product.barcode,
+                categoryId: product.categoryId,
+                branchId: product.branchId,
+                price: product.price,
+                marketPrice: product.marketPrice,
+                model: product.model,
+                status: 'DEFECTIVE',
+                quantity: newQuantity,
+                description: modalDescription || product.description,
+              }),
+            });
+  
+            if (!putRes.ok) {
+              const err = await putRes.json().catch(() => ({}));
+              setNotification({ message: err.message || 'Миқдорни янгиллашда хатолик', type: 'error' });
+            }
+          } else {
+            const err = await productResponse.json().catch(() => ({}));
+            setNotification({ message: err.message || 'Махсулот маълумотларини олишда хатолик', type: 'error' });
+          }
+        }
+  
+        setNotification({
+          message: `${actionType === 'DEFECTIVE' ? 'Брак қилиш' : actionType} муваффақиятли амалга оширилди`,
+          type: "success"
         });
         setSelectedTransactionItem(null);
         setShowActionModal(false);
@@ -239,16 +298,16 @@ const DefectiveManagement = () => {
         fetchSoldProducts();
         fetchDefectiveLogs();
       } else {
-        const errorData = await response.json();
-        setNotification({ 
-          message: errorData.message || "Хатолик юз берди", 
-          type: "error" 
+        const errorData = await response.json().catch(() => ({}));
+        setNotification({
+          message: errorData.message || "Хатолик юз берди",
+          type: "error"
         });
       }
     } catch (error) {
-      setNotification({ 
-        message: "Хатолик юз берди", 
-        type: "error" 
+      setNotification({
+        message: "Хатолик юз берди",
+        type: "error"
       });
     } finally {
       setLoading(false);
@@ -258,14 +317,6 @@ const DefectiveManagement = () => {
   const handleAction = async () => {
     if (!selectedProduct || !quantity || !description) {
       setNotification({ message: "Барча майдонларни тўлдиринг", type: "error" });
-      return;
-    }
-
-    if (actionType === 'DEFECTIVE' && quantity > selectedProduct.quantity) {
-      setNotification({ 
-        message: `Брак миқдори мавжуд миқдордан кўп бўлиши мумкин эмас. Мавжуд: ${selectedProduct.quantity}`, 
-        type: "error" 
-      });
       return;
     }
 
@@ -279,10 +330,37 @@ const DefectiveManagement = () => {
           endpoint = `${API_URL}/defective-logs`;
           body = {
             productId: selectedProduct.id,
+            actionType: 'DEFECTIVE',
             quantity: parseInt(quantity),
             description,
-            branchId: parseInt(branchId)
+            branchId: parseInt(branchId),
+            isFromSale: activeMode === 'sotilgan' // Indicate if from sale
           };
+          if (activeMode === 'sotilgan') {
+            const selectedSoldProduct = groupedSold.find(p => p.productId === selectedProduct.id);
+            if (!selectedSoldProduct) {
+              setNotification({ message: "Танланган махсулот топилмади", type: "error" });
+              setLoading(false);
+              return;
+            }
+            if (Number(quantity) > selectedSoldProduct.remaining) {
+              setNotification({ 
+                message: `Брак миқдори сотилган миқдордан кўп бўлиши мумкин эмас. Қолган: ${selectedSoldProduct.remaining} дона`, 
+                type: "error" 
+              });
+              setLoading(false);
+              return;
+            }
+          } else {
+            if (Number(quantity) > selectedProduct.quantity) {
+              setNotification({ 
+                message: `Брак миқдори мавжуд миқдордан кўп бўлиши мумкин эмас. Мавжуд: ${selectedProduct.quantity} дона`, 
+                type: "error" 
+              });
+              setLoading(false);
+              return;
+            }
+          }
           break;
         case 'FIXED':
           endpoint = `${API_URL}/defective-logs/mark-as-fixed/${selectedProduct.id}`;
@@ -324,13 +402,13 @@ const DefectiveManagement = () => {
           type: "success" 
         });
         setSelectedProduct(null);
-        setQuantity(1);
+        setQuantity(0);
         setDescription('');
         fetchProducts();
         fetchSoldProducts();
         fetchDefectiveLogs();
       } else {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         setNotification({ 
           message: errorData.message || "Хатолик юз берди", 
           type: "error" 
@@ -519,7 +597,7 @@ const DefectiveManagement = () => {
   );
 
   return (
-    <div className="ml-[255px] space-y-6 p-4">
+    <div className="p-6 bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Брак махсулотлар бошқаруви</h1>
@@ -652,7 +730,9 @@ const DefectiveManagement = () => {
                           model: gp.model,
                           barcode: gp.barcode,
                           price: gp.price,
-                          quantity: gp.remaining,
+                          quantity: gp.remaining, // Use remaining for validation
+                          totalSold: gp.totalSold,
+                          defective: gp.defective
                         });
                         setActionType('DEFECTIVE');
                       }}
@@ -665,7 +745,7 @@ const DefectiveManagement = () => {
                         <div className="grid grid-cols-2 gap-4 mt-2">
                           <div className="text-xs">
                             <p className="text-red-600 font-medium">Сотилган: {gp.totalSold} дона</p>
-                            <p className="text-green-600 font-medium">Омборда / Дўконда: {gp.remaining} дона</p>
+                            <p className="text-green-600 font-medium">Қолган брак қилинадиган: {gp.remaining} дона</p>
                           </div>
                           <div className="text-xs text-gray-600">
                             <p>Брак: {gp.defective || 0} дона</p>
@@ -700,7 +780,15 @@ const DefectiveManagement = () => {
                 <p className="text-blue-800 font-medium">{selectedProduct.name}</p>
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div className="text-sm">
-                    <p className="text-green-600 font-medium">Омборда / Дўконда: {selectedProduct.quantity} дона</p>
+                    {activeMode === 'sotilgan' ? (
+                      <>
+                        <p className="text-red-600 font-medium">Сотилган: {selectedProduct.totalSold} дона</p>
+                        <p className="text-green-600 font-medium">Қолган брак қилинадиган: {selectedProduct.quantity} дона</p>
+                        <p className="text-gray-600">Умумий брак: {selectedProduct.defective || 0} дона</p>
+                      </>
+                    ) : (
+                      <p className="text-green-600 font-medium">Омборда / Дўконда: {selectedProduct.quantity} дона</p>
+                    )}
                     <p className="text-blue-600">Нархи: {formatCurrency(selectedProduct.price)}</p>
                   </div>
                   <div className="text-sm text-gray-600">
@@ -730,13 +818,15 @@ const DefectiveManagement = () => {
                 <input
                   type="number"
                   min="1"
-                  max={selectedProduct.quantity}
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Мавжуд: {selectedProduct.quantity} дона
+                  {activeMode === 'sotilgan' ? 
+                    `Макс: ${selectedProduct.quantity} дона (қолган сотилган миқдор)` : 
+                    `Мавжуд: ${selectedProduct.quantity} дона (омборда)`
+                  }
                 </p>
               </div>
 
@@ -793,7 +883,7 @@ const DefectiveManagement = () => {
                     <p className="text-gray-600">Нархи: {formatCurrency(modalData.item.price)}</p>
                   </div>
                   <div className="text-sm text-gray-600">
-                    <p><strong>Мавжуд транзаксия миқдори:</strong> {modalData.item.quantity} дона</p>
+                    <p><strong>Мавжуд транзаксия миқдори:</strong> {getAvailableQuantityFromItem(modalData.item, modalData.transaction)} дона</p>
                   </div>
                 </div>
                 
@@ -803,12 +893,12 @@ const DefectiveManagement = () => {
                     <input
                       type="number"
                       min={1}
-                      max={modalData.item.quantity}
+                      max={getAvailableQuantityFromItem(modalData.item, modalData.transaction)}
                       value={modalQuantity}
                       onChange={(e) => setModalQuantity(e.target.value)}
                       className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Макс: {modalData.item.quantity} дона</p>
+                    <p className="text-xs text-gray-500 mt-1">Макс: {getAvailableQuantityFromItem(modalData.item, modalData.transaction)} дона</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Сабаб</label>

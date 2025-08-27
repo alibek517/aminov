@@ -11,6 +11,7 @@ const Мижозлар = () => {
   const [selectedSchedule, setSelectedSchedule] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentChannel, setPaymentChannel] = useState('CASH');
+  const [paymentRating, setPaymentRating] = useState('YAXSHI');
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   useEffect(() => {
@@ -173,7 +174,8 @@ const Мижозлар = () => {
           paidAmount: newPaidAmount,
           isPaid: isFullyPaid,
           paidAt: new Date().toISOString(),
-          paidChannel: paymentChannel
+          paidChannel: paymentChannel,
+          rating: paymentRating
         };
         
         try {
@@ -210,6 +212,7 @@ const Мижозлар = () => {
       setSelectedSchedule(null);
       setPaymentAmount('');
       setPaymentChannel('CASH');
+      setPaymentRating('YAXSHI');
       
       if (selectedCustomer) {
         loadCustomerTransactions(selectedCustomer.id);
@@ -239,7 +242,7 @@ const Мижозлар = () => {
   };
 
   return (
-    <div className="ml-[255px] space-y-6 p-4">
+<div className="p-6 bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Кредит Мижозлари ва Тўловлари</h1>
 
       {notification && (
@@ -312,6 +315,52 @@ const Мижозлар = () => {
                                   {formatCurrency(totalCredit)}
                                 </div>
                               );
+                            })()}
+                            
+                            {/* Rating indicator */}
+                            {(() => {
+                              const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                              if (creditTransactions.length === 0) return null;
+
+                              let totalMonths = 0;
+                              let goodMonths = 0;
+                              let badMonths = 0;
+
+                              creditTransactions.forEach(transaction => {
+                                if (transaction.paymentSchedules) {
+                                  transaction.paymentSchedules.forEach(schedule => {
+                                    totalMonths++;
+                                    if (schedule.rating === 'YAXSHI') {
+                                      goodMonths++;
+                                    } else if (schedule.rating === 'YOMON') {
+                                      badMonths++;
+                                    }
+                                  });
+                                }
+                              });
+
+                              if (totalMonths > 0) {
+                                if (badMonths > goodMonths) {
+                                  return (
+                                    <div className="mt-1 bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+                                      Ёмон ({badMonths}/{totalMonths})
+                                    </div>
+                                  );
+                                } else if (goodMonths > badMonths) {
+                                  return (
+                                    <div className="mt-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                                      Яхши ({goodMonths}/{totalMonths})
+                                    </div>
+                                  );
+                                } else {
+                                  return (
+                                    <div className="mt-1 bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">
+                                      Нейтрал ({goodMonths}/{totalMonths})
+                                    </div>
+                                  );
+                                }
+                              }
+                              return null;
                             })()}
                           </div>
                         </div>
@@ -408,6 +457,8 @@ const Мижозлар = () => {
                                             <th className="px-2 py-1 text-left">Тўланган куни</th>
                                             <th className="px-2 py-1 text-left">Канал</th>
                                             <th className="px-2 py-1 text-left">Қабул қилган</th>
+                                            <th className="px-2 py-1 text-left">Баҳо</th>
+                                            <th className="px-2 py-1 text-left">Тўлов вақти</th>
                                             <th className="px-2 py-1 text-left">Амал</th>
                                           </tr>
                                         </thead>
@@ -425,6 +476,33 @@ const Мижозлар = () => {
                                                 <td className="px-2 py-1">{sc.paidAt ? formatDate(sc.paidAt) : '-'}</td>
                                                 <td className="px-2 py-1">{sc.paidChannel === 'CARD' ? 'Карта' : (sc.paidChannel === 'CASH' ? 'Нақд' : '-')}</td>
                                                 <td className="px-2 py-1">{sc.paidBy ? `${sc.paidBy.firstName || ''} ${sc.paidBy.lastName || ''}`.trim() : '-'}</td>
+                                                <td className="px-2 py-1">
+                                                  {sc.rating ? (
+                                                    <span className={`text-xs px-2 py-1 rounded ${
+                                                      sc.rating === 'YAXSHI' 
+                                                        ? 'bg-green-100 text-green-800' 
+                                                        : 'bg-red-100 text-red-800'
+                                                    }`}>
+                                                      {sc.rating === 'YAXSHI' ? 'Яхши' : 'Ёмон'}
+                                                    </span>
+                                                  ) : (
+                                                    <span className="text-xs text-gray-400">—</span>
+                                                  )}
+                                                </td>
+                                                <td className="px-2 py-1">
+                                                  {(() => {
+                                                    const dueDate = new Date(t.createdAt);
+                                                    dueDate.setMonth(dueDate.getMonth() + sc.month);
+                                                    const now = new Date();
+                                                    const isOverdue = dueDate < now && rem > 0;
+                                                    return (
+                                                      <span className={`text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}`}>
+                                                        {formatDate(dueDate)}
+                                                        {isOverdue && <span className="ml-1">⚠️</span>}
+                                                      </span>
+                                                    );
+                                                  })()}
+                                                </td>
                                                 <td className="px-2 py-1">
                                                   {rem > 0 ? (
                                                     <button
@@ -537,6 +615,20 @@ const Мижозлар = () => {
                   <label className="inline-flex items-center gap-2 cursor-pointer">
                     <input type="radio" name="paymentChannel" value="CARD" checked={paymentChannel==='CARD'} onChange={()=>setPaymentChannel('CARD')} />
                     <span>Карта</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ой баҳоси</label>
+                <div className="flex items-center gap-6 text-sm">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="paymentRating" value="YAXSHI" checked={paymentRating==='YAXSHI'} onChange={()=>setPaymentRating('YAXSHI')} />
+                    <span className="text-green-600 font-medium">Яхши</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="paymentRating" value="YOMON" checked={paymentRating==='YOMON'} onChange={()=>setPaymentRating('YOMON')} />
+                    <span className="text-red-600 font-medium">Ёмон</span>
                   </label>
                 </div>
               </div>

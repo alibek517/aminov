@@ -5,96 +5,52 @@ import Receipt from './Receipt/Receipt';
 
 const SalesManagement = () => {
   const [products, setProducts] = useState([]);
-  const [originalQuantities, setOriginalQuantities] = useState({}); // Track original quantities
   const [branches, setBranches] = useState([]);
-  const [users, setUsers] = useState([]); // New state for marketing users
+  const [users, setUsers] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
-  const [showSelectedItemsModal, setShowSelectedItemsModal] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
-  const [lastTransaction, setLastTransaction] = useState(null);
-  const [selectedProductId, setSelectedProductId] = useState('');
-  const [tempQuantity, setTempQuantity] = useState('');
-  const [tempPrice, setTempPrice] = useState('');
+
   const [selectedBranch, setSelectedBranch] = useState('');
-  const [selectedSellerId, setSelectedSellerId] = useState(''); // New state for selected seller
+  const [paymentType, setPaymentType] = useState('');
+  const [deliveryType, setDeliveryType] = useState('PICKUP');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const formatUzPhone = (value) => {
-    const digits = (value || '').replace(/\D/g, '').replace(/^998/, '');
-    const p = digits.substring(0, 9);
-    const part1 = p.substring(0, 2);
-    const part2 = p.substring(2, 5);
-    const part3 = p.substring(5, 7);
-    const part4 = p.substring(7, 9);
-    return `+998${part1 ? ' ' + part1 : ''}${part2 ? ' ' + part2 : ''}${part3 ? ' ' + part3 : ''}${part4 ? ' ' + part4 : ''}`.trim();
-  };
-
-  const phoneInputRef = useRef(null);
-  const onPhoneChange = (e) => {
-    // Limit to +998 XX XXX XX XX (9 local digits) and keep formatting
-    setPhone(formatUzPhone(e.target.value));
-  };
-  const onPhoneKeyDown = (e) => {
-    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
-    const value = phone || '';
-    const caret = e.currentTarget.selectionStart || 0;
-    // Map visual index to local digit index (exclude +998 prefix)
-    const mapToLocalIndex = (idx) => {
-      let count = -1; // local digit count starts at 0
-      for (let i = 0; i < value.length; i++) {
-        if (i <= 4) continue; // skip "+998 " prefix
-        const ch = value[i];
-        if (/\d/.test(ch)) count++;
-        if (i === idx) return (/\d/.test(ch) ? count : count); // if space, previous digit index
-      }
-      return -1;
-    };
-    if (e.key === 'Backspace') {
-      // If backspacing on a space, delete the digit before it
-      const targetIdx = caret - 1;
-      if (targetIdx < 0) return;
-      const localDigits = value.replace(/\D/g, '').replace(/^998/, '');
-      let delLocalIndex = mapToLocalIndex(targetIdx);
-      if (delLocalIndex < 0) return;
-      const newLocal = localDigits.slice(0, delLocalIndex) + localDigits.slice(delLocalIndex + 1);
-      e.preventDefault();
-      setPhone(formatUzPhone('+998 ' + newLocal));
-    }
-  };
-  const [passportSeries, setPassportSeries] = useState(''); // New state for passport series
-  const [jshshir, setJshshir] = useState(''); // New state for JSHSHIR
-  const onJshshirChange = (e) => {
-    // Keep only digits, limit to 16
-    const digits = (e.target.value || '').replace(/\D/g, '').slice(0, 16);
-    setJshshir(digits);
-  };
-  const [paymentType, setPaymentType] = useState('CASH');
-  const [deliveryType, setDeliveryType] = useState('PICKUP'); // New state for delivery type
-  const [deliveryAddress, setDeliveryAddress] = useState(''); // New state for delivery address
-  const [months, setMonths] = useState(1);
-  const [customInterestRate, setCustomInterestRate] = useState('0'); // New state for custom interest rate
-  const [customerPaid, setCustomerPaid] = useState('0'); // New state for customer paid amount
+  const [jshshir, setJshshir] = useState('');
+  const [passportSeries, setPassportSeries] = useState('');
+  const [downPayment, setDownPayment] = useState('');
+  const [customerPaid, setCustomerPaid] = useState('0');
+  const [months, setMonths] = useState('');
+  const [interestRate, setInterestRate] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [notification, setNotification] = useState(null);
-  useEffect(() => {
-    if (!notification) return;
-    const t = setTimeout(() => setNotification(null), 1500);
-    return () => clearTimeout(t);
-  }, [notification]);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
+  const [showSelectedItemsModal, setShowSelectedItemsModal] = useState(false);
+  const [originalQuantities, setOriginalQuantities] = useState({});
+  const [deliveryAddress, setDeliveryAddress] = useState(''); // Yangi state qo'shish
+  const [priceInputValues, setPriceInputValues] = useState({}); // Store display values for price inputs
+  const [exchangeRate, setExchangeRate] = useState(12500); // Default exchange rate USD to UZS
   const navigate = useNavigate();
+
+
+
+
 
   const API_URL = 'https://suddocs.uz';
 
+  // Format amount in som only
   const formatAmount = (amount) => {
-    const num = Math.floor(Number(amount) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    const num = Number(amount) || 0;
+    return new Intl.NumberFormat('uz-UZ').format(num) + ' so\'m';
   };
+
+
 
   const formatQuantity = (qty) => (qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' дона' : '0 дона');
 
@@ -103,13 +59,19 @@ const SalesManagement = () => {
 
   const calculatePaymentSchedule = () => {
     const m = Number(months);
-    const interestRate = Number(customInterestRate) / 100 || 0;
+    const rate = Number(interestRate) / 100 || 0;
     if (!m || m <= 0 || selectedItems.length === 0) return { totalWithInterest: 0, monthlyPayment: 0, schedule: [], change: 0, remaining: 0 };
 
-    const baseTotal = selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
-    const paid = Number(customerPaid) || 0;
-    const remainingPrincipal = Math.max(0, baseTotal - paid);
-    const remaining = remainingPrincipal * (1 + interestRate);
+    // Calculate base total in som using display prices
+    const baseTotal = selectedItems.reduce((sum, item, index) => {
+      const displayPrice = priceInputValues[`${item.id}_${index}`] || item.price;
+      return sum + Number(item.quantity) * Number(displayPrice);
+    }, 0);
+    
+    const paid = Number(customerPaid) || 0;                    // Mijoz to'lagan pul
+    const remainingPrincipal = Math.max(0, baseTotal - paid);  // Asosiy puldan to'lagan pulni ayirish
+    const interestAmount = remainingPrincipal * rate;          // Qolgan pulga foiz qo'yish
+    const remaining = remainingPrincipal + interestAmount;     // Qolgan + foiz
     const totalWithInterest = paid + remaining;
     const change = paid > totalWithInterest ? paid - totalWithInterest : 0;
     const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
@@ -133,7 +95,7 @@ const SalesManagement = () => {
     const m = Number(months);
     const { totalWithInterest, monthlyPayment, schedule, change, remaining } = calculatePaymentSchedule();
     const branchName = branches.find((b) => b.id === Number(selectedBranch))?.name || 'Нома\'лум';
-    const seller = users.find((u) => u.id === Number(selectedSellerId));
+    const seller = users.find((u) => u.id === Number(selectedUserId));
     const sellerName = seller ? `${seller.firstName} ${seller.lastName}` : 'Нома\'лум';
     const date = formatDate(new Date());
 
@@ -167,11 +129,11 @@ const SalesManagement = () => {
   Sotuvchi: ${escapeLatex(sellerName)}\\\\
   Sana: ${escapeLatex(date)}\\\\
   To'lov Turi: ${paymentType === 'CREDIT' ? 'Kredit' : paymentType === 'INSTALLMENT' ? "Bo'lib To'lash" : paymentType}\\\\
-  Yetkazib berish: ${deliveryType === 'PICKUP' ? 'Olib ketish' : 'Yetkazib berish'}\\\\
+  Yetkazib berish: ${paymentType === 'DELIVERY' ? 'Yetkazib berish' : 'Olib ketish'}\\\\
   Muddat: ${m} oy\\\\
-  Foiz: ${Number(customInterestRate).toFixed(2)}\\%\\\\
+  Foiz: ${Number(interestRate).toFixed(2)}\\%\\\\
   Umumiy Summa (foiz bilan): ${formatAmount(totalWithInterest)}\\\\
-  Mijoz to'lagan: ${formatAmount(Number(customerPaid))}\\\\
+  Mijoz to'lagan: ${formatAmount(Number(downPayment))}\\\\
   Qaytim: ${formatAmount(change)}\\\\
   Qolgan summa: ${formatAmount(remaining)}\\\\
   Oylik To'lov: ${formatAmount(monthlyPayment)}\\\\
@@ -237,31 +199,23 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     didInitRef.current = true;
     const fetchBranchesAndUsers = async () => {
       try {
-        setLoading(true);
         const [branchesRes, usersRes] = await Promise.all([
           axiosWithAuth({ method: 'get', url: `${API_URL}/branches` }),
-          axiosWithAuth({ method: 'get', url: `${API_URL}/users` }),
+          axiosWithAuth({ method: 'get', url: `${API_URL}/users?role=MARKETING` }),
         ]);
         setBranches(branchesRes.data);
-        setUsers(usersRes.data.filter((user) => user.role === 'MARKETING')); // Filter for MARKETING role
+        setUsers(usersRes.data);
+        const userBranchId = localStorage.getItem('branchId');
+        if (userBranchId) {
+          setSelectedBranchId(userBranchId);
+        }
       } catch (err) {
-        setNotification({ message: err.message || 'Ma\'lumotlarni yuklashda xatolik', type: 'error' });
-      } finally {
-        setLoading(false);
+        setNotification({ message: err.message || 'Filial va foydalanuvchilarni yuklashda xatolik', type: 'error' });
+        console.error('Fetch branches and users error:', err);
       }
     };
     fetchBranchesAndUsers();
-
-    const branchId = localStorage.getItem('branchId');
-    if (branchId && !isNaN(branchId) && Number.isInteger(Number(branchId)) && Number(branchId) > 0) {
-      setSelectedBranchId(branchId);
-      setSelectedBranch(branchId);
-    } else {
-      setNotification({
-        message: "Iltimos, filialni tanlang!",
-        type: "error"
-      });
-    }
+    fetchExchangeRate(); // Fetch exchange rate on component mount
   }, []);
 
   const loadData = useCallback(async () => {
@@ -322,98 +276,9 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     }
   }, [loadData, selectedBranchId]);
 
-  const openModal = () => {
-    setSelectedItems([]);
-    setSelectedBranch(selectedBranchId || '');
-    setSelectedSellerId('');
-    setFirstName('');
-    setLastName('');
-    setPhone('');
-    setPassportSeries(''); // Reset passport series
-    setJshshir(''); // Reset JSHSHIR
-    setPaymentType('CASH');
-    setDeliveryType('PICKUP'); // Reset delivery type
-    setDeliveryAddress(''); // Reset delivery address
-    setMonths(1);
-    setCustomInterestRate('0');
-    setCustomerPaid('');
-    setErrors({});
-    setSelectedProductId('');
-    setTempQuantity('');
-    setTempPrice('');
 
-    // Restore original quantities when opening modal
-    setProducts(prev =>
-      prev.map(product => ({
-        ...product,
-        quantity: originalQuantities[product.id] || product.quantity
-      }))
-    );
 
-    setShowModal(true);
-  };
 
-  // Function to add item to cart with duplicate handling - NO API CALLS
-  const addItem = () => {
-    if (!selectedProductId || !tempQuantity) return;
-    const product = products.find((p) => p.id === Number(selectedProductId));
-    if (!product) return;
-
-    const price = tempPrice || (product.marketPrice != null ? product.marketPrice.toString() : product.price.toString());
-    if (Number(price) <= 0) {
-      setNotification({ message: 'Narx 0 dan katta bo\'lishi kerak', type: 'error' });
-      return;
-    }
-
-    // Check if item already exists in cart
-    const existingItemIndex = selectedItems.findIndex((item) => item.id === product.id);
-
-    if (existingItemIndex !== -1) {
-      // Update existing item quantity
-      setSelectedItems((prev) =>
-        prev.map((item, index) =>
-          index === existingItemIndex
-            ? { ...item, quantity: Number(item.quantity) + Number(tempQuantity) }
-            : item
-        )
-      );
-      setNotification({ message: `${product.name} miqdori yangilandi`, type: 'success' });
-    } else {
-      // Add new item
-      setSelectedItems([
-        ...selectedItems,
-        {
-          id: product.id,
-          name: product.name,
-          quantity: tempQuantity,
-          price: price,
-          maxQuantity: product.quantity,
-        },
-      ]);
-      setNotification({ message: `${product.name} (${tempQuantity} dona) savatga qo'shildi`, type: 'success' });
-    }
-
-    // Reduce product quantity in the products list
-    setProducts(prev =>
-      prev.map(p =>
-        p.id === product.id
-          ? { ...p, quantity: Math.max(0, p.quantity - Number(tempQuantity)) }
-          : p
-      )
-    );
-
-    setSelectedProductId('');
-    setTempQuantity('');
-    setTempPrice('');
-    // Clear product selection inputs
-    const productSelect = document.getElementById('product-select');
-    const quantityInput = document.getElementById('temp-quantity');
-    const priceInput = document.getElementById('temp-price');
-
-    if (productSelect) productSelect.value = '';
-    if (quantityInput) quantityInput.value = '';
-    if (priceInput) priceInput.value = '';
-  };
 
   const updateItem = (index, field, value) => {
     setSelectedItems((prev) => {
@@ -469,12 +334,13 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     setPhone('');
     setPassportSeries(''); // Reset passport series
     setJshshir(''); // Reset JSHSHIR
-    setPaymentType('CASH');
-    setDeliveryType('PICKUP'); // Reset delivery type
-    setDeliveryAddress(''); // Reset delivery address
-    setCustomInterestRate('0');
-    setMonths(1);
+    setPaymentType('');
+    setDownPayment('');
     setCustomerPaid('0');
+    setMonths('');
+    setInterestRate('');
+    setErrors({});
+    setPriceInputValues({}); // Clear price input values
 
     // Restore original quantities
     setProducts(prev =>
@@ -491,43 +357,28 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     setShowModal(false);
     setSelectedItems([]);
     setSelectedBranch('');
-    setSelectedSellerId('');
+    setSelectedUserId('');
+    setPaymentType('');
+    setDeliveryType('PICKUP');
     setFirstName('');
     setLastName('');
     setPhone('');
-    setPassportSeries(''); // Reset passport series
-    setJshshir(''); // Reset JSHSHIR
-    setPaymentType('CASH');
-    setDeliveryType('PICKUP'); // Reset delivery type
-    setDeliveryAddress(''); // Reset delivery address
-    setMonths(1);
-    setCustomInterestRate('0');
-    setCustomerPaid('');
+    setJshshir('');
+    setPassportSeries('');
+    setMonths('');
+    setInterestRate('');
+    setDownPayment('');
+    setCustomerPaid('0');
     setErrors({});
     setNotification(null);
-    setSelectedProductId('');
-    setTempQuantity('');
-    setTempPrice('');
-
-    // Restore original quantities when modal is closed
-    setProducts(prev =>
-      prev.map(product => ({
-        ...product,
-        quantity: originalQuantities[product.id] || product.quantity
-      }))
-    );
   };
 
   const closeReceiptModal = () => {
     setShowReceiptModal(false);
-    setLastTransaction(null);
+    setReceiptData(null);
   };
 
   const openSelectedItemsModal = () => {
-    if (selectedItems.length === 0) {
-      setNotification({ message: 'Savatda mahsulot yo\'q', type: 'warning' });
-      return;
-    }
     setShowSelectedItemsModal(true);
   };
 
@@ -550,7 +401,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
 
   // Clear customer-related validation errors when payment type doesn't require them
   useEffect(() => {
-    if (!['CREDIT', 'INSTALLMENT'].includes(paymentType)) {
+    if (!['CREDIT', 'INSTALLMENT'].includes(paymentType) && deliveryType !== 'DELIVERY') {
       setErrors((prev) => {
         const {
           firstName: _fn,
@@ -559,17 +410,21 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
           passportSeries: _ps,
           jshshir: _js,
           months: _mo,
-          customInterestRate: _ci,
+          interestRate: _ir,
           ...rest
         } = prev || {};
         return rest;
       });
     }
-  }, [paymentType]);
+  }, [paymentType, deliveryType]);
 
   const validateFields = () => {
     const newErrors = {};
+    
+    // Always required fields
     if (selectedItems.length === 0) newErrors.items = 'Kamida bitta mahsulot tanlanishi shart';
+    
+    // Validate each selected item
     selectedItems.forEach((item, index) => {
       if (!item.quantity || isNaN(item.quantity) || Number(item.quantity) <= 0 || !Number.isInteger(Number(item.quantity))) {
         newErrors[`quantity_${index}`] = 'Miqdor 0 dan katta butun son bo\'lishi kerak';
@@ -580,30 +435,37 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         newErrors[`price_${index}`] = 'Narx 0 dan katta bo\'lishi kerak';
       }
     });
-    if (!selectedBranch) newErrors.branch = 'Filial tanlanishi shart';
-    if (!selectedSellerId) newErrors.seller = 'Sotuvchi tanlanishi shart';
     
-    // Customer fields validation based on payment type
-    if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
+    // Always required: seller only
+    if (!selectedUserId) newErrors.seller = 'Sotuvchi tanlanishi shart';
+    if (!paymentType) newErrors.paymentType = 'To\'lov turi tanlanishi shart';
+
+    // Customer fields validation - only required for delivery OR credit/installment
+    const requiresCustomerInfo = deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType);
+    
+    if (requiresCustomerInfo) {
       if (!firstName.trim()) newErrors.firstName = 'Ism kiritilishi shart';
       if (!lastName.trim()) newErrors.lastName = 'Familiya kiritilishi shart';
       if (!phone.trim() || !/^\+998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}$/.test(phone)) newErrors.phone = 'Telefon raqami: +998 XX XXX XX XX';
     }
-    
-    if (!paymentType) newErrors.paymentType = 'To\'lov turi tanlanishi shart';
-    if (((paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') || deliveryType === 'DELIVERY') && !deliveryAddress.trim()) {
-      newErrors.deliveryAddress = 'Manzil kiritilishi shart';
+
+    // Delivery address - only required for delivery
+    if (deliveryType === 'DELIVERY') {
+      if (!deliveryAddress.trim()) newErrors.deliveryAddress = 'Manzil kiritilishi shart';
     }
-    if ((paymentType === 'CREDIT' || paymentType === 'INSTALLMENT')) {
+
+    // Credit/Installment specific validation
+    if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
+      if (!passportSeries.trim()) newErrors.passportSeries = 'Passport seriyasi kiritilishi shart';
+      if (!jshshir.trim() || !/^\d{14,16}$/.test(jshshir)) newErrors.jshshir = 'JSHSHIR 14-16 raqamdan iborat bo\'lishi kerak';
       if (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months)) || Number(months) > 24) {
         newErrors.months = 'Oylar soni 1 dan 24 gacha butun son bo\'lishi kerak';
       }
-      if (!customInterestRate || isNaN(customInterestRate) || Number(customInterestRate) < 0) {
-        newErrors.customInterestRate = 'Foiz 0 dan katta yoki teng bo\'lishi kerak';
+      if (!interestRate || isNaN(interestRate) || Number(interestRate) < 0) {
+        newErrors.interestRate = 'Foiz 0 dan katta yoki teng bo\'lishi kerak';
       }
-      if (!passportSeries.trim()) newErrors.passportSeries = 'Passport seriyasi kiritilishi shart';
-      if (!jshshir.trim() || !/^\d{14,16}$/.test(jshshir)) newErrors.jshshir = 'JSHSHIR 14-16 raqamdan iborat bo\'lishi kerak';
     }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -611,7 +473,10 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateFields()) {
-      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
+      // Show specific validation errors
+      const errorMessages = Object.values(errors).filter(msg => msg);
+      const errorText = errorMessages.length > 0 ? errorMessages.join(', ') : "Barcha maydonlarni to'g'ri to'ldiring";
+      setNotification({ message: errorText, type: 'error' });
       return;
     }
     setSubmitting(true);
@@ -620,9 +485,10 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
       const userId = Number(localStorage.getItem('userId'));
       const baseTotal = selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
       const m = Number(months);
-      const interestRate = Number(customInterestRate) / 100 || 0;
-      const finalTotal = baseTotal * (1 + interestRate);
-      const paid = Number(customerPaid) || 0;
+      const rate = Number(interestRate) / 100 || 0;
+      const finalTotal = baseTotal * (1 + rate);
+      const paidInSom = Number(customerPaid) || 0;
+      const paid = paidInSom; // Keep payment in som for backend
       const remaining = paid < finalTotal ? finalTotal - paid : 0;
       const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
 
@@ -635,8 +501,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         userId,
         remainingBalance: remaining,
         paymentType: paymentType === 'INSTALLMENT' ? 'CREDIT' : paymentType,
-        deliveryMethod: deliveryType,
-         deliveryAddress: ((paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') || deliveryType === 'DELIVERY') ? (deliveryAddress || undefined) : undefined, // Add delivery address
+        deliveryMethod: deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
+        deliveryAddress: (deliveryType === 'DELIVERY' || paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? (deliveryAddress || undefined) : undefined, // Add delivery address
         customer: {
           fullName: `${firstName} ${lastName}`.trim(),
           phone: phone.replace(/\s+/g, ''),
@@ -644,8 +510,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
           jshshir: jshshir || undefined, // Add JSHSHIR
           address: deliveryAddress || undefined,
         },
-        fromBranchId: Number(selectedBranch),
-        soldByUserId: Number(selectedSellerId), // MARKETING selected in UI
+        fromBranchId: selectedBranch ? Number(selectedBranch) : Number(selectedBranchId),
+        soldByUserId: Number(selectedUserId), // MARKETING selected in UI
         items: selectedItems.map((item) => ({
           productId: item.id,
           productName: item.name,
@@ -654,7 +520,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
           total: Number(item.quantity) * Number(item.price),
           ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' ? {
             creditMonth: m,
-            creditPercent: interestRate,
+            creditPercent: rate,
             monthlyPayment,
           } : {}),
         })),
@@ -668,32 +534,36 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         data: payload,
       });
 
-      setLastTransaction({
-        ...response.data,
+      setReceiptData({
+        id: response.data.id,
+        createdAt: response.data.createdAt,
         customer: {
-          firstName,
-          lastName,
-          phone,
-          passportSeries, // Add passport series
-          jshshir, // Add JSHSHIR
-          ...(response.data.customer?.fullName && {
-            firstName: response.data.customer.fullName.split(' ')[0] || firstName,
-            lastName: response.data.customer.fullName.split(' ').slice(1).join(' ') || lastName
-          })
+          fullName: `${firstName} ${lastName}`.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phone: phone.replace(/\s+/g, ''),
+          passportSeries: passportSeries || undefined,
+          jshshir: jshshir || undefined,
+          address: deliveryAddress || undefined,
         },
-        seller: users.find(u => u.id === Number(selectedSellerId)),
-        branch: branches.find(b => b.id === Number(selectedBranch)),
-        items: selectedItems,
+        seller: users.find(u => u.id === Number(selectedUserId)),
+        branch: branches.find(b => b.id === Number(localStorage.getItem('branchId'))),
+        items: selectedItems.map((item, index) => ({
+          ...item,
+          price: Number(priceInputValues[`${item.id}_${index}`] || item.price),
+          quantity: Number(item.quantity),
+          total: Number(item.quantity) * Number(priceInputValues[`${item.id}_${index}`] || item.price)
+        })),
         paymentType,
-        deliveryType, // Add delivery type
-        deliveryAddress, // Add delivery address
+        deliveryType: deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
+        deliveryAddress: deliveryAddress,
         months: m,
-        interestRate: Number(customInterestRate),
-        paid: paid,
-        remaining: remaining,
-        monthlyPayment,
-        total: baseTotal,
-        finalTotal
+        interestRate: Number(interestRate),
+        paid: Number(paid),
+        remaining: Number(remaining),
+        monthlyPayment: Number(monthlyPayment),
+        totalInSom: Number(baseTotal),
+        finalTotalInSom: Number(finalTotal),
       });
 
       if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
@@ -713,12 +583,35 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     }
   };
 
-  const { totalWithInterest, monthlyPayment, schedule, change, remaining } = calculatePaymentSchedule();
+  const { totalWithInterest, remaining } = calculatePaymentSchedule();
 
-  const selectedBranchName = branches.find((b) => b.id === Number(selectedBranchId))?.name || 'Filial topilmadi';
+  // Function to fetch current exchange rate from /currency-exchange-rates endpoint
+  const fetchExchangeRate = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        const response = await axios.get(`${API_URL}/currency-exchange-rates`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        // Get the first exchange rate (index 0) from the array
+        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+          const firstExchangeRate = response.data[0];
+          if (firstExchangeRate && firstExchangeRate.rate) {
+            setExchangeRate(firstExchangeRate.rate);
+          }
+        } else {
+          console.warn('No exchange rates found in response');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch exchange rate:', error);
+      // Keep default rate if fetch fails
+    }
+  };
 
   return (
-    <div className="ml-[255px] space-y-6 p-4">
+    <div className="p-6 bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Сотиш</h1>
 
       {notification && (
@@ -795,7 +688,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                   <th className="p-3 text-left font-medium">ID</th>
                   <th className="p-3 text-left font-medium">Номи</th>
                   <th className="p-3 text-left font-medium">Штрих-код</th>
-                  <th className="p-3 text-left font-medium">Нарх</th>
+                  <th className="p-3 text-left font-medium">Нарх (UZS)</th>
                   <th className="p-3 text-left font-medium">Миқдор</th>
                   <th className="p-3 text-left font-medium">Амаллар</th>
                 </tr>
@@ -807,7 +700,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       <td className="p-3 text-gray-700">#{product.id}</td>
                       <td className="p-3 text-gray-700">{product.name}</td>
                       <td className="p-3 text-gray-700">{product.barcode}</td>
-                      <td className="p-3 text-gray-700">{formatAmount(product.marketPrice != null ? product.marketPrice : product.price)}</td>
+                      <td className="p-3 text-gray-700">{formatAmount((product.marketPrice != null ? product.marketPrice : product.price)* exchangeRate)}</td>
                       <td className="p-3 text-gray-700">{formatQuantity(product.quantity)}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
@@ -844,14 +737,16 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                                   );
                                   setNotification({ message: `${product.name} миқдори янгиланди`, type: 'success' });
                                 } else {
-                                  // Add new item
+                                  // Add new item - convert USD to som
+                                  const priceInSom = Math.round(Number(product.marketPrice || product.price) * exchangeRate);
                                   setSelectedItems([
                                     ...selectedItems,
                                     {
                                       id: product.id,
                                       name: product.name,
                                       quantity: quantity,
-                                      price: (product.marketPrice != null ? product.marketPrice : product.price).toString(),
+                                      price: priceInSom.toString(),
+                                      marketPrice: priceInSom.toString(),
                                       maxQuantity: product.quantity,
                                     },
                                   ]);
@@ -865,8 +760,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                             }}
                             disabled={product.quantity <= 0}
                             className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${product.quantity > 0
-                                ? 'bg-green-500 text-white hover:bg-green-600'
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              ? 'bg-green-500 text-white hover:bg-green-600'
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                               }`}
                           >
                             Қўшиш
@@ -887,354 +782,12 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
           </div>
 
           {showModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50">
-              <div className="bg-white rounded-lg p-8 w-full max-w-3xl overflow-y-auto max-h-[95vh]">
-                <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10">
-                  <h3 className="text-2xl font-bold text-gray-800">Мижозга сотиш</h3>
-                  <button
-                    onClick={closeModal}
-                    className="text-gray-600 hover:text-gray-800 font-bold text-xl"
-                  >
-                    &times;
-                  </button>
-                </div>
-                <table className="w-full text-sm text-gray-700 border border-gray-200 shadow-md rounded-lg">
-                  <tbody>
-                    <tr className="border-b">
-                      <td className="p-3 font-medium bg-gray-50">Филиал</td>
-                      <td className="p-3">
-                        <div className="w-full p-2 border border-gray-300 rounded-lg bg-gray-50">
-                          {selectedBranchName}
-                        </div>
-                        {errors.branch && (
-                          <span className="text-red-500 text-xs">{errors.branch}</span>
-                        )}
-                      </td>
-                    </tr>
-                    <tr className="border-b">
-                      <td className="p-3 font-medium bg-gray-50">Сотувчи</td>
-                      <td className="p-3">
-                        <select
-                          value={selectedSellerId}
-                          onChange={(e) => setSelectedSellerId(e.target.value)}
-                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.seller ? 'border-red-500' : 'border-gray-300'}`}
-                        >
-                          <option value="">Сотувчи танланг</option>
-                          {users.map((user) => (
-                            <option key={user.id} value={user.id}>
-                              {user.firstName} {user.lastName}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.seller && (
-                          <span className="text-red-500 text-xs">{errors.seller}</span>
-                        )}
-                      </td>
-                    </tr>
-                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
-                      <>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Исм</td>
-                          <td className="p-3">
-                            <input
-                              value={firstName}
-                              onChange={(e) => setFirstName(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-gray-300'}`}
-                            />
-                            {errors.firstName && (
-                              <span className="text-red-500 text-xs">{errors.firstName}</span>
-                            )}
-                          </td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Фамилия</td>
-                          <td className="p-3">
-                            <input
-                              value={lastName}
-                              onChange={(e) => setLastName(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-gray-300'}`}
-                            />
-                            {errors.lastName && (
-                              <span className="text-red-500 text-xs">{errors.lastName}</span>
-                            )}
-                          </td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Телефон</td>
-                          <td className="p-3">
-                            <input
-                              value={phone}
-                              onChange={onPhoneChange}
-                              onKeyDown={onPhoneKeyDown}
-                              ref={phoneInputRef}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.phone ? 'border-red-500' : 'border-gray-300'}`}
-                              placeholder="+998 XX XXX XX XX"
-                              maxLength={18}
-                            />
-                            {errors.phone && (
-                              <span className="text-red-500 text-xs">{errors.phone}</span>
-                            )}
-                          </td>
-                        </tr>
-                      </>
-                    )}
-                    <tr className="border-b">
-                      <td className="p-3 font-medium bg-gray-50">Етказиб бериш тури</td>
-                      <td className="p-3">
-                        <select
-                          value={deliveryType}
-                          onChange={(e) => setDeliveryType(e.target.value)}
-                          className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
-                        >
-                          <option value="PICKUP">Олиб кетиш</option>
-                          <option value="DELIVERY">Етказиб бериш</option>
-                        </select>
-                      </td>
-                    </tr>
-                    {(deliveryType === 'DELIVERY' || ['CREDIT','INSTALLMENT'].includes(paymentType)) && (
-                      <tr className="border-b">
-                        <td className="p-3 font-medium bg-gray-50">Манзил</td>
-                        <td className="p-3">
-                          <textarea
-                            value={deliveryAddress}
-                            onChange={(e) => setDeliveryAddress(e.target.value)}
-                            placeholder="Тўлиқ манзилни киритинг..."
-                            className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.deliveryAddress ? 'border-red-500' : 'border-gray-300'}`}
-                            rows="3"
-                          />
-                          {errors.deliveryAddress && (
-                            <span className="text-red-500 text-xs">{errors.deliveryAddress}</span>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                    <tr className="border-b">
-                      <td className="p-3 font-medium bg-gray-50">Тўлов тури</td>
-                      <td className="p-3">
-                        <select
-                          value={paymentType}
-                          onChange={(e) => setPaymentType(e.target.value)}
-                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.paymentType ? 'border-red-500' : 'border-gray-300'}`}
-                        >
-                          <option value="">Танланг</option>
-                          <option value="CASH">Нақд</option>
-                          <option value="CARD">Карта</option>
-                          <option value="CREDIT">Кредит</option>
-                          <option value="INSTALLMENT">Бўлиб Тўлаш</option>
-                        </select>
-                        {errors.paymentType && (
-                          <span className="text-red-500 text-xs">{errors.paymentType}</span>
-                        )}
-                      </td>
-                    </tr>
-                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
-                      <>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Паспорт серияси</td>
-                          <td className="p-3">
-                            <input
-                              type="text"
-                              value={passportSeries}
-                              onChange={(e) => setPassportSeries(e.target.value)}
-                              placeholder="AA 1234567"
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'}`}
-                            />
-                            {errors.passportSeries && (
-                              <span className="text-red-500 text-xs">{errors.passportSeries}</span>
-                            )}
-                          </td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">JSHSHIR</td>
-                          <td className="p-3">
-                            <input
-                              type="text"
-                              value={jshshir}
-                              onChange={onJshshirChange}
-                              placeholder="1234567890123456"
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'}`}
-                              maxLength={16}
-                            />
-                            {errors.jshshir && (
-                              <span className="text-red-500 text-xs">{errors.jshshir}</span>
-                            )}
-                          </td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Ойлар сони</td>
-                          <td className="p-3">
-                            <input
-                              type="number"
-                              value={months}
-                              onChange={(e) => setMonths(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.months ? 'border-red-500' : 'border-gray-300'}`}
-                              min="1"
-                              max="24"
-                              step="1"
-                            />
-                            {errors.months && (
-                              <span className="text-red-500 text-xs">{errors.months}</span>
-                            )}
-                          </td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Фоиз (%)</td>
-                          <td className="p-3">
-                            <input
-                              type="number"
-                              value={customInterestRate}
-                              onChange={(e) => setCustomInterestRate(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customInterestRate ? 'border-red-500' : 'border-gray-300'}`}
-                              step="0.01"
-                              min="0"
-                            />
-                            {errors.customInterestRate && (
-                              <span className="text-red-500 text-xs">{errors.customInterestRate}</span>
-                            )}
-                          </td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Мижоз тўлаган</td>
-                          <td className="p-3">
-                            <input
-                              type="number"
-                              value={customerPaid}
-                              onChange={(e) => setCustomerPaid(e.target.value)}
-                              className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
-                              step="0.01"
-                              min="0"
-                            />
-                          </td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Умумий сумма</td>
-                          <td className="p-3">{formatAmount(totalWithInterest)}</td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Қайтим</td>
-                          <td className="p-3">{formatAmount(change)}</td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Қолган сумма</td>
-                          <td className="p-3">{formatAmount(remaining)}</td>
-                        </tr>
-                        <tr className="border-b">
-                          <td className="p-3 font-medium bg-gray-50">Ойлик тўлов</td>
-                          <td className="p-3">{formatAmount(monthlyPayment)}</td>
-                        </tr>
-                      </>
-                    )}
-                    <tr className="border-b">
-                      <td colSpan="2" className="p-3">
-                        <h4 className="text-md font-bold mb-2">Маҳсулот танлаш</h4>
-                        <div className="flex gap-2 mb-2">
-                          <select
-                            value={selectedProductId}
-                            onChange={(e) => {
-                              setSelectedProductId(e.target.value);
-                              const product = products.find((p) => p.id === Number(e.target.value));
-                              setTempPrice(product ? (product.marketPrice != null ? product.marketPrice.toString() : product.price.toString()) : '');
-                            }}
-                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            id="product-select"
-                          >
-                            <option value="">Маҳсулот танланг</option>
-                            {products
-                              .filter((p) => p.quantity > 0)
-                              .map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} ({formatQuantity(p.quantity)} қолдиқ)
-                                </option>
-                              ))}
-                          </select>
-                          <input
-                            type="number"
-                            value={tempQuantity}
-                            onChange={(e) => setTempQuantity(e.target.value)}
-                            placeholder="Миқдор"
-                            className="w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            min="1"
-                            step="1"
-                            id="temp-quantity"
-                          />
-                          <input
-                            type="number"
-                            value={tempPrice}
-                            onChange={(e) => setTempPrice(e.target.value)}
-                            placeholder="Нарх"
-                            className="w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            step="0.01"
-                            min="0"
-                            id="temp-price"
-                          />
-                          <button
-                            onClick={addItem}
-                            className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
-                            disabled={!selectedProductId || !tempQuantity}
-                          >
-                            Қўшиш
-                          </button>
-                        </div>
-                        {errors.items && (
-                          <span className="text-red-500 text-xs">{errors.items}</span>
-                        )}
-                      </td>
-                    </tr>
-                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && months && Number(months) > 0 && (
-                      <tr className="border-b">
-                        <td colSpan="2" className="p-3">
-                          <h4 className="text-md font-bold mb-2">Тўлов жадвали</h4>
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm border">
-                              <thead>
-                                <tr className="bg-gray-100">
-                                  <th className="p-2">Ойлик</th>
-                                  <th className="p-2">Тўлов суммаси</th>
-                                  <th className="p-2">Қолдиқ сумма</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {schedule.map((row) => (
-                                  <tr key={row.month} className="border-t">
-                                    <td className="p-2">{row.month}</td>
-                                    <td className="p-2">{formatAmount(row.payment)}</td>
-                                    <td className="p-2">{formatAmount(row.remainingBalance)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                <div className="flex gap-3 mt-6">
-                  <button
-                    onClick={handleSubmit}
-                    disabled={submitting}
-                    className="flex-1 bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors"
-                  >
-                    {submitting ? 'Юкланмоқда...' : 'Сақлаш'}
-                  </button>
-                  <button
-                    onClick={closeModal}
-                    className="flex-1 bg-gray-200 text-gray-700 p-3 rounded-lg hover:bg-gray-300 transition-colors"
-                  >
-                    Бекор
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {showSelectedItemsModal && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+              <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-xl">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-bold text-gray-800">Танланган маҳсулотлар</h3>
+                  <h3 className="text-xl font-bold text-gray-800">Мижозга сотиш</h3>
                   <button
-                    onClick={closeSelectedItemsModal}
+                    onClick={closeModal}
                     className="text-gray-600 hover:text-gray-800 font-bold text-xl"
                   >
                     &times;
@@ -1246,7 +799,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     <thead>
                       <tr className="bg-gray-50">
                         <th className="p-3 text-left font-medium">Маҳсулот</th>
-                        <th className="p-3 text-left font-medium">Нарх</th>
+                        <th className="p-3 text-left font-medium">Нарх (сом)</th>
                         <th className="p-3 text-left font-medium">Миқдор</th>
                         <th className="p-3 text-left font-medium">Жами</th>
                         <th className="p-3 text-left font-medium">Амаллар</th>
@@ -1259,14 +812,26 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           <td className="p-3">
                             <input
                               type="number"
-                              value={item.price}
-                              onChange={(e) => updateItem(index, 'price', e.target.value)}
-                              className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
-                              step="0.01"
+                              value={priceInputValues[`${item.id}_${index}`] || item.price}
+                              onChange={(e) => {
+                                const inputValue = e.target.value;
+                                const itemKey = `${item.id}_${index}`;
+                                setPriceInputValues(prev => ({
+                                  ...prev,
+                                  [itemKey]: inputValue
+                                }));
+                                if (inputValue === '' || (!isNaN(inputValue) && Number(inputValue) >= 0)) {
+                                  const newPriceInSom = inputValue === '' ? 0 : inputValue;
+                                  updateItem(index, 'price', newPriceInSom);
+                                }
+                              }}
+                              className={`w-40 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
                               min="0"
+                              step="1000"
+                              placeholder="Нарх (сом)"
                             />
                             {errors[`price_${index}`] && (
-                              <span className="text-red-500 text-xs block">{errors[`price_${index}`]}</span>
+                              <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
                             )}
                           </td>
                           <td className="p-3">
@@ -1274,17 +839,32 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               type="number"
                               value={item.quantity}
                               onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                              className={`w-20 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`quantity_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
+                              className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`quantity_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
                               min="1"
                               max={item.maxQuantity}
                               step="1"
+                              placeholder="0"
                             />
                             {errors[`quantity_${index}`] && (
-                              <span className="text-red-500 text-xs block">{errors[`quantity_${index}`]}</span>
+                              <span className="text-red-500 text-xs">{errors[`quantity_${index}`]}</span>
                             )}
                           </td>
                           <td className="p-3 font-medium">
-                            {formatAmount(Number(item.quantity) * Number(item.price))}
+                            {(() => {
+                              const displayPrice = priceInputValues[`${item.id}_${index}`] || Number(item.price);
+                              const quantity = Number(item.quantity);
+                              
+                              if (displayPrice.toString().length > 15) {
+                                if (quantity === 1) {
+                                  return `${displayPrice} сом`;
+                                } else {
+                                  return `${displayPrice} сом (${quantity} дона)`;
+                                }
+                              } else {
+                                const total = quantity * Number(displayPrice);
+                                return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
+                              }
+                            })()}
                           </td>
                           <td className="p-3">
                             <button
@@ -1304,25 +884,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                   <div>
                     <h4 className="text-md font-semibold mb-3">Мижоз маълумотлари</h4>
                     <div className="space-y-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Сотувчи</label>
-                        <select
-                          value={selectedSellerId}
-                          onChange={(e) => setSelectedSellerId(e.target.value)}
-                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.seller ? 'border-red-500' : 'border-gray-300'}`}
-                        >
-                          <option value="">Сотувчи танланг</option>
-                          {users.map((user) => (
-                            <option key={user.id} value={user.id}>
-                              {user.firstName} {user.lastName}
-                            </option>
-                          ))}
-                        </select>
-                        {errors.seller && (
-                          <span className="text-red-500 text-xs">{errors.seller}</span>
-                        )}
-                      </div>
-                      {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
+                      {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Исм</label>
@@ -1370,11 +932,11 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           <option value="DELIVERY">Етказиб бериш</option>
                         </select>
                       </div>
-                      {(deliveryType === 'DELIVERY' || ['CREDIT','INSTALLMENT'].includes(paymentType)) && (
+                      {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Манзил</label>
                           <textarea
-                            value={deliveryAddress}
+                            value={deliveryAddress} // downPayment o'rniga deliveryAddress
                             onChange={(e) => setDeliveryAddress(e.target.value)}
                             placeholder="Тўлиқ манзилни киритинг..."
                             className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.deliveryAddress ? 'border-red-500' : 'border-gray-300'}`}
@@ -1428,7 +990,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                             <input
                               type="text"
                               value={jshshir}
-                              onChange={onJshshirChange}
+                              onChange={(e) => setJshshir(e.target.value)}
                               placeholder="1234567890123456"
                               className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'}`}
                               maxLength={16}
@@ -1456,26 +1018,30 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                             <label className="block text-sm font-medium text-gray-700 mb-1">Фоиз (%)</label>
                             <input
                               type="number"
-                              value={customInterestRate}
-                              onChange={(e) => setCustomInterestRate(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customInterestRate ? 'border-red-500' : 'border-gray-300'}`}
+                              value={interestRate}
+                              onChange={(e) => setInterestRate(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'}`}
                               step="0.01"
                               min="0"
                             />
-                            {errors.customInterestRate && (
-                              <span className="text-red-500 text-xs">{errors.customInterestRate}</span>
+                            {errors.interestRate && (
+                              <span className="text-red-500 text-xs">{errors.interestRate}</span>
                             )}
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
                             <input
                               type="number"
-                              value={customerPaid}
+                              value={customerPaid} // downPayment o'rniga customerPaid
                               onChange={(e) => setCustomerPaid(e.target.value)}
-                              className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
-                              step="0.01"
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
+                              step="500"
                               min="0"
+                              placeholder="0"
                             />
+                            {errors.customerPaid && (
+                              <span className="text-red-500 text-xs">{errors.customerPaid}</span>
+                            )}
                           </div>
                         </>
                       )}
@@ -1485,24 +1051,384 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
 
                 <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                   <h4 className="text-md font-semibold mb-3">Жами</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-600">Асосий сумма:</span>
-                      <span className="font-medium ml-2">{formatAmount(selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0))}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                    <div className="bg-white p-3 rounded border">
+                      <div className="text-gray-600 text-xs mb-1">Асосий сумма:</div>
+                      <div className="font-medium text-blue-600 break-words text-sm">{(() => {
+                        let total = 0;
+                        
+                        selectedItems.forEach((item, index) => {
+                          const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.round(Number(item.price));
+                          const quantity = Number(item.quantity);
+                          total += quantity * Number(displayPrice);
+                        });
+                        
+                        return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
+                      })()}</div>
                     </div>
                     {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
                       <>
-                        <div>
-                          <span className="text-gray-600">Фоиз билан:</span>
-                          <span className="font-medium ml-2">{formatAmount(totalWithInterest)}</span>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Фоиз билан:</div>
+                          <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(totalWithInterest)} сом</div>
                         </div>
-                        <div>
-                          <span className="text-gray-600">Тўланган:</span>
-                          <span className="font-medium ml-2">{formatAmount(Number(customerPaid) || 0)}</span>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Тўланган:</div>
+                          <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0) )} сом</div>
                         </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Қолган:</div>
+                          <div className="font-medium text-red-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(remaining)} сом</div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 flex gap-3">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    className="flex-1 bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors font-medium"
+                  >
+                    {submitting ? 'Юкланмоқда...' : 'Сотишни амалга ошириш'}
+                  </button>
+                  <button
+                    onClick={closeModal}
+                    className="flex-1 bg-gray-200 text-gray-700 p-3 rounded-lg hover:bg-gray-300 transition-colors"
+                  >
+                    Бекор
+                  </button>
+                </div>
+              </div>
+            </div>
+
+          )}
+
+          {showSelectedItemsModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-gray-800">Танланган маҳсулотлар</h3>
+                  <button
+                    onClick={closeSelectedItemsModal}
+                    className="text-gray-600 hover:text-gray-800 font-bold text-xl"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto mb-6">
+                  <table className="w-full border border-gray-200">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="p-3 text-left font-medium">Маҳсулот</th>
+                        <th className="p-3 text-left font-medium">Нарх (сом)</th>
+                        <th className="p-3 text-left font-medium">Миқдор</th>
+                        <th className="p-3 text-left font-medium">Жами</th>
+                        <th className="p-3 text-left font-medium">Амаллар</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedItems.map((item, index) => (
+                        <tr key={index} className="border-t border-gray-200">
+                          <td className="p-3">{item.name}</td>
+
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              value={priceInputValues[`${item.id}_${index}`] || item.price}
+                              onChange={(e) => {
+                                const inputValue = e.target.value;
+                                const itemKey = `${item.id}_${index}`;
+                                
+                                // Update display value immediately
+                                setPriceInputValues(prev => ({
+                                  ...prev,
+                                  [itemKey]: inputValue
+                                }));
+                                
+                                // Update actual price in som directly
+                                if (inputValue === '' || (!isNaN(inputValue) && Number(inputValue) >= 0)) {
+                                  const newPriceInSom = inputValue === '' ? 0 : inputValue;
+                                  updateItem(index, 'price', newPriceInSom);
+                                }
+                              }}
+                              className={`w-40 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
+                              min="0"
+                              step="1000"
+                              placeholder="Нарх (сом)"
+                            />
+                            {errors[`price_${index}`] && (
+                              <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                              className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`quantity_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
+                              min="1"
+                              max={item.maxQuantity}
+                              step="1"
+                              placeholder="0"
+                            />
+                            {errors[`quantity_${index}`] && (
+                              <span className="text-red-500 text-xs block">{errors[`quantity_${index}`]}</span>
+                            )}
+                          </td>
+                          <td className="p-3 font-medium">
+                            {(() => {
+                              const displayPrice = priceInputValues[`${item.id}_${index}`] || Number(item.price);
+                              const quantity = Number(item.quantity);
+                              
+                              // For very large numbers, show clean format without multiplication
+                              if (displayPrice.toString().length > 15) {
+                                // For quantity = 1, just show the price
+                                if (quantity === 1) {
+                                  return `${displayPrice} сом`;
+                                } else {
+                                  // For quantity > 1, show price per item
+                                  return `${displayPrice} сом (${quantity} дона)`;
+                                }
+                              } else {
+                                const total = quantity * Number(displayPrice);
+                                return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
+                              }
+                            })()}
+                          </td>
+                          <td className="p-3">
+                            <button
+                              onClick={() => removeItem(index)}
+                              className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition-colors text-sm"
+                            >
+                              Ўчириш
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-md font-semibold mb-3">Мижоз маълумотлари</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Сотувчи</label>
+                        <select
+                          value={selectedUserId}
+                          onChange={(e) => setSelectedUserId(e.target.value)}
+                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.seller ? 'border-red-500' : 'border-gray-300'}`}
+                        >
+                          <option value="">Сотувчи танланг</option>
+                          {users && users.filter(user => user.role === 'MARKETING').map((user) => (
+                            <option key={user.id} value={user.id}>
+                              {user.firstName} {user.lastName}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.seller && (
+                          <span className="text-red-500 text-xs">{errors.seller}</span>
+                        )}
+                      </div>
+                      {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
+                        <>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Исм</label>
+                            <input
+                              value={firstName}
+                              onChange={(e) => setFirstName(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-gray-300'}`}
+                            />
+                            {errors.firstName && (
+                              <span className="text-red-500 text-xs">{errors.firstName}</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Фамилия</label>
+                            <input
+                              value={lastName}
+                              onChange={(e) => setLastName(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-gray-300'}`}
+                            />
+                            {errors.lastName && (
+                              <span className="text-red-500 text-xs">{errors.lastName}</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
+                            <input
+                              value={phone}
+                              onChange={(e) => setPhone(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.phone ? 'border-red-500' : 'border-gray-300'}`}
+                            />
+                            {errors.phone && (
+                              <span className="text-red-500 text-xs">{errors.phone}</span>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Етказиб бериш тури</label>
+                        <select
+                          value={deliveryType}
+                          onChange={(e) => setDeliveryType(e.target.value)}
+                          className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                        >
+                          <option value="PICKUP">Олиб кетиш</option>
+                          <option value="DELIVERY">Етказиб бериш</option>
+                        </select>
+                      </div>
+                      {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
-                          <span className="text-gray-600">Қолган:</span>
-                          <span className="font-medium ml-2">{formatAmount(remaining)}</span>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил</label>
+                          <textarea
+                            value={deliveryAddress} // downPayment o'rniga deliveryAddress
+                            onChange={(e) => setDeliveryAddress(e.target.value)}
+                            placeholder="Тўлиқ манзилни киритинг..."
+                            className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.deliveryAddress ? 'border-red-500' : 'border-gray-300'}`}
+                            rows="3"
+                          />
+                          {errors.deliveryAddress && (
+                            <span className="text-red-500 text-xs">{errors.deliveryAddress}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-md font-semibold mb-3">Тўлов маълумотлари</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Тўлов тури</label>
+                        <select
+                          value={paymentType}
+                          onChange={(e) => setPaymentType(e.target.value)}
+                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.paymentType ? 'border-red-500' : 'border-gray-300'}`}
+                        >
+                          <option value="">Танланг</option>
+                          <option value="CASH">Нақд</option>
+                          <option value="CARD">Карта</option>
+                          <option value="CREDIT">Кредит</option>
+                          <option value="INSTALLMENT">Бўлиб Тўлаш</option>
+                        </select>
+                        {errors.paymentType && (
+                          <span className="text-red-500 text-xs">{errors.paymentType}</span>
+                        )}
+                      </div>
+                      {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
+                        <>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Паспорт серияси</label>
+                            <input
+                              type="text"
+                              value={passportSeries}
+                              onChange={(e) => setPassportSeries(e.target.value)}
+                              placeholder="AA 1234567"
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'}`}
+                            />
+                            {errors.passportSeries && (
+                              <span className="text-red-500 text-xs">{errors.passportSeries}</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">JSHSHIR</label>
+                            <input
+                              type="text"
+                              value={jshshir}
+                              onChange={(e) => setJshshir(e.target.value)}
+                              placeholder="1234567890123456"
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'}`}
+                              maxLength={16}
+                            />
+                            {errors.jshshir && (
+                              <span className="text-red-500 text-xs">{errors.jshshir}</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Ойлар сони</label>
+                            <input
+                              type="number"
+                              value={months}
+                              onChange={(e) => setMonths(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.months ? 'border-red-500' : 'border-gray-300'}`}
+                              min="1"
+                              max="24"
+                              step="1"
+                            />
+                            {errors.months && (
+                              <span className="text-red-500 text-xs">{errors.months}</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Фоиз (%)</label>
+                            <input
+                              type="number"
+                              value={interestRate}
+                              onChange={(e) => setInterestRate(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'}`}
+                              step="0.01"
+                              min="0"
+                            />
+                            {errors.interestRate && (
+                              <span className="text-red-500 text-xs">{errors.interestRate}</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
+                            <input
+                              type="number"
+                              value={customerPaid} // downPayment o'rniga customerPaid
+                              onChange={(e) => setCustomerPaid(e.target.value)}
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
+                              step="500"
+                              min="0"
+                              placeholder="0"
+                            />
+                            {errors.customerPaid && (
+                              <span className="text-red-500 text-xs">{errors.customerPaid}</span>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="text-md font-semibold mb-3">Жами</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                    <div className="bg-white p-3 rounded border">
+                      <div className="text-gray-600 text-xs mb-1">Асосий сумма:</div>
+                      <div className="font-medium text-blue-600 break-words text-sm">{(() => {
+                        let total = 0;
+                        
+                        selectedItems.forEach((item, index) => {
+                          const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.round(Number(item.price));
+                          const quantity = Number(item.quantity);
+                          total += quantity * Number(displayPrice);
+                        });
+                        
+                        return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
+                      })()}</div>
+                    </div>
+                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
+                      <>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Фоиз билан:</div>
+                          <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(totalWithInterest)} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Тўланган:</div>
+                          <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0) )} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Қолган:</div>
+                          <div className="font-medium text-red-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(remaining)} сом</div>
                         </div>
                       </>
                     )}
@@ -1527,15 +1453,15 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
               </div>
             </div>
           )}
-{showReceiptModal && lastTransaction && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-lg shadow-xl w-[90%] max-w-md mx-auto">
-      <Receipt
-        transaction={lastTransaction}
-        onClose={closeReceiptModal}
-        onPrint={() => {
-          const printWindow = window.open('', '_blank');
-          const receiptContent = `
+          {showReceiptModal && receiptData && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+              <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl lg:max-w-3xl max-h-[95vh] overflow-hidden mx-auto">
+                <Receipt
+                  transaction={receiptData}
+                  onClose={closeReceiptModal}
+                  onPrint={() => {
+                    const printWindow = window.open('', '_blank');
+                    const receiptContent = `
             <!DOCTYPE html>
             <html>
             <head>
@@ -1640,58 +1566,58 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
               <div class="info">
                 <div class="total-row">
                   <span>ID:</span>
-                  <span>#${lastTransaction.id}</span>
+                  <span>#${receiptData.id}</span>
                 </div>
                 <div class="total-row">
                   <span>Mijoz:</span>
-                  <span>${lastTransaction.customer.fullName || `${lastTransaction.customer.firstName} ${lastTransaction.customer.lastName}`}</span>
+                  <span>${receiptData.customer.fullName || `${receiptData.customer.firstName} ${receiptData.customer.lastName}`}</span>
                 </div>
                 <div class="total-row">
                   <span>Tel:</span>
-                  <span>${lastTransaction.customer.phone}</span>
+                  <span>${receiptData.customer.phone}</span>
                 </div>
-                ${lastTransaction.customer.passportSeries ? `
+                ${receiptData.customer.passportSeries ? `
                 <div class="total-row">
                   <span>Passport:</span>
-                  <span>${lastTransaction.customer.passportSeries}</span>
+                  <span>${receiptData.customer.passportSeries}</span>
                 </div>
                 ` : ''}
-                ${lastTransaction.customer.jshshir ? `
+                ${receiptData.customer.jshshir ? `
                 <div class="total-row">
                   <span>JSHSHIR:</span>
-                  <span>${lastTransaction.customer.jshshir}</span>
+                  <span>${receiptData.customer.jshshir}</span>
                 </div>
                 ` : ''}
                 <div class="total-row">
                   <span>Filial:</span>
-                  <span>${lastTransaction.branch?.name}</span>
+                  <span>${receiptData.branch?.name}</span>
                 </div>
                 <div class="total-row">
                   <span>To'lov:</span>
-                  <span>${lastTransaction.paymentType === 'CASH' ? 'Naqd' :
-              lastTransaction.paymentType === 'CARD' ? 'Karta' :
-                lastTransaction.paymentType === 'CREDIT' ? 'Kredit' :
-                  lastTransaction.paymentType === 'INSTALLMENT' ? "Bo'lib to'lash" : lastTransaction.paymentType}</span>
+                  <span>${receiptData.paymentType === 'CASH' ? 'Naqd' :
+                        receiptData.paymentType === 'CARD' ? 'Karta' :
+                          receiptData.paymentType === 'CREDIT' ? 'Kredit' :
+                            receiptData.paymentType === 'INSTALLMENT' ? "Bo'lib to'lash" : receiptData.paymentType}</span>
                 </div>
                 <div class="total-row">
                   <span>Yetkazib berish:</span>
-                  <span>${lastTransaction.deliveryType === 'PICKUP' ? 'Olib ketish' :
-              lastTransaction.deliveryType === 'DELIVERY' ? 'Yetkazib berish' :
-                lastTransaction.deliveryType}</span>
+                  <span>${receiptData.deliveryType === 'PICKUP' ? 'Olib ketish' :
+                        receiptData.deliveryType === 'DELIVERY' ? 'Yetkazib berish' :
+                          receiptData.deliveryType}</span>
                 </div>
-                ${lastTransaction.deliveryType === 'DELIVERY' && lastTransaction.deliveryAddress ? `
+                ${receiptData.deliveryType === 'DELIVERY' && receiptData.deliveryAddress ? `
                 <div class="total-row">
                   <span>Manzil:</span>
-                  <span>${lastTransaction.deliveryAddress}</span>
+                  <span>${receiptData.deliveryAddress}</span>
                 </div>
                 ` : ''}
               </div>
               <div class="products">
                 <h4>MAHSULOTLAR</h4>
-                ${lastTransaction.items.map((item, index) => `
+                ${receiptData.items.map((item) => `
                   <div class="total-row">
                     <span>${item.name} x${item.quantity}</span>
-                    <span>${formatAmount(Number(item.quantity) * Number(item.price))}</span>
+                    <span>${new Intl.NumberFormat('uz-UZ').format(Number(item.quantity) * Number(item.price))} so'm</span>
                   </div>
                 `).join('')}
               </div>
@@ -1699,20 +1625,20 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
               <div class="total">
                 <div class="total-row">
                   <span>JAMI:</span>
-                  <span>${formatAmount(lastTransaction.finalTotal)}</span>
+                  <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.totalInSom || (receiptData.items.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price)), 0)))} so'm</span>
                 </div>
-                ${['CREDIT', 'INSTALLMENT'].includes(lastTransaction.paymentType) ? `
+                ${['CREDIT', 'INSTALLMENT'].includes(receiptData.paymentType) ? `
                   <div class="total-row">
                     <span>To'langan:</span>
-                    <span>${formatAmount(lastTransaction.paid)}</span>
+                    <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.paid)} so'm</span>
                   </div>
                   <div class="total-row">
                     <span>Qolgan:</span>
-                    <span>${formatAmount(lastTransaction.remaining)}</span>
+                    <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.remaining)} so'm</span>
                   </div>
                   <div class="total-row">
                     <span>Oylik:</span>
-                    <span>${formatAmount(lastTransaction.monthlyPayment)}</span>
+                    <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.monthlyPayment)} so'm</span>
                   </div>
                 ` : ''}
               </div>
@@ -1725,19 +1651,19 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
             </body>
             </html>
           `;
-          printWindow.document.write(receiptContent);
-          printWindow.document.close();
-          printWindow.focus();
-          setTimeout(() => {
-            printWindow.print();
-            printWindow.close();
-            closeReceiptModal();
-          }, 1000);
-        }}
-      />
-    </div>
-  </div>
-)}
+                    printWindow.document.write(receiptContent);
+                    printWindow.document.close();
+                    printWindow.focus();
+                    setTimeout(() => {
+                      printWindow.print();
+                      printWindow.close();
+                      closeReceiptModal();
+                    }, 1000);
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

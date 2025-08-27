@@ -11,6 +11,8 @@ import {
   Loader,
   Menu,
   X,
+  DollarSign,
+  Users,
 } from "lucide-react";
 
 import LocationApp from "./pages/LocationApp";
@@ -21,7 +23,9 @@ import Employees from "./pages/Employees";
 import Reports from "./pages/Reports";
 import Debts from "./pages/Debts";
 import Branches from "./pages/Branches";
+import ExchangeRates from "./pages/ExchangeRates";
 import Logout from "../Chiqish/logout";
+import Sotuvchilar from "./pages/Sotuvchilar";
 
 export default function AdminPanel() {
   const location = useLocation();
@@ -173,6 +177,8 @@ export default function AdminPanel() {
     { id: "branches", name: "Филиаллар", icon: Building2, path: "/admin/branches" },
     { id: "reports", name: "Ҳисобот", icon: TrendingUp, path: "/admin/reports" },
     { id: "geolocation", name: "Доставщиклар", icon: MapPin, path: "/admin/geolocation" },
+    { id: "exchange-rates", name: "Валюталар", icon: DollarSign, path: "/admin/exchange-rates" },
+    { id: "sotuvchilar", name: "Сотувчилар", icon: Users, path: "/admin/sotuvchilar" },
   ];
 
   const handleLogoutConfirm = () => {
@@ -210,6 +216,10 @@ export default function AdminPanel() {
             selectedBranchId={selectedBranchId}
           />
         );
+      case "exchange-rates":
+        return <ExchangeRates selectedBranchId={selectedBranchId} />;
+        case "sotuvchilar":
+          return <Sotuvchilar selectedBranchId={selectedBranchId} />;
       default:
         return <Inventory selectedBranchId={selectedBranchId} />;
     }
@@ -225,14 +235,14 @@ export default function AdminPanel() {
   const initials = userName.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 w-full">
       <div
         className={`${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         } fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 text-white flex flex-col`}
         style={{ backgroundColor: '#00020F' }}
       >
-        <div className="p-6">
+        <div className="p-4 lg:p-6">
           <img 
             src="/Baner_Zippy.png" 
             alt="Zippy логотипи" 
@@ -255,7 +265,7 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4">
+        <nav className="flex-1 p-3 lg:p-4">
           <ul className="space-y-2">
             {navigation.map((item) => {
               const Icon = item.icon;
@@ -283,7 +293,7 @@ export default function AdminPanel() {
           </ul>
         </nav>
 
-        <div className="p-4 absolute bottom-0 left-0 right-0">
+        <div className="p-3 lg:p-4 absolute bottom-0 left-0 right-0">
           <button
             onClick={() => setShowLogoutModal(true)}
             className="w-full flex items-center space-x-3 px-4 py-2 text-gray-300 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all duration-200 hover:border-red-500/20 border border-transparent"
@@ -301,9 +311,9 @@ export default function AdminPanel() {
         />
       )}
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden w-full">
         <header className="bg-white shadow-sm">
-          <div className="flex flex-wrap justify-between items-center px-6 py-3 gap-y-2">
+          <div className="flex flex-wrap justify-between items-center px-4 lg:px-6 py-3 gap-y-2">
             <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
               <button
                 onClick={() => setSidebarOpen(true)}
@@ -353,8 +363,10 @@ export default function AdminPanel() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-x-hidden overflow-y-auto p-6">
-          {renderContent()}
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 lg:p-6 w-full">
+          <div className="w-full h-full min-h-0">
+            {renderContent()}
+          </div>
         </main>
       </div>
 

@@ -13,6 +13,7 @@
     "@react-google-maps/api": "^2.20.7",
     "@tailwindcss/vite": "^4.1.10",
     "axios": "^1.10.0",
+    "cors": "^2.8.5",
     "jspdf": "^3.0.1",
     "jwt-decode": "^4.0.0",
     "leaflet": "^1.9.4",

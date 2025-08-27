@@ -910,9 +910,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
+<div className="p-6 bg-gray-50 min-h-screen">
+        <div className="p-6 bg-gray-50 min-h-screen">
+        
         <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>

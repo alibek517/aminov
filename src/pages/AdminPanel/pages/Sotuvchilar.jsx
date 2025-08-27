@@ -399,7 +399,6 @@ function Sotuvchilar() {
                       <div className="text-base font-medium text-gray-900">
                         {user.firstName} {user.lastName}
                       </div>
-                    
                       <div className="space-y-2">
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-600">Jami sotuv (UZS):</span>

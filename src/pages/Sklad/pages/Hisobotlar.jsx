@@ -28,9 +28,28 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [selectedBranchId, setSelectedBranchId] = useState(
     propSelectedBranchId || localStorage.getItem('selectedBranchId') || ''
   );
+  // New state for exchange rate
+  const [exchangeRate, setExchangeRate] = useState(12650); // Static USD to UZS rate (e.g., 1 USD = 12,650 UZS)
   const navigate = useNavigate();
 
   const BASE_URL = 'https://suddocs.uz';
+
+  // Optional: Fetch exchange rate dynamically
+  useEffect(() => {
+    const fetchExchangeRate = async () => {
+      try {
+        // Example API: Replace with actual currency API endpoint
+        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+        const data = await response.json();
+        setExchangeRate(data.rates.UZS || 12650); // Fallback to static rate
+      } catch (error) {
+        console.error('Error fetching exchange rate:', error);
+        toast.error('Курсни олишда хатолик юз берди, стандарт курс ишлатилди');
+      }
+    };
+    // Uncomment to enable dynamic fetching
+    // fetchExchangeRate();
+  }, []);
 
   useEffect(() => {
     const onStorage = (e) => {
@@ -52,7 +71,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     if (selectedBranchId !== undefined) {
       fetchTransactions();
     }
-  }, [selectedBranchId, filters.startDate, filters.endDate]);
+  }, [selectedBranchId, filters.startDate, filters.endDate, exchangeRate]);
 
   const transactionTypes = {
     SALE: { label: 'Сотув', color: 'bg-green-100 text-green-800' },
@@ -75,9 +94,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       : 'Н/И';
   };
 
-  const formatAmount = (value) => {
+  // Modified formatAmount to handle USD to UZS conversion
+  const formatAmount = (value, isUSD = true) => {
     const num = Math.floor(Number(value) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' сўм';
+    const converted = isUSD ? num * exchangeRate : num; // Convert if in USD
+    return converted.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' сўм';
   };
 
   const getPaymentTypeLabel = (pt) => {
@@ -205,7 +226,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               });
             }
             const wagg = warehouseMap.get(wid);
-            const finalW = Number(transaction.finalTotal || transaction.total || 0);
+            const finalW = Number(transaction.finalTotal || transaction.total || 0) * exchangeRate; // Convert USD to UZS
             switch (transaction.type) {
               case 'PURCHASE':
                 wagg.purchaseTotal += finalW;
@@ -228,11 +249,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     break;
                   case 'CREDIT':
                     wagg.creditTotal += finalW;
-                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
+                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0)) * exchangeRate;
                     break;
                   case 'INSTALLMENT':
                     wagg.installmentTotal += finalW;
-                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
+                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0)) * exchangeRate;
                     break;
                   default:
                     break;
@@ -241,12 +262,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   for (const it of transaction.items) {
                     const nameRaw = it.product?.name || it.name || '';
                     const qty = Number(it.quantity) || 0;
-                    const amount = (it.total != null) ? Number(it.total) || 0 : (Number(it.price) || 0) * qty;
+                    const amount = (it.total != null ? Number(it.total) : (Number(it.price) || 0) * qty) * exchangeRate; // Convert item total/price
                     if (!nameRaw || qty <= 0 || amount <= 0) continue;
                     wagg.soldQuantity += qty;
                     wagg.soldAmount += amount;
 
-                    // Aggregate product sales for warehouse transactions only
                     const productId = it.productId || it.id;
                     const productName = nameRaw;
                     if (productMap.has(productId)) {
@@ -279,8 +299,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               fromBranchName: transaction.fromBranch?.name || transaction.fromBranchName || transaction.fromBranchId || transaction.branchFromId,
               toBranchName: transaction.toBranch?.name || transaction.toBranchName || transaction.toBranchId || transaction.branchToId,
               paymentType: transaction.paymentType,
-              amountPaid: Number(transaction.amountPaid || 0),
-              downPayment: Number(transaction.downPayment || 0),
+              amountPaid: Number(transaction.amountPaid || 0) * exchangeRate,
+              downPayment: Number(transaction.downPayment || 0) * exchangeRate,
               items: transaction.items || [],
               customer: transaction.customer || null,
               deliveryType: transaction.deliveryType,
@@ -291,14 +311,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     .map(s => ({
                       scheduleId: s.id,
                       paidAt: s.paidAt,
-                      amount: Number(s.paidAmount || 0),
+                      amount: Number(s.paidAmount || 0) * exchangeRate,
                       month: s.month,
                     })) 
                 : [],
             });
           }
 
-          // Aggregate repayments for warehouse employees only
           if (Array.isArray(transaction.paymentSchedules)) {
             const startBound = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
             const endBound = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
@@ -307,7 +326,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               const pDate = new Date(s.paidAt);
               const inRange = (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
               if (!inRange) continue;
-              const installment = Number(s.paidAmount || 0);
+              const installment = Number(s.paidAmount || 0) * exchangeRate;
               if (Number.isNaN(installment) || installment <= 0) continue;
               const recipient = (s.paidBy && s.paidBy.role === 'WAREHOUSE') ? s.paidBy : null;
               if (!recipient) continue;
@@ -351,14 +370,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             }
           }
 
-          // Daily sales for warehouse transactions only
           if (transaction.type === 'SALE' && isWarehouse) {
             const date = transaction.createdAt ? new Date(transaction.createdAt).toDateString() : 'Unknown';
             if (dailyMap.has(date)) {
-              dailyMap.get(date).amount += transaction.finalTotal || transaction.total || 0;
+              dailyMap.get(date).amount += (transaction.finalTotal || transaction.total || 0) * exchangeRate;
               dailyMap.get(date).count += 1;
             } else {
-              dailyMap.set(date, { date, amount: transaction.finalTotal || transaction.total || 0, count: 1 });
+              dailyMap.set(date, { date, amount: (transaction.finalTotal || transaction.total || 0) * exchangeRate, count: 1 });
             }
           }
         });
@@ -366,7 +384,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
         console.log('Transactions is not an array:', typeof transactions, transactions);
       }
 
-      // Compute overall credit repayments for warehouse employees only
       try {
         let repaymentSum = 0;
         let repaymentCash = 0;
@@ -401,17 +418,17 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           if (t.type !== 'SALE') continue;
           if (selectedBranchId && String(t.fromBranchId || '') !== String(selectedBranchId)) continue;
           const warehouseUser = t.user?.role === 'WAREHOUSE' ? t.user : (t.soldBy?.role === 'WAREHOUSE' ? t.soldBy : null);
-          if (!warehouseUser) continue; // Only include transactions by warehouse employees
+          if (!warehouseUser) continue;
           const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
           for (const s of schedules) {
             if (!s || !s.isPaid || !s.paidAt) continue;
             const pDate = new Date(s.paidAt);
             const inRange = (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
             if (!inRange) continue;
-            const installment = Number(s.paidAmount || 0);
+            const installment = Number(s.paidAmount || 0) * exchangeRate;
             if (!Number.isNaN(installment) && installment > 0) {
               const recipient = (s.paidBy && s.paidBy.role === 'WAREHOUSE') ? s.paidBy : null;
-              if (!recipient) continue; // Only count repayments received by warehouse employees
+              if (!recipient) continue;
               repaymentSum += installment;
               const ch = (s.paidChannel || 'CASH').toUpperCase();
               if (ch === 'CARD') repaymentCard += installment; else repaymentCash += installment;
@@ -447,7 +464,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     } finally {
       setLoading(false);
     }
-  }, [filters.startDate, filters.endDate, selectedBranchId, navigate]);
+  }, [filters.startDate, filters.endDate, selectedBranchId, navigate, exchangeRate]);
 
   const fetchTransactionDetails = async (id) => {
     try {
@@ -479,6 +496,16 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       }
 
       const transactionData = await transactionResponse.json();
+      // Convert monetary values in transactionData
+      transactionData.finalTotal = Number(transactionData.finalTotal || 0) * exchangeRate;
+      transactionData.total = Number(transactionData.total || 0) * exchangeRate;
+      if (Array.isArray(transactionData.items)) {
+        transactionData.items = transactionData.items.map(item => ({
+          ...item,
+          price: Number(item.price || 0) * exchangeRate,
+          total: Number(item.total || 0) * exchangeRate,
+        }));
+      }
       setSelectedTransaction(transactionData);
       setShowDetails(true);
     } catch (error) {
@@ -489,8 +516,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
+      <div className="p-6 bg-gray-50 min-h-screen">
         <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div>
@@ -500,6 +526,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   Филиал ID: {selectedBranchId}
                 </p>
               )}
+              <p className="text-sm text-gray-600 mt-1">
+                USD to UZS kursi: {exchangeRate.toLocaleString('uz-UZ')} сўм
+              </p>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <input
@@ -527,7 +556,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           </div>
         </div>
 
-        {/* Product Sales Summary */}
         <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
           <h2 className="text-lg font-semibold mb-3">Ҳисобот — Содда Кўриниш</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -537,7 +565,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             </div>
             <div className="p-3 rounded-lg border bg-green-50 shadow-sm">
               <div className="text-sm text-green-700">Жами Тушум</div>
-              <div className="text-2xl font-bold text-green-900">{formatAmount(salesTotals.totalAmount)}</div>
+              <div className="text-2xl font-bold text-green-900">{formatAmount(salesTotals.totalAmount, false)}</div>
             </div>
             <div className="p-3 rounded-lg border bg-blue-50 shadow-sm">
               <div className="text-sm text-blue-700">Омбор Ходимлари</div>
@@ -548,11 +576,12 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             <div className="p-3 rounded-lg border bg-amber-50 shadow-sm">
               <div className="text-sm text-amber-700">Олдиндан Олинган</div>
               <div className="text-2xl font-bold text-amber-900">{formatAmount(
-                warehouseSummaries.reduce((s,w)=>s + Number(w.upfrontTotal||0), 0)
+                warehouseSummaries.reduce((s,w)=>s + Number(w.upfrontTotal||0), 0),
+                false
               )}</div>
             </div>
           </div>
-         <br/>
+          <br/>
 
           <div className="mb-2 flex items-center justify-between">
             <div className="text-sm font-semibold text-gray-600">
@@ -579,15 +608,16 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 {warehouseSummaries.map((w) => (
                   <tr key={w.id} className="hover:bg-green-50/40">
                     <td className="px-4 py-3 text-center">{w.name}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.cashTotal)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.cardTotal)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.creditTotal)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.installmentTotal)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.upfrontTotal)}</td>
+                    <td className="px-4 py-3 text-center">{formatAmount(w.cashTotal, false)}</td>
+                    <td className="px-4 py-3 text-center">{formatAmount(w.cardTotal, false)}</td>
+                    <td className="px-4 py-3 text-center">{formatAmount(w.creditTotal, false)}</td>
+                    <td className="px-4 py-3 text-center">{formatAmount(w.installmentTotal, false)}</td>
+                    <td className="px-4 py-3 text-center">{formatAmount(w.upfrontTotal, false)}</td>
                     <td className="px-4 py-3 text-center">{w.soldQuantity}</td>
                     <td className="px-4 py-3 text-center">{formatAmount(
                       (Number(w.cashTotal||0)) + (Number(w.upfrontTotal||0)) +
-                      (Array.isArray(w.repayments) ? w.repayments.filter(r => (r.channel||'CASH').toUpperCase()==='CASH').reduce((s,r)=> s + Number(r.amount||0), 0) : 0)
+                      (Array.isArray(w.repayments) ? w.repayments.filter(r => (r.channel||'CASH').toUpperCase()==='CASH').reduce((s,r)=> s + Number(r.amount||0), 0) : 0),
+                      false
                     )}</td>
                     <td className="px-4 py-3 text-center">
                       <button
@@ -622,7 +652,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <tr key={p.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">{p.name || `#${p.id}`}</td>
                       <td className="px-4 py-3">{p.quantity}</td>
-                      <td className="px-4 py-3">{formatAmount(p.amount)}</td>
+                      <td className="px-4 py-3">{formatAmount(p.amount, false)}</td>
                     </tr>
                   ))
                 )}
@@ -631,7 +661,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           </div>
         </div>
 
-        {/* Warehouse full-screen modal */}
         {showWarehouseModal && selectedWarehouse && (
           <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
             <div className="bg-white w-[95vw] h-[95vh] rounded-lg shadow-xl flex flex-col">
@@ -646,27 +675,27 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               </div>
               <div className="p-4 overflow-auto flex-1">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Нақд</div><div className="font-semibold">{formatAmount(selectedWarehouse.cashTotal)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Карта</div><div className="font-semibold">{formatAmount(selectedWarehouse.cardTotal)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Кредит</div><div className="font-semibold">{formatAmount(selectedWarehouse.creditTotal)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Бўлиб Тўлаш</div><div className="font-semibold">{formatAmount(selectedWarehouse.installmentTotal)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Олдиндан Олинган</div><div className="font-semibold">{formatAmount(selectedWarehouse.upfrontTotal)}</div></div>
+                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Нақд</div><div className="font-semibold">{formatAmount(selectedWarehouse.cashTotal, false)}</div></div>
+                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Карта</div><div className="font-semibold">{formatAmount(selectedWarehouse.cardTotal, false)}</div></div>
+                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Кредит</div><div className="font-semibold">{formatAmount(selectedWarehouse.creditTotal, false)}</div></div>
+                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Бўлиб Тўлаш</div><div className="font-semibold">{formatAmount(selectedWarehouse.installmentTotal, false)}</div></div>
+                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Олдиндан Олинган</div><div className="font-semibold">{formatAmount(selectedWarehouse.upfrontTotal, false)}</div></div>
                   <div className="p-3 rounded border bg-purple-50">
                     <div className="text-sm">Кредитдан Тўланган</div>
-                    <div className="text-xl font-bold">{formatAmount(selectedWarehouse.repaymentTotal || 0)}</div>
+                    <div className="text-xl font-bold">{formatAmount(selectedWarehouse.repaymentTotal || 0, false)}</div>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Нақд</div>
-                        <div className="font-semibold">{formatAmount((selectedWarehouse.repayments||[]).filter(r=> (r.channel||'CASH').toUpperCase()==='CASH').reduce((s,r)=> s+Number(r.amount||0),0))}</div>
+                        <div className="font-semibold">{formatAmount((selectedWarehouse.repayments||[]).filter(r=> (r.channel||'CASH').toUpperCase()==='CASH').reduce((s,r)=> s+Number(r.amount||0),0), false)}</div>
                       </div>
                       <div>
                         <div className="text-xs">Карта</div>
-                        <div className="font-semibold">{formatAmount((selectedWarehouse.repayments||[]).filter(r=> (r.channel||'CASH').toUpperCase()==='CARD').reduce((s,r)=> s+Number(r.amount||0),0))}</div>
+                        <div className="font-semibold">{formatAmount((selectedWarehouse.repayments||[]).filter(r=> (r.channel||'CASH').toUpperCase()==='CARD').reduce((s,r)=> s+Number(r.amount||0),0), false)}</div>
                       </div>
                     </div>
                   </div>
                   <div className="p-3 rounded border"><div className="text-sm text-gray-500">Сотилган Дона</div><div className="font-semibold">{selectedWarehouse.soldQuantity}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Сотилган Сумма</div><div className="font-semibold">{formatAmount(selectedWarehouse.soldAmount)}</div></div>
+                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Сотилган Сумма</div><div className="font-semibold">{formatAmount(selectedWarehouse.soldAmount, false)}</div></div>
                 </div>
 
                 {Array.isArray(selectedWarehouse.repayments) && selectedWarehouse.repayments.length > 0 && (
@@ -690,7 +719,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                             <tr key={idx} className="hover:bg-gray-50">
                               <td className="px-3 py-2">{r.month}</td>
                               <td className="px-3 py-2">{formatDate(r.paidAt)}</td>
-                              <td className="px-3 py-2">{formatAmount(r.amount)}</td>
+                              <td className="px-3 py-2">{formatAmount(r.amount, false)}</td>
                               <td className="px-3 py-2">#{r.transactionId}</td>
                               <td className="px-3 py-2">{r.customer?.fullName || '-'}</td>
                               <td className="px-3 py-2">{r.paidBy ? `${r.paidBy.firstName || ''} ${r.paidBy.lastName || ''}`.trim() : '-'}</td>
@@ -724,7 +753,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                           <td className="px-3 py-2">{formatDate(t.createdAt)}</td>
                           <td className="px-3 py-2">{transactionTypes[t.type]?.label || t.type}</td>
                           <td className="px-3 py-2">{t.soldByName || '-'}</td>
-                          <td className="px-3 py-2">{formatAmount(t.finalTotal)}</td>
+                          <td className="px-3 py-2">{formatAmount(t.finalTotal, false)}</td>
                           <td className="px-3 py-2">{t.fromBranchName || '-'}</td>
                           <td className="px-3 py-2">{t.toBranchName || '-'}</td>
                           <td className="px-3 py-2">
@@ -745,7 +774,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           </div>
         )}
 
-        {/* Transaction items modal */}
         {selectedTransactionItems && (
           <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
             <div className="bg-white w-[90vw] h-[90vh] rounded-lg shadow-xl flex flex-col">
@@ -778,7 +806,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               <div className="p-4 overflow-auto flex-1">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
                   <div className="p-3 rounded border"><div className="text-sm text-gray-500">Тўлов Тури</div><div className="font-semibold">{getPaymentTypeLabel(selectedTransactionItems.paymentType)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Якуний</div><div className="font-semibold">{formatAmount(selectedTransactionItems.finalTotal)}</div></div>
+                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Якуний</div><div className="font-semibold">{formatAmount(selectedTransactionItems.finalTotal, false)}</div></div>
                 </div>
 
                 {Array.isArray(selectedTransactionItems.repayments) && selectedTransactionItems.repayments.length > 0 && (
@@ -804,7 +832,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                             <tr key={idx} className="hover:bg-gray-50">
                               <td className="px-3 py-2">{r.month}</td>
                               <td className="px-3 py-2">{formatDate(r.paidAt)}</td>
-                              <td className="px-3 py-2">{formatAmount(r.amount)}</td>
+                              <td className="px-3 py-2">{formatAmount(r.amount, false)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -827,7 +855,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         <tr key={i} className="hover:bg-gray-50">
                           <td className="px-3 py-2">{it.product?.name || it.name || '-'}</td>
                           <td className="px-3 py-2">{it.quantity}</td>
-                          <td className="px-3 py-2">{formatAmount((Number(it.price)||0) * (Number(it.quantity)||0))}</td>
+                          <td className="px-3 py-2">{formatAmount((Number(it.price)||0) * (Number(it.quantity)||0), false)}</td>
                           <td className="px-3 py-2">
                             {(it.creditMonth || it.creditPercent) ? (
                               <span>
@@ -847,7 +875,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           </div>
         )}
 
-        {/* Customer details modal */}
         {showCustomerModal && selectedCustomer && (
           <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
             <div className="bg-white w-[600px] max-w-[95vw] rounded-lg shadow-xl">

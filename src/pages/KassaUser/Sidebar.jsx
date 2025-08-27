@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut, Users, Ban } from 'lucide-react';
+import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut, Users, Ban, Menu, X } from 'lucide-react';
 import Logout from '../Chiqish/logout'; 
 
-const Sidebar = ({ token, socket, locationPermission, locationError }) => {
+const Sidebar = ({ token, socket, locationPermission, locationError, children }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState(() => {
     return localStorage.getItem('selectedBranchId') || '';
   });
@@ -119,70 +120,134 @@ const Sidebar = ({ token, socket, locationPermission, locationError }) => {
     .slice(0, 2);
 
   return (
-    <div 
-      style={{backgroundColor: '#00020F'}} 
-      className="w-64 min-h-screen flex flex-col fixed top-0 left-0 h-full z-50 text-white"
-    >
-      <div className="p-6">          
-            <img 
-              src="/Baner_Zippy.png" 
-              alt="Zippy логотипи" 
-              className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125" 
-            />
-<hr className="my-2" />          
-<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
+    <div className="flex h-screen bg-gray-50 w-full">
+      <div
+        className={`${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 text-white flex flex-col`}
+        style={{ backgroundColor: '#00020F' }}
+      >
+                 <div className="p-4 lg:p-6">
+          <img 
+            src="/Baner_Zippy.png" 
+            alt="Zippy логотипи" 
+            className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125" 
+          />
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden mt-3 p-2 rounded-md text-gray-300 hover:text-white"
+            style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)',position:'absolute',top:'10px',right:'10px' }}
+          >
+            <X size={20} />
+          </button>
+          <hr className="my-2" />
+          <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+            <img style={{borderRadius:"50%",width:'60px'}} src="/AminovHolding.jpg" alt="" />
+            <div>
             <h1 className="text-xl font-bold text-white">Аминов</h1>
             <p className="text-sm text-gray-400">Савдо тизими</p>
-          </div>
-        
-        {error && <span className="mt-2 text-red-500 text-sm">{error}</span>}
-        {locationError && (
-          <span className="mt-2 text-red-500 text-sm">
-            <strong>Геолокация хатоси:</strong> {locationError}
-          </span>
-        )}
-      </div>
-
-      <nav className="flex-1 p-4">
-        <ul className="space-y-2">
-          {menuItems.map((item) => (
-            <li key={item.id}>
-              <NavLink
-                to={item.path}
-                className={({ isActive }) =>
-                  `w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${
-                    isActive
-                      ? 'bg-gradient-to-r from-[#1178f8]/20 to-[#1178f8]/10 text-[#1178f8] border border-[#1178f8]/30 shadow-lg shadow-[#1178f8]/20'
-                      : 'text-gray-300 hover:bg-white/5 hover:text-white hover:shadow-md'
-                  }`
-                }
-              >
-                <item.icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      <div className="p-4">
-        <div className="flex items-center space-x-3 mb-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-[#1178f8] to-[#0f5cb8] rounded-full flex items-center justify-center shadow-lg">
-            <span className="text-sm font-medium text-white">{initials}</span>
-          </div>
-          <div>
-            <p className="text-sm font-medium text-white">{userName}</p>
-            <p className="text-xs text-gray-400">{userRole === 'CASHIER' ? 'Кассир' : userRole || 'Кассир'}</p>
+            </div>
           </div>
         </div>
-        
-        <button
-          onClick={() => setShowLogoutModal(true)}
-          className="w-full flex items-center space-x-3 px-4 py-2 text-gray-300 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all duration-200 hover:border-red-500/20 border border-transparent"
-        >
-          <LogOut className="w-4 h-4" />
-          <span className="text-sm">Чиқиш</span>
-        </button>
+
+                 <nav className="flex-1 p-3 lg:p-4">
+          <ul className="space-y-2">
+            {menuItems.map((item) => (
+              <li key={item.id}>
+                <NavLink
+                  to={item.path}
+                  onClick={() => setSidebarOpen(false)}
+                  className={({ isActive }) =>
+                    `w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${
+                      isActive
+                        ? 'bg-gradient-to-r from-[#1178f8]/20 to-[#1178f8]/10 text-[#1178f8] border border-[#1178f8]/30 shadow-lg shadow-[#1178f8]/20'
+                        : 'text-gray-300 hover:bg-white/5 hover:text-white hover:shadow-md'
+                    }`
+                  }
+                >
+                  <item.icon className="w-5 h-5" />
+                  <span className="font-medium">{item.label}</span>
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+                 <div className="p-3 lg:p-4 absolute bottom-0 left-0 right-0">
+          <button
+            onClick={() => setShowLogoutModal(true)}
+            className="w-full flex items-center space-x-3 px-4 py-2 text-gray-300 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all duration-200 hover:border-red-500/20 border border-transparent"
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="text-sm">Чиқиш</span>
+          </button>
+        </div>
+      </div>
+
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+             <div className="flex-1 flex flex-col overflow-hidden w-full">
+        <header className="bg-white shadow-sm">
+          <div className="flex flex-wrap justify-between items-center px-4 lg:px-6 py-3 gap-y-2">
+            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600 mr-2"
+              >
+                <Menu size={20} />
+              </button>
+              <select
+                value={selectedBranchId}
+                onChange={handleBranchChange}
+                className="border border-gray-300 rounded-lg py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={error}
+              >
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+              {error && (
+                <span className="ml-2 text-red-500 text-sm">{error}</span>
+              )}
+            </div>
+
+            <div className="flex items-center space-x-4 w-full justify-end lg:w-auto">
+              <div className="flex items-center">
+                <div
+                  style={{ marginBottom: "5px" }}
+                  className="flex items-center space-x-3"
+                >
+                  <div className="w-10 h-10 bg-[#1178f8] rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-white">
+                      {initials}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {userName}
+                    </p>
+                    <p className="text-xxs text-gray-600">
+                      {userRole === "CASHIER" ? "Kassir" : userRole || "Kassir"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 lg:p-6 w-full">
+          <div className="w-full h-full min-h-0">
+            {children}
+          </div>
+        </main>
       </div>
 
       {showLogoutModal && (
