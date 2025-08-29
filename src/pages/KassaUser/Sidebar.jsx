@@ -11,13 +11,14 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
   });
   const [branches, setBranches] = useState([{ id: '', name: 'Барча филиаллар' }]);
   const [error, setError] = useState(null);
+  const [exchangeRate, setExchangeRate] = useState(0);
+  const [exchangeRateLoading, setExchangeRateLoading] = useState(false);
   const navigate = useNavigate();
 
   const menuItems = [
     { id: 'dashboard', label: 'Бошқарув панели', icon: BarChart3, path: '/kasir/dashboard' },
     { id: 'sales', label: 'Сотиш', icon: ShoppingCart, path: '/kasir/sales' },
     { id: 'defective', label: 'Брак/Қайтариш', icon: AlertTriangle, path: '/kasir/defective' },
-    { id: 'braklar', label: 'Брак махсулотлар', icon: Ban, path: '/kasir/braks' },  
     { id: 'mijozlar', label: 'Мижозлар', icon: Users, path: '/kasir/mijozlar' },
     { id: 'sotuvchilar', label: 'Сотувчилар моаши', icon: Users, path: '/kasir/sotuvchilar' },
   ];
@@ -69,6 +70,15 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
     };
 
     fetchBranches();
+    const onVisibility = () => {
+      if (!document.hidden) fetchExchangeRate();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    // initial fetch
+    fetchExchangeRate();
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [selectedBranchId, navigate, token]);
 
   // Save selected branch to localStorage
@@ -106,6 +116,33 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
 
   const handleBranchChange = (e) => {
     setSelectedBranchId(e.target.value);
+  };
+
+  const fetchExchangeRate = async () => {
+    try {
+      setExchangeRateLoading(true);
+      // Try current-rate endpoint first
+      try {
+        const resp = await fetchWithAuth('https://suddocs.uz/currency-exchange-rates/current-rate?fromCurrency=USD&toCurrency=UZS');
+        const data = await resp.json();
+        if (data && data.rate) {
+          setExchangeRate(Number(data.rate));
+        } else {
+          throw new Error('No rate in current-rate response');
+        }
+      } catch {
+        // Fallback to list endpoint and prefer active USD→UZS
+        const listResp = await fetchWithAuth('https://suddocs.uz/currency-exchange-rates');
+        const arr = await listResp.json();
+        const list = Array.isArray(arr) ? arr : [];
+        const active = list.find(r => r.isActive && r.fromCurrency === 'USD' && r.toCurrency === 'UZS');
+        const rate = Number(active?.rate ?? list[0]?.rate) || 0;
+        if (rate > 0) setExchangeRate(rate);
+      }
+    } catch (e) {
+    } finally {
+      setExchangeRateLoading(false);
+    }
   };
 
   // Get user data from localStorage
@@ -201,24 +238,16 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
               >
                 <Menu size={20} />
               </button>
-              <select
-                value={selectedBranchId}
-                onChange={handleBranchChange}
-                className="border border-gray-300 rounded-lg py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={error}
-              >
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-              {error && (
-                <span className="ml-2 text-red-500 text-sm">{error}</span>
-              )}
+              
             </div>
 
             <div className="flex items-center space-x-4 w-full justify-end lg:w-auto">
+              <div className="text-right mr-4">
+                <div className="text-sm text-gray-600">Валюта курси:</div>
+                <div className="text-lg font-semibold text-blue-600 flex items-center gap-2 justify-end">
+                  1 USD = {exchangeRate.toLocaleString('uz-UZ')} сўм
+                </div>
+              </div>
               <div className="flex items-center">
                 <div
                   style={{ marginBottom: "5px" }}
@@ -234,7 +263,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
                       {userName}
                     </p>
                     <p className="text-xxs text-gray-600">
-                      {userRole === "CASHIER" ? "Kassir" : userRole || "Kassir"}
+                      {userRole === "CASHIER" ? "Кассир" : (userRole || "Кассир")}
                     </p>
                   </div>
                 </div>

@@ -8,7 +8,7 @@ const Notification = ({ message, type, onClose }) => (
   >
     {message}
     <button className="ml-4 text-sm underline" onClick={onClose}>
-      Yopish
+      Ёпиш
     </button>
   </div>
 );
@@ -55,7 +55,7 @@ function Sotuvchilar() {
     }
   }, [token]);
 
-  // Validate date range
+  // Validate date range 
   useEffect(() => {
     if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
       setNotification({
@@ -126,7 +126,7 @@ function Sotuvchilar() {
         const branchData = await fetchWithAuth(`${API_URL}/branches`);
         setBranches(branchData);
       } catch (err) {
-        setNotification({ message: err.message || 'Filiallarni yuklashda xatolik', type: 'error' });
+        setNotification({ message: err.message || 'Филиалларни юклашда хатолик', type: 'error' });
       } finally {
         setLoading(false);
       }
@@ -146,7 +146,7 @@ function Sotuvchilar() {
         const marketingUsers = userData.filter((user) => user.role === 'MARKETING');
         setUsers(marketingUsers);
       } catch (err) {
-        setNotification({ message: err.message || 'Foydalanuvchilarni yuklashda xatolik', type: 'error' });
+        setNotification({ message: err.message || 'Фойдаланувчиларни юклашда хатолик', type: 'error' });
       } finally {
         setLoading(false);
       }
@@ -247,7 +247,7 @@ function Sotuvchilar() {
 
     } catch (err) {
       console.error('Error fetching sales data:', err);
-      setNotification({ message: err.message || 'Ma\'lumotlarni yuklashda xatolik', type: 'error' });
+      setNotification({ message: err.message || 'Маълумотларни юклашда хатолик', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -270,9 +270,9 @@ function Sotuvchilar() {
   // Formatting functions
   const formatCurrency = (amount, currency = 'UZS') => {
     if (currency === 'USD') {
-      return `$${amount >= 0 ? new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(amount) : 'Noma\'lum'}`;
+      return `$${amount >= 0 ? new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(amount) : 'Номаълум'}`;
     }
-    return amount >= 0 ? new Intl.NumberFormat('uz-UZ').format(amount) + ' so\'m' : 'Noma\'lum';
+    return amount >= 0 ? new Intl.NumberFormat('uz-UZ').format(amount) + ' сўм' : 'Номаълум';
   };
 
   const formatDate = (date) => {
@@ -288,11 +288,11 @@ function Sotuvchilar() {
 
   const getPaymentTypeLabel = (type) => {
     switch (type) {
-      case 'CASH': return 'Naqd';
-      case 'CARD': return 'Karta';
-      case 'CREDIT': return 'Kredit';
-      case 'INSTALLMENT': return 'Bo\'lib to\'lash';
-      default: return 'Noma\'lum';
+      case 'CASH': return 'Нақд';
+      case 'CARD': return 'Карта';
+      case 'CREDIT': return 'Кредит';
+      case 'INSTALLMENT': return 'Бўлиб тўлаш';
+      default: return 'Номаълум';
     }
   };
 
@@ -308,7 +308,7 @@ function Sotuvchilar() {
 
   const getBranchName = (branchId) => {
     const branch = branches.find(b => b.id === branchId);
-    return branch ? branch.name : 'Noma\'lum';
+    return branch ? branch.name : 'Номаълум';
   };
 
   return (
@@ -317,7 +317,7 @@ function Sotuvchilar() {
         <h1 className="text-2xl font-bold text-gray-900">Сотувчилар маоши</h1>
         <p className="text-gray-600 mt-1">Сотувчилар маоши бўйича маълумотлар</p>
         <div className="mt-2 text-sm text-gray-500">
-          <span className="font-medium">Joriy kurs:</span> 1 USD = {formatCurrency(exchangeRate, 'UZS')}
+          <span className="font-medium">Жорий курс:</span> 1 USD = {formatCurrency(exchangeRate, 'UZS')}
         </div>
       </div>
 
@@ -354,7 +354,7 @@ function Sotuvchilar() {
             onChange={(e) => setSelectedUserId(e.target.value)}
             className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
           >
-            <option value="">Барча сотивчилар</option>
+            <option value="">Барча сотувчилар</option>
             {users.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.firstName} {user.lastName}
@@ -362,7 +362,7 @@ function Sotuvchilar() {
             ))}
           </select>
           <p className="text-xs text-gray-500 mt-1">
-            {selectedUserId === '' ? 'Барча сотивчилар кўрсатилади (joriy filial)' : 
+            {selectedUserId === '' ? 'Барча сотувчилар кўрсатилади (joriy filial)' : 
              `Танланган: ${users.find(u => u.id === parseInt(selectedUserId))?.firstName} ${users.find(u => u.id === parseInt(selectedUserId))?.lastName} (barcha filiallar)`}
           </p>
         </div>
@@ -371,7 +371,7 @@ function Sotuvchilar() {
             onClick={handleRefresh}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Yangilash
+            Янгилаш
           </button>
         </div>
       </div>
@@ -379,12 +379,12 @@ function Sotuvchilar() {
       {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
 
       {loading ? (
-        <div className="text-center text-gray-600">Yuklanmoqda...</div>
+        <div className="text-center text-gray-600">Юкланмоқда...</div>
       ) : (
         <>
           {Object.keys(earningsSummary).length > 0 ? (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Sotuvchilar bo'yicha xulosa</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Сотувчилар бўйича хулоса</h2>
               <ul className="space-y-6">
                 {Object.entries(earningsSummary).map(([userId, summary]) => {
                   const user = users.find((u) => u.id === parseInt(userId));
@@ -401,7 +401,7 @@ function Sotuvchilar() {
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between">
-                          <span className="text-sm text-gray-600">Jami sotuv (UZS):</span>
+                          <span className="text-sm text-gray-600">Жами сотув (UZS):</span>
                           <span className="text-sm font-semibold text-blue-600">
                             {formatCurrency(summary.totalSalesInSom, 'UZS')}
                           </span>
@@ -418,19 +418,19 @@ function Sotuvchilar() {
               <div className="text-gray-400 mb-4">
                 <User size={48} className="mx-auto" />
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Ma'lumot topilmadi</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Ма'lumot топилмади</h3>
               <p className="text-gray-500">
                 {startDate && endDate ? (
                   <>
-                    {formatDate(startDate)} 00:00 - {formatDate(endDate)} 23:59 oralig'ida
-                    {selectedUserId ? ' tanlangan sotuvchi uchun (barcha filiallar)' : ' hech qanday sotuv ma\'lumoti yo\'q (joriy filial)'}
+                    {formatDate(startDate)} 00:00 - {formatDate(endDate)} 23:59 оралиғида
+                    {selectedUserId ? ' танланган сотувчи учун (барча филиаллар)' : ' ҳеч қандай сотув маълумоти йўқ (жорий филиал)'}
                   </>
                 ) : (
-                  'Sana oralig\'i tanlanmagan'
+                  'Сана оралиғи танланмаган'
                 )}
               </p>
               <div className="mt-4 text-sm text-gray-400">
-                <p>Filtrlarni tekshiring yoki boshqa sana oralig\'ini tanlang</p>
+                <p>Филтрларни текширинг ёки бошқа сана оралиғони танланг</p>
               </div>
             </div>
           )}
@@ -447,7 +447,7 @@ function Sotuvchilar() {
                       {selectedUserId && (
                         <span className="ml-2">
                           | Сотувчи: {users.find((u) => u.id === parseInt(selectedUserId))?.firstName}{' '}
-                          {users.find((u) => u.id === parseInt(selectedUserId))?.lastName} (barcha filiallar)
+                          {users.find((u) => u.id === parseInt(selectedUserId))?.lastName} (барча филиаллар)
                         </span>
                       )}
                     </>
@@ -477,7 +477,7 @@ function Sotuvchilar() {
                         Умумий (USD)
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        To'lov turi
+                        Тўлов тури
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Сана / Вақт
@@ -496,7 +496,7 @@ function Sotuvchilar() {
                         <tr key={sale.id} className="hover:bg-gray-50 transition-colors duration-150">
                           <td className="px-6 py-4 text-gray-900">#{sale.id}</td>
                           <td className="px-6 py-4 text-gray-700">
-                            {users.find((u) => u.id === sale.userId)?.firstName || 'Noma\'lum'}{' '}
+                            {users.find((u) => u.id === sale.userId)?.firstName || 'Складдан'}{' '}
                             {users.find((u) => u.id === sale.userId)?.lastName || ''}
                           </td>
                           <td className="px-6 py-4 text-gray-700">

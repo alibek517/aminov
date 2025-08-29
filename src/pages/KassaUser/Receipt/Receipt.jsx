@@ -1,7 +1,8 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useState } from 'react';
 import { X, Printer } from 'lucide-react';
 
 const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
+  const [isProcessing, setIsProcessing] = useState(false);
   if (!transaction || !transaction.items || !Array.isArray(transaction.items)) {
     return (
       <div ref={ref} className="bg-white px-4 sm:px-6 md:px-8 py-4 sm:py-6 w-full max-w-3xl mx-auto rounded-2xl shadow-2xl font-sans">
@@ -74,7 +75,7 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
       <div className="w-full max-w-2xl lg:max-w-3xl max-h-[95vh] overflow-y-auto bg-white rounded-lg shadow-2xl">
         <div ref={ref} className="bg-white px-3 sm:px-4 md:px-6 py-3 sm:py-4 md:py-6 w-full mx-auto font-sans text-sm sm:text-base">
-      <style jsx>{`
+      <style>{`
         @media print {
           .shadow-2xl { box-shadow: none; }
           .bg-gray-100, .bg-gray-50, .bg-blue-50 { background-color: transparent !important; }
@@ -180,10 +181,12 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
                     {formatAmountSom(actualTotal)}
                   </div>
                 </div>
-                <div>
-                  <span className="text-blue-600 font-medium block">Фоиз:</span>
-                  <div className="font-semibold">{transaction.interestRate || 0}%</div>
-                </div>
+                {!(transaction.paymentType === 'INSTALLMENT' && transaction.termUnit === 'DAYS') && (
+                  <div>
+                    <span className="text-blue-600 font-medium block">Фоиз:</span>
+                    <div className="font-semibold">{transaction.interestRate || 0}%</div>
+                  </div>
+                )}
                 <div>
                   <span className="text-blue-600 font-medium block">Тўланган:</span>
                   <div className="font-semibold">
@@ -196,16 +199,29 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
                     {formatAmountSom(transaction.remaining || 0)}
                   </div>
                 </div>
-                <div>
-                  <span className="text-blue-600 font-medium block">Муддат:</span>
-                  <div className="font-semibold">{transaction.months || 0} ой</div>
-                </div>
-                <div>
-                  <span className="text-blue-600 font-medium block">Ойлик тўлов:</span>
-                  <div className="font-semibold">
-                    {formatAmountSom(transaction.monthlyPayment || 0)}
-                  </div>
-                </div>
+                {transaction.paymentType === 'INSTALLMENT' && transaction.termUnit === 'DAYS' ? (
+                  <>
+                    <div>
+                      <span className="text-blue-600 font-medium block">Муддат:</span>
+                      <div className="font-semibold">{transaction.days || 0} кун</div>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium block">Кунлик тўлов:</span>
+                      <div className="font-semibold">{formatAmountSom(transaction.monthlyPayment || 0)}</div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <span className="text-blue-600 font-medium block">Муддат:</span>
+                      <div className="font-semibold">{transaction.months || 0} ой</div>
+                    </div>
+                    <div>
+                      <span className="text-blue-600 font-medium block">Ойлик тўлов:</span>
+                      <div className="font-semibold">{formatAmountSom(transaction.monthlyPayment || 0)}</div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -285,12 +301,14 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
                     {formatAmountSom(actualTotal)}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Фоиз билан:</span>
-                  <span className="font-semibold">
-                    {formatAmountSom(transaction.finalTotalInSom || actualTotal)}
-                  </span>
-                </div>
+                {!(transaction.paymentType === 'INSTALLMENT' && transaction.termUnit === 'DAYS') && (
+                  <div className="flex justify-between">
+                    <span>Фоиз билан:</span>
+                    <span className="font-semibold">
+                      {formatAmountSom(transaction.finalTotalInSom || actualTotal)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Тўланган:</span>
                   <span className="font-semibold">
@@ -317,11 +335,20 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
             </button>
             {onPrint && (
               <button
-                onClick={onPrint}
-                className="no-print flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 font-semibold flex items-center justify-center gap-1.5 text-sm"
+                onClick={() => {
+                  if (isProcessing) return;
+                  setIsProcessing(true);
+                  const maybePromise = onPrint();
+                  if (maybePromise && typeof maybePromise.then === 'function') {
+                    // Do not re-enable to ensure one-time action per sale
+                    maybePromise.catch(() => {}).then(() => {});
+                  }
+                }}
+                disabled={isProcessing}
+                className={`no-print flex-1 bg-blue-600 text-white py-2 rounded-lg transition-colors duration-200 font-semibold flex items-center justify-center gap-1.5 text-sm ${isProcessing ? 'opacity-60 cursor-not-allowed' : 'hover:bg-blue-700'}`}
               >
                 <Printer size={16} />
-                Чоп этиш
+                Сотиш ва Чоп этиш
               </button>
             )}
           </div>

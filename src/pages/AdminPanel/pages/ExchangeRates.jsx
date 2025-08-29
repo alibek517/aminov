@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DollarSign, Plus, Edit, Trash2, RefreshCw } from 'lucide-react';
+import { DollarSign, Plus, Edit, Trash2, RefreshCw, CheckCircle } from 'lucide-react';
 
 const ExchangeRates = () => {
   const [exchangeRates, setExchangeRates] = useState([]);
@@ -105,7 +105,7 @@ const ExchangeRates = () => {
       }
       
       setNotification({ 
-        message: `Exchange rate ${editingRate ? 'updated' : 'created'} successfully`, 
+        message: `Курс ${editingRate ? 'янгиланди' : 'яратилди'}`, 
         type: 'success' 
       });
       
@@ -113,6 +113,30 @@ const ExchangeRates = () => {
       fetchExchangeRates();
     } catch (error) {
       setNotification({ message: error.message, type: 'error' });
+    }
+  };
+
+  const setActiveRate = async (rate) => {
+    try {
+      const response = await fetch(`${API_URL}/currency-exchange-rates/${rate.id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ isActive: true }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to set active rate');
+      }
+      // Update UI state: mark clicked as active, others inactive
+      setExchangeRates((prev) =>
+        prev.map((r) => ({ ...r, isActive: r.id === rate.id }))
+      );
+      
+      setNotification({ message: 'Faol kurs belgilandi', type: 'success' });
+    } catch (e) {
+      setNotification({ message: e.message || 'Faol kursni belgilashda xatolik', type: 'error' });
     }
   };
 
@@ -129,7 +153,7 @@ const ExchangeRates = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this exchange rate?')) {
+    if (!window.confirm('Курсни ўчиришни тасдиқлайсизми?')) {
       return;
     }
     
@@ -146,7 +170,7 @@ const ExchangeRates = () => {
         throw new Error('Failed to delete exchange rate');
       }
       
-      setNotification({ message: 'Exchange rate deleted successfully', type: 'success' });
+      setNotification({ message: 'Курс ўчирилди', type: 'success' });
       fetchExchangeRates();
     } catch (error) {
       setNotification({ message: error.message, type: 'error' });
@@ -170,11 +194,11 @@ const ExchangeRates = () => {
   };
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <div className="п-6 bg-gray-50 min-h-screen">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Valyuta kurslari</h1>
-          <p className="text-gray-600 mt-1">Dollar va som kurslarini boshqarish</p>
+          <h1 className="text-2xl font-bold text-gray-900">Валюта курслари</h1>
+          <p className="text-gray-600 mt-1">Доллар ва сўм курсларини бошқариш</p>
         </div>
     
       </div>
@@ -185,7 +209,7 @@ const ExchangeRates = () => {
         }`}>
           {notification.message}
           <button className="ml-4 text-sm underline" onClick={() => setNotification(null)}>
-            Yopish
+            Ёпиш
           </button>
         </div>
       )}
@@ -193,14 +217,14 @@ const ExchangeRates = () => {
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            {editingRate ? 'Kursni tahrirlash' : 'Yangi kurs qo\'shish'}
+            {editingRate ? 'Курсни таҳрирлаш' : 'Янги курс қўшиш'}
           </h2>
           
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Qaysi valyutadan
+                  Қайси валютадан
                 </label>
                 <select
                   value={formData.fromCurrency}
@@ -208,13 +232,13 @@ const ExchangeRates = () => {
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
                 >
-                  <option value="USD">USD - Dollar</option>
+                  <option value="USD">USD - Доллар</option>
                 </select>
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Qaysi valyutaga
+                  Қайси валютага
                 </label>
                 <select
                   value={formData.toCurrency}
@@ -222,7 +246,7 @@ const ExchangeRates = () => {
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   required
                 >
-                  <option value="UZS">UZS - So'm</option>
+                  <option value="UZS">UZS - Сўм</option>
                 </select>
               </div>
             </div>
@@ -230,7 +254,7 @@ const ExchangeRates = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Kurs (1 {formData.fromCurrency} = ? {formData.toCurrency})
+                  Курс (1 {formData.fromCurrency} = ? {formData.toCurrency})
                 </label>
                 <input
                   type="number"
@@ -238,21 +262,21 @@ const ExchangeRates = () => {
                   value={formData.rate}
                   onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Masalan: 12500"
+                  placeholder="Масалан: 12500"
                   required
                 />
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Filial
+                  Филиал
                 </label>
                 <select
                   value={formData.branchId}
                   onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="">Barcha filiallar uchun</option>
+                  <option value="">Барча филиаллар учун</option>
                   {branches.map((branch) => (
                     <option key={branch.id} value={branch.id}>
                       {branch.name}
@@ -269,14 +293,14 @@ const ExchangeRates = () => {
                 type="submit"
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
               >
-                {editingRate ? 'Yangilash' : 'Saqlash'}
+                {editingRate ? 'Янгилаш' : 'Сақлаш'}
               </button>
               <button
                 type="button"
                 onClick={resetForm}
                 className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors"
               >
-                Bekor qilish
+                Бекор қилиш
               </button>
             </div>
           </form>
@@ -286,7 +310,7 @@ const ExchangeRates = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold text-gray-900">Mavjud kurslar</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Мавжуд курслар</h3>
             <button
               onClick={fetchExchangeRates}
               className="text-blue-600 hover:text-blue-700 transition-colors"
@@ -297,27 +321,27 @@ const ExchangeRates = () => {
         </div>
         
         {loading ? (
-          <div className="p-6 text-center text-gray-600">Yuklanmoqda...</div>
+          <div className="п-6 text-center text-gray-600">Юкланмоқда...</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Valyuta
+                    Валюта
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Kurs
+                    Курс
                   </th>
                  
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Holat
+                    Ҳолат
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Yaratilgan
+                    Яратилган
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amallar
+                    Амаллар
                   </th>
                 </tr>
               </thead>
@@ -344,21 +368,22 @@ const ExchangeRates = () => {
                           ? 'bg-green-100 text-green-800' 
                           : 'bg-red-100 text-red-800'
                       }`}>
-                        {rate.isActive ? 'Faol' : 'Faol emas'}
+                        {rate.isActive ? 'Фаол' : 'Фаол эмас'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-gray-500">
                       {new Date(rate.createdAt).toLocaleDateString('uz-Cyrl-UZ')}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center">
                         <button
                           onClick={() => handleEdit(rate)}
                           className="text-blue-600 hover:text-blue-700 transition-colors"
+                          title="Таҳрирлаш"
                         >
                           <Edit size={16} />
                         </button>
-                    
+                        
                       </div>
                     </td>
                   </tr>
@@ -368,7 +393,7 @@ const ExchangeRates = () => {
             
             {exchangeRates.length === 0 && (
               <div className="p-6 text-center text-gray-500">
-                Hech qanday kurs topilmadi
+                Ҳеч қандай курс топилмади
               </div>
             )}
           </div>

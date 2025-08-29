@@ -13,7 +13,7 @@ const SalesManagement = () => {
   const [selectedItems, setSelectedItems] = useState([]);
 
   const [selectedBranch, setSelectedBranch] = useState('');
-  const [paymentType, setPaymentType] = useState('');
+  const [paymentType, setPaymentType] = useState('CASH');
   const [deliveryType, setDeliveryType] = useState('PICKUP');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -24,6 +24,8 @@ const SalesManagement = () => {
   const [customerPaid, setCustomerPaid] = useState('0');
   const [months, setMonths] = useState('');
   const [interestRate, setInterestRate] = useState('');
+  const [termUnit, setTermUnit] = useState('DAYS'); // MONTHS | DAYS
+  const [daysCount, setDaysCount] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -36,6 +38,12 @@ const SalesManagement = () => {
   const [deliveryAddress, setDeliveryAddress] = useState(''); // Yangi state qo'shish
   const [priceInputValues, setPriceInputValues] = useState({}); // Store display values for price inputs
   const [exchangeRate, setExchangeRate] = useState(12500); // Default exchange rate USD to UZS
+  
+  // Multiple customers feature
+  const [showMultipleCustomersModal, setShowMultipleCustomersModal] = useState(false);
+  const [customerCount, setCustomerCount] = useState(1);
+  const [customers, setCustomers] = useState([]);
+  const [currentCustomerIndex, setCurrentCustomerIndex] = useState(0);
   const navigate = useNavigate();
 
 
@@ -58,9 +66,10 @@ const SalesManagement = () => {
     date ? new Date(date).toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' }) : 'Номаълум';
 
   const calculatePaymentSchedule = () => {
-    const m = Number(months);
+    const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
+    const termCount = isDays ? Number(daysCount) : Number(months);
     const rate = Number(interestRate) / 100 || 0;
-    if (!m || m <= 0 || selectedItems.length === 0) return { totalWithInterest: 0, monthlyPayment: 0, schedule: [], change: 0, remaining: 0 };
+    if (!termCount || termCount <= 0 || selectedItems.length === 0) return { totalWithInterest: 0, monthlyPayment: 0, schedule: [], change: 0, remaining: 0 };
 
     // Calculate base total in som using display prices
     const baseTotal = selectedItems.reduce((sum, item, index) => {
@@ -74,11 +83,11 @@ const SalesManagement = () => {
     const remaining = remainingPrincipal + interestAmount;     // Qolgan + foiz
     const totalWithInterest = paid + remaining;
     const change = paid > totalWithInterest ? paid - totalWithInterest : 0;
-    const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
+    const monthlyPayment = termCount > 0 && remaining > 0 ? remaining / termCount : 0;
     const schedule = [];
 
     let remainingBalance = remaining;
-    for (let i = 1; i <= m; i++) {
+    for (let i = 1; i <= termCount; i++) {
       schedule.push({
         month: i,
         payment: monthlyPayment,
@@ -456,13 +465,21 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
 
     // Credit/Installment specific validation
     if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
-      if (!passportSeries.trim()) newErrors.passportSeries = 'Passport seriyasi kiritilishi shart';
-      if (!jshshir.trim() || !/^\d{14,16}$/.test(jshshir)) newErrors.jshshir = 'JSHSHIR 14-16 raqamdan iborat bo\'lishi kerak';
-      if (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months)) || Number(months) > 24) {
-        newErrors.months = 'Oylar soni 1 dan 24 gacha butun son bo\'lishi kerak';
-      }
-      if (!interestRate || isNaN(interestRate) || Number(interestRate) < 0) {
-        newErrors.interestRate = 'Foiz 0 dan katta yoki teng bo\'lishi kerak';
+      const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
+      if (!isDays) {
+        if (!passportSeries.trim()) newErrors.passportSeries = 'Passport seriyasi kiritilishi shart';
+        if (!jshshir.trim() || !/^\d{14,16}$/.test(jshshir)) newErrors.jshshir = 'JSHSHIR 14-16 raqamdan iborat bo\'lishi kerak';
+        if (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months)) || Number(months) > 24) {
+          newErrors.months = 'Oylar soni 1 dan 24 gacha butun son bo\'lishi kerak';
+        }
+        if (!interestRate || isNaN(interestRate) || Number(interestRate) < 0) {
+          newErrors.interestRate = 'Foiz 0 dan katta yoki teng bo\'lishi kerak';
+        }
+      } else {
+        if (!daysCount || isNaN(daysCount) || Number(daysCount) <= 0 || !Number.isInteger(Number(daysCount)) || Number(daysCount) > 365) {
+          newErrors.daysCount = 'Kunlar soni 1..365 oraliqda bo\'lishi kerak';
+        }
+        // For daily installment, passport/JSHSHIR and interest not required
       }
     }
     
@@ -479,64 +496,29 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
       setNotification({ message: errorText, type: 'error' });
       return;
     }
+    // Only prepare receipt data locally; DO NOT send to backend here
     setSubmitting(true);
     setNotification(null);
     try {
       const userId = Number(localStorage.getItem('userId'));
-      const baseTotal = selectedItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.price), 0);
-      const m = Number(months);
+      // Calculate base total using display prices (priceInputValues)
+      const baseTotal = selectedItems.reduce((sum, item, index) => {
+        const displayPrice = priceInputValues[`${item.id}_${index}`] || item.price;
+        return sum + Number(item.quantity) * Number(displayPrice);
+      }, 0);
+      
+      const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
+      const m = isDays ? Number(daysCount) : Number(months);
       const rate = Number(interestRate) / 100 || 0;
       const finalTotal = baseTotal * (1 + rate);
       const paidInSom = Number(customerPaid) || 0;
-      const paid = paidInSom; // Keep payment in som for backend
+      const paid = paidInSom;
       const remaining = paid < finalTotal ? finalTotal - paid : 0;
       const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
 
-      const payload = {
-        type: 'SALE',
-        status: 'PENDING',
-        total: baseTotal,
-        finalTotal,
-        amountPaid: paid,
-        userId,
-        remainingBalance: remaining,
-        paymentType: paymentType === 'INSTALLMENT' ? 'CREDIT' : paymentType,
-        deliveryMethod: deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
-        deliveryAddress: (deliveryType === 'DELIVERY' || paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') ? (deliveryAddress || undefined) : undefined, // Add delivery address
-        customer: {
-          fullName: `${firstName} ${lastName}`.trim(),
-          phone: phone.replace(/\s+/g, ''),
-          passportSeries: passportSeries || undefined, // Add passport series
-          jshshir: jshshir || undefined, // Add JSHSHIR
-          address: deliveryAddress || undefined,
-        },
-        fromBranchId: selectedBranch ? Number(selectedBranch) : Number(selectedBranchId),
-        soldByUserId: Number(selectedUserId), // MARKETING selected in UI
-        items: selectedItems.map((item) => ({
-          productId: item.id,
-          productName: item.name,
-          quantity: Number(item.quantity),
-          price: Number(item.price),
-          total: Number(item.quantity) * Number(item.price),
-          ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' ? {
-            creditMonth: m,
-            creditPercent: rate,
-            monthlyPayment,
-          } : {}),
-        })),
-      };
-
-      console.log('Submitting transaction:', JSON.stringify(payload, null, 2));
-
-      const response = await axiosWithAuth({
-        method: 'post',
-        url: `${API_URL}/transactions`,
-        data: payload,
-      });
-
-      setReceiptData({
-        id: response.data.id,
-        createdAt: response.data.createdAt,
+            setReceiptData({
+        id: Date.now(),
+        createdAt: new Date().toISOString(),
         customer: {
           fullName: `${firstName} ${lastName}`.trim(),
           firstName: firstName.trim(),
@@ -551,13 +533,22 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         items: selectedItems.map((item, index) => ({
           ...item,
           price: Number(priceInputValues[`${item.id}_${index}`] || item.price),
+          sellingPrice: Number(priceInputValues[`${item.id}_${index}`] || item.price), // Actual selling price
+          originalPrice: Number(item.price), // Original product price
           quantity: Number(item.quantity),
-          total: Number(item.quantity) * Number(priceInputValues[`${item.id}_${index}`] || item.price)
+          total: Number(item.quantity) * Number(priceInputValues[`${item.id}_${index}`] || item.price),
+          ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' ? {
+            creditMonth: m,
+            creditPercent: rate,
+            monthlyPayment: Number(monthlyPayment),
+          } : {}),
         })),
         paymentType,
         deliveryType: deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
         deliveryAddress: deliveryAddress,
-        months: m,
+        months: !isDays ? m : 0,
+        days: isDays ? m : 0,
+        termUnit: isDays ? 'DAYS' : 'MONTHS',
         interestRate: Number(interestRate),
         paid: Number(paid),
         remaining: Number(remaining),
@@ -565,19 +556,24 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         totalInSom: Number(baseTotal),
         finalTotalInSom: Number(finalTotal),
       });
-
-      if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
-        generatePDF();
-      }
-      setNotification({ message: 'Sotuv muvaffaqiyatli amalga oshirildi', type: 'success' });
-      closeSelectedItemsModal();
+      // Close the selected items modal on submit
+      setShowSelectedItemsModal(false);
+      // Reset inputs/options to defaults (cart remains for receipt preview)
+      setSelectedUserId('');
+      setPaymentType('CASH');
+      setDeliveryType('PICKUP');
+      setFirstName('');
+      setLastName('');
+      setPhone('');
+      setPassportSeries('');
+      setJshshir('');
+      setCustomerPaid('0');
+      setMonths('');
+      setInterestRate('');
+      setDeliveryAddress('');
+      setErrors({});
+      setPriceInputValues({});
       setShowReceiptModal(true);
-      setSelectedItems([]); // Clear cart after successful sale
-      loadData();
-    } catch (err) {
-      const message = err.response?.data?.message || err.message || 'Tranzaksiya yaratishda xatolik';
-      setNotification({ message, type: 'error' });
-      console.error('Submit error:', err);
     } finally {
       setSubmitting(false);
     }
@@ -723,11 +719,9 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                                   return;
                                 }
 
-                                // Check if item already exists in cart
                                 const existingItemIndex = selectedItems.findIndex((item) => item.id === product.id);
 
                                 if (existingItemIndex !== -1) {
-                                  // Update existing item quantity
                                   setSelectedItems((prev) =>
                                     prev.map((item, index) =>
                                       index === existingItemIndex
@@ -972,6 +966,55 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       </div>
                       {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
                         <>
+                          {paymentType === 'INSTALLMENT' && (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Муддат бирлиги</label>
+                              <select
+                                value={termUnit}
+                                onChange={(e) => setTermUnit(e.target.value)}
+                                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                              >
+                                <option value="MONTHS">Ой</option>
+                                <option value="DAYS">Кун</option>
+                              </select>
+                            </div>
+                          )}
+                          {paymentType === 'INSTALLMENT' && termUnit === 'DAYS' ? (
+                            <>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Кунлар сони</label>
+                                <input
+                                  type="number"
+                                  value={daysCount}
+                                  onChange={(e) => setDaysCount(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.daysCount ? 'border-red-500' : 'border-gray-300'}`}
+                                  min="1"
+                                  max="365"
+                                  step="1"
+                                  placeholder="0"
+                                />
+                                {errors.daysCount && (
+                                  <span className="text-red-500 text-xs">{errors.daysCount}</span>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
+                                <input
+                                  type="number"
+                                  value={customerPaid}
+                                  onChange={(e) => setCustomerPaid(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
+                                  step="500"
+                                  min="0"
+                                  placeholder="0"
+                                />
+                                {errors.customerPaid && (
+                                  <span className="text-red-500 text-xs">{errors.customerPaid}</span>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                          <>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Паспорт серияси</label>
                             <input
@@ -980,7 +1023,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               onChange={(e) => setPassportSeries(e.target.value)}
                               placeholder="AA 1234567"
                               className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'}`}
-                            />
+                            />  
                             {errors.passportSeries && (
                               <span className="text-red-500 text-xs">{errors.passportSeries}</span>
                             )}
@@ -1043,6 +1086,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               <span className="text-red-500 text-xs">{errors.customerPaid}</span>
                             )}
                           </div>
+                          </>
+                          )}
                         </>
                       )}
                     </div>
@@ -1066,7 +1111,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
                       })()}</div>
                     </div>
-                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
+                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && !(paymentType === 'INSTALLMENT' && termUnit === 'DAYS') && (
                       <>
                         <div className="bg-white p-3 rounded border">
                           <div className="text-gray-600 text-xs mb-1">Фоиз билан:</div>
@@ -1087,11 +1132,14 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
 
                 <div className="mt-6 flex gap-3">
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => {
+                      // Only open receipt; actual sell will happen on print
+                      handleSubmit(new Event('submit'));
+                    }}
                     disabled={submitting}
                     className="flex-1 bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors font-medium"
                   >
-                    {submitting ? 'Юкланмоқда...' : 'Сотишни амалга ошириш'}
+                    {submitting ? 'Юкланмоқда...' : 'Чекни кўриш'}
                   </button>
                   <button
                     onClick={closeModal}
@@ -1322,6 +1370,55 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       </div>
                       {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
                         <>
+                          {paymentType === 'INSTALLMENT' && (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Муддат бирлиги</label>
+                              <select
+                                value={termUnit}
+                                onChange={(e) => setTermUnit(e.target.value)}
+                                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+                              >
+                                <option value="MONTHS">Ой</option>
+                                <option value="DAYS">Кун</option>
+                              </select>
+                            </div>
+                          )}
+                          {paymentType === 'INSTALLMENT' && termUnit === 'DAYS' ? (
+                            <>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Кунлар сони</label>
+                                <input
+                                  type="number"
+                                  value={daysCount}
+                                  onChange={(e) => setDaysCount(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.daysCount ? 'border-red-500' : 'border-gray-300'}`}
+                                  min="1"
+                                  max="365"
+                                  step="1"
+                                  placeholder="0"
+                                />
+                                {errors.daysCount && (
+                                  <span className="text-red-500 text-xs">{errors.daysCount}</span>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
+                                <input
+                                  type="number"
+                                  value={customerPaid}
+                                  onChange={(e) => setCustomerPaid(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
+                                  step="500"
+                                  min="0"
+                                  placeholder="0"
+                                />
+                                {errors.customerPaid && (
+                                  <span className="text-red-500 text-xs">{errors.customerPaid}</span>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                          <>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Паспорт серияси</label>
                             <input
@@ -1393,6 +1490,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               <span className="text-red-500 text-xs">{errors.customerPaid}</span>
                             )}
                           </div>
+                          </>
+                          )}
                         </>
                       )}
                     </div>
@@ -1459,7 +1558,80 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                 <Receipt
                   transaction={receiptData}
                   onClose={closeReceiptModal}
-                  onPrint={() => {
+                  onPrint={async () => {
+                    try {
+                      // Build payload from prepared receiptData to preserve CREDIT/INSTALLMENT info
+                      const rd = receiptData;
+                      const computedBaseTotal = rd.items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.sellingPrice ?? it.price), 0);
+                      const payload = {
+                        type: 'SALE',
+                        status: 'PENDING',
+                        total: Number(rd.totalInSom ?? computedBaseTotal),
+                        finalTotal: Number(rd.finalTotalInSom ?? rd.totalInSom ?? computedBaseTotal),
+                        amountPaid: Number(rd.paid || 0),
+                        userId: Number(localStorage.getItem('userId')),
+                        remainingBalance: Number(rd.remaining || 0),
+                        paymentType: rd.paymentType,
+                        deliveryMethod: rd.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
+                        deliveryAddress: (rd.deliveryType === 'DELIVERY' || rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT') ? (rd.deliveryAddress || rd.customer?.address || undefined) : undefined,
+                        customer: {
+                          fullName: (rd.customer?.fullName || `${rd.customer?.firstName || ''} ${rd.customer?.lastName || ''}`).trim(),
+                          phone: (rd.customer?.phone || '').replace(/\s+/g, ''),
+                          passportSeries: rd.customer?.passportSeries || undefined,
+                          jshshir: rd.customer?.jshshir || undefined,
+                          address: rd.customer?.address || rd.deliveryAddress || undefined,
+                        },
+                        fromBranchId: rd.branch?.id ? Number(rd.branch.id) : (selectedBranch ? Number(selectedBranch) : Number(selectedBranchId)),
+                        soldByUserId: rd.seller?.id ? Number(rd.seller.id) : Number(selectedUserId),
+                        // Note: daily metadata removed to avoid backend 500; stored only client-side
+                        items: rd.items.map((item) => ({
+                          productId: item.id,
+                          productName: item.name,
+                          quantity: Number(item.quantity),
+                          price: Number(item.sellingPrice ?? item.price),
+                          sellingPrice: Number(item.sellingPrice ?? item.price),
+                          originalPrice: Number(item.originalPrice ?? item.price),
+                          total: Number(item.quantity) * Number(item.sellingPrice ?? item.price),
+                          ...(rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT' ? {
+                            creditMonth: Number(rd.months || 0),
+                            creditPercent: Number((rd.interestRate || 0) / 100),
+                            monthlyPayment: Number(rd.monthlyPayment || 0),
+                          } : {}),
+                        })),
+                      };
+
+                      const response = await axiosWithAuth({
+                        method: 'post',
+                        url: `${API_URL}/transactions`,
+                        data: payload,
+                      });
+
+                      // Update receipt data with real server info
+                      setReceiptData(prev => ({
+                        ...prev,
+                        id: response.data.id,
+                        createdAt: response.data.createdAt,
+                        // Persist client-side term meta keyed by transaction id for reporting views
+                        ...(rd.termUnit === 'DAYS' ? { termUnit: 'DAYS', days: rd.days } : {}),
+                      }));
+
+                      try {
+                        const metaRaw = localStorage.getItem('tx_term_units');
+                        const metaMap = metaRaw ? JSON.parse(metaRaw) : {};
+                        const newMeta = { ...metaMap };
+                        if (response?.data?.id && rd.termUnit === 'DAYS') {
+                          newMeta[String(response.data.id)] = { termUnit: 'DAYS', days: rd.days, interestRate: rd.interestRate };
+                          localStorage.setItem('tx_term_units', JSON.stringify(newMeta));
+                        }
+                      } catch {}
+
+                    } catch (err) {
+                      const message = err.response?.data?.message || err.message || 'Tranzaksiya yaratishda xatolik';
+                      setNotification({ message, type: 'error' });
+                      console.error('Submit/Print error:', err);
+                      return; // Do not proceed to print on error
+                    }
+
                     const printWindow = window.open('', '_blank');
                     const receiptContent = `
             <!DOCTYPE html>
@@ -1654,11 +1826,17 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     printWindow.document.write(receiptContent);
                     printWindow.document.close();
                     printWindow.focus();
-                    setTimeout(() => {
+                    try {
                       printWindow.print();
-                      printWindow.close();
-                      closeReceiptModal();
-                    }, 1000);
+                    } finally {
+                      setTimeout(() => {
+                        printWindow.close();
+                        closeReceiptModal();
+                        setSelectedItems([]);
+                        loadData();
+                        setNotification({ message: 'Sotuv yakunlandi va chop etildi', type: 'success' });
+                      }, 1000);
+                    }
                   }}
                 />
               </div>

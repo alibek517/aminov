@@ -42,6 +42,8 @@ export default function AdminPanel() {
   const [error, setError] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem("access_token"));
   const [userName, setUserName] = useState("");
+  const [exchangeRate, setExchangeRate] = useState(0);
+  const [exchangeRateLoading, setExchangeRateLoading] = useState(false);
 
   useEffect(() => {
     // Default redirect to /admin/inventory
@@ -67,6 +69,14 @@ export default function AdminPanel() {
     } else {
       setUserName("User");
     }
+  }, []);
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (!document.hidden) fetchExchangeRate();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
   const validateToken = async () => {
@@ -193,6 +203,35 @@ export default function AdminPanel() {
     setSelectedBranchId(e.target.value);
   };
 
+  const fetchExchangeRate = async () => {
+    try {
+      setExchangeRateLoading(true);
+      // Try preferred current-rate endpoint first
+      try {
+        const resp = await fetchWithAuth('https://suddocs.uz/currency-exchange-rates/current-rate?fromCurrency=USD&toCurrency=UZS');
+        const data = await resp.json();
+        if (data && data.rate) {
+          setExchangeRate(Number(data.rate));
+        } else {
+          throw new Error('No rate in current-rate response');
+        }
+      } catch (e) {
+        // Fallback to list endpoint
+        const listResp = await fetchWithAuth('https://suddocs.uz/currency-exchange-rates');
+        const arr = await listResp.json();
+        const list = Array.isArray(arr) ? arr : [];
+        const activeUsdToUzs = list.find(r => r.isActive && r.fromCurrency === 'USD' && r.toCurrency === 'UZS');
+        const fallbackRate = activeUsdToUzs?.rate ?? list[0]?.rate;
+        if (fallbackRate) {
+          setExchangeRate(Number(fallbackRate));
+        }
+      }
+    } catch (e) {
+    } finally {
+      setExchangeRateLoading(false);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab.toLowerCase()) {
       case "inventory":
@@ -224,6 +263,12 @@ export default function AdminPanel() {
         return <Inventory selectedBranchId={selectedBranchId} />;
     }
   };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchExchangeRate();
+    }
+  }, [isAuthenticated]);
 
   if (!isAuthenticated) {
     return <Loader className="w-16 h-16 mx-auto mt-20 text-blue-500 animate-spin" />;
@@ -339,6 +384,13 @@ export default function AdminPanel() {
             </div>
 
             <div className="flex items-center space-x-4 w-full justify-end lg:w-auto">
+              <div className="text-right mr-4">
+                <div className="text-sm text-gray-600">Валюта курси:</div>
+                <div className="text-lg font-semibold text-blue-600 flex items-center gap-2 justify-end">
+                  1 USD = {exchangeRate.toLocaleString('uz-UZ')} сўм
+                </div>
+               
+              </div>
               <div className="flex items-center">
                 <div
                   style={{ marginBottom: "5px" }}
@@ -354,7 +406,7 @@ export default function AdminPanel() {
                       {userNamee}
                     </p>
                     <p className="text-xxs text-gray-600">
-                      {userRole === "CASHIER" ? "Kassir" : userRole || "Kassir"}
+                      {userRole === "CASHIER" ? "Кассир" : userRole || "Кассир"}
                     </p>
                   </div>
                 </div>

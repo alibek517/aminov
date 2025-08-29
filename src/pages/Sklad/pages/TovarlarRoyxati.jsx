@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import Barcode from './Barcode'; 
+import { Eye, Edit3, Trash2, ScanLine } from 'lucide-react';
 
 // Notification component remains unchanged
 const Notification = ({ message, type, onClose }) => (
@@ -62,6 +64,7 @@ const TovarlarRoyxati = () => {
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -70,10 +73,10 @@ const TovarlarRoyxati = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploadBranch, setUploadBranch] = useState('');
   const [uploadCategory, setUploadCategory] = useState('');
-  const [uploadStatus, setUploadStatus] = useState('IN_STORE');
+  const [uploadStatus, setUploadStatus] = useState('IN_WAREHOUSE');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [editName, setEditName] = useState('');
-  const [editBarcode, setEditBarcode] = useState('');
+  // Removed manual barcode editing in modals
   const [editModel, setEditModel] = useState('');
   const [editPrice, setEditPrice] = useState('');
   const [editStatus, setEditStatus] = useState('');
@@ -81,11 +84,11 @@ const TovarlarRoyxati = () => {
   const [editCategory, setEditCategory] = useState('');
   const [editQuantity, setEditQuantity] = useState('');
   const [createName, setCreateName] = useState('');
-  const [createBarcode, setCreateBarcode] = useState('');
+  // Removed manual barcode in create modal
   const [createModel, setCreateModel] = useState('');
   const [createPrice, setCreatePrice] = useState('');
   const [createQuantity, setCreateQuantity] = useState('');
-  const [createStatus, setCreateStatus] = useState('IN_STORE');
+  const [createStatus, setCreateStatus] = useState('IN_WAREHOUSE');
   const [createBranch, setCreateBranch] = useState('');
   const [createCategory, setCreateCategory] = useState('');
   const [createMarketPrice, setCreateMarketPrice] = useState('');
@@ -101,10 +104,99 @@ const TovarlarRoyxati = () => {
   const [lastExchangeRateUpdate, setLastExchangeRateUpdate] = useState(null);
   const [exchangeRateLoading, setExchangeRateLoading] = useState(false);
   const [exchangeRateCheckInterval, setExchangeRateCheckInterval] = useState(null);
+  const ultraFastTimeoutRef = useRef(null);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [selectedBarcode, setSelectedBarcode] = useState(null);
+  const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState(null);
+  const [shopName, setShopName] = useState('');
+  // Fixed print size: 3x4 inches
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
   const API_URL = 'https://suddocs.uz';
+  const handlePrintBarcode = (product) => {
+    setSelectedBarcode(product?.barcode || '');
+    setSelectedBarcodeProduct(product || null);
+    setShowBarcodeModal(true);
+  };
+  
+  const handlePrint = () => {
+    window.print();
+  };
 
+  const handlePrintReceipt = () => {
+    if (!selectedBarcode || !selectedBarcodeProduct) return;
+    // Close modal immediately so it doesn't appear in print
+    const prevShopName = shopName;
+    closeBarcodeModal();
+    const productName = selectedBarcodeProduct.name || '';
+    const productModel = selectedBarcodeProduct.model ? ` ${selectedBarcodeProduct.model}` : '';
+    const nameLine = `${productName}${productModel}`.trim();
+    const usdPrice = selectedBarcodeProduct.marketPrice ?? selectedBarcodeProduct.price ?? 0;
+    const somPrice = usdPrice >= 0 ? new Intl.NumberFormat('uz-UZ').format(usdPrice * exchangeRate) + " so'm" : '';
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Chek</title>
+  <style>
+    @page { margin: 0; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
+    .receipt { width: 58mm; padding: 6mm 4mm; box-sizing: border-box; }
+    .center { text-align: center; }
+    .shop { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+    .name { font-size: 12px; font-weight: 600; margin: 0 0 4px; }
+    .price { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+    .barcode { margin-top: 6px; }
+    .muted { font-size: 10px; color: #555; margin-top: 6px; }
+    @media print {
+      .no-print { display: none !important; }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  </head>
+  <body>
+    <div class="receipt">
+      <div class="center shop">${prevShopName ? prevShopName.replace(/</g,'&lt;') : ''}</div>
+      <div class="center name">${nameLine.replace(/</g,'&lt;')}</div>
+      <div class="center price">${somPrice.replace(/</g,'&lt;')}</div>
+      <div class="center barcode">
+        <svg id="barcode"></svg>
+      </div>
+      <div style="color: #ffffff">.</div>
+    </div>
+    <script>
+      try {
+        JsBarcode('#barcode', ${JSON.stringify(String(selectedBarcode))}, {
+          format: 'CODE128',
+          width: 2,
+          height: 60,
+          displayValue: true,
+          fontSize: 12,
+          textMargin: 2,
+          margin: 0
+        });
+      } catch (e) {}
+      window.print();
+      setTimeout(function(){ window.close(); }, 300);
+    </script>
+  </body>
+  </html>`;
+
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    }
+  };
+  
+  const closeBarcodeModal = () => {
+    setShowBarcodeModal(false);
+    setSelectedBarcode(null);
+    setSelectedBarcodeProduct(null);
+    setShopName('');
+  };
   const formatPrice = (price) =>
     price >= 0
       ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price)
@@ -235,6 +327,9 @@ const TovarlarRoyxati = () => {
   }, [exchangeRate]);
 
   const startUltraFastMonitoring = useCallback(() => {
+    if (ultraFastTimeoutRef.current) {
+      clearTimeout(ultraFastTimeoutRef.current);
+    }
     const performUltraFastCheck = async () => {
       try {
         const token = localStorage.getItem('access_token');
@@ -258,8 +353,8 @@ const TovarlarRoyxati = () => {
       } catch (error) {
         console.log('Ultra-fast exchange rate check failed:', error);
       }
-      
-      setTimeout(performUltraFastCheck, 2000);
+      // Throttle to every 5 seconds to avoid UI stutter
+      ultraFastTimeoutRef.current = setTimeout(performUltraFastCheck, 5000);
     };
     
     performUltraFastCheck();
@@ -440,6 +535,9 @@ const TovarlarRoyxati = () => {
       if (exchangeRateCheckInterval) {
         clearInterval(exchangeRateCheckInterval);
       }
+      if (ultraFastTimeoutRef.current) {
+        clearTimeout(ultraFastTimeoutRef.current);
+      }
       if (sseCleanup) {
         sseCleanup();
       }
@@ -448,6 +546,12 @@ const TovarlarRoyxati = () => {
       }
     };
   }, [startExchangeRateMonitoring, startRealTimeMonitoring, startUltraFastMonitoring, startSSEMonitoring, startWebSocketMonitoring]);
+
+  // Debounce search term to prevent frequent requests
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -479,8 +583,8 @@ const TovarlarRoyxati = () => {
     try {
       const queryParams = new URLSearchParams();
       queryParams.append('branchId', branchId.toString());
-      if (searchTerm.trim()) {
-        queryParams.append('search', searchTerm);
+      if (debouncedSearchTerm) {
+        queryParams.append('search', debouncedSearchTerm);
         queryParams.append('searchBy', 'name,barcode,model');
       }
       queryParams.append('includeZeroQuantity', 'true');
@@ -495,7 +599,7 @@ const TovarlarRoyxati = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, selectedBranchId]);
+  }, [debouncedSearchTerm, selectedBranchId]);
 
   const loadDefectiveProducts = useCallback(async () => {
     setLoading(true);
@@ -559,15 +663,22 @@ const TovarlarRoyxati = () => {
     }
   }, [loadAllProducts, loadDefectiveProducts, loadFixedProducts, selectedBranchId]);
 
+  // Refresh only the main list when search changes
+  useEffect(() => {
+    if (selectedBranchId) {
+      loadAllProducts();
+    }
+  }, [debouncedSearchTerm]);
+
   const isOmborBranch = () => {
-    const branch = branches.find((b) => b.id.toString() === selectedBranchId);
-    return branch && branch.name.toLowerCase() === 'ombor';
+    const stored = localStorage.getItem('branchId');
+    return stored && stored === selectedBranchId;
   };
 
   const openEditModal = (product) => {
     setSelectedProduct(product);
     setEditName(product.name);
-    setEditBarcode(product.barcode || '');
+    // barcode editing disabled
     setEditModel(product.model || '');
     setEditPrice(product.price ? product.price.toString() : '0');
     setEditQuantity(product.quantity ? product.quantity.toString() : '0');
@@ -580,11 +691,10 @@ const TovarlarRoyxati = () => {
 
   const openCreateModal = () => {
     setCreateName('');
-    setCreateBarcode('');
     setCreateModel('');
     setCreatePrice('');
     setCreateQuantity('');
-    setCreateStatus('IN_STORE');
+    setCreateStatus('IN_WAREHOUSE');
     setCreateBranch(selectedBranchId || '');
     setCreateCategory('');
     setCreateMarketPrice('');
@@ -604,7 +714,7 @@ const TovarlarRoyxati = () => {
     setSelectedFile(null);
     setUploadBranch(selectedBranchId || '');
     setUploadCategory('');
-    setUploadStatus('IN_STORE');
+    setUploadStatus('IN_WAREHOUSE');
     setErrors({});
     setShowUploadModal(true);
   };
@@ -613,7 +723,6 @@ const TovarlarRoyxati = () => {
     setShowEditModal(false);
     setSelectedProduct(null);
     setEditName('');
-    setEditBarcode('');
     setEditModel('');
     setEditPrice('');
     setEditQuantity('');
@@ -626,11 +735,10 @@ const TovarlarRoyxati = () => {
   const closeCreateModal = () => {
     setShowCreateModal(false);
     setCreateName('');
-    setCreateBarcode('');
     setCreateModel('');
     setCreatePrice('');
     setCreateQuantity('');
-    setCreateStatus('IN_STORE');
+    setCreateStatus('IN_WAREHOUSE');
     setCreateBranch(selectedBranchId || '');
     setCreateCategory('');
     setCreateMarketPrice('');
@@ -642,7 +750,7 @@ const TovarlarRoyxati = () => {
     setSelectedFile(null);
     setUploadBranch(selectedBranchId || '');
     setUploadCategory('');
-    setUploadStatus('IN_STORE');
+    setUploadStatus('IN_WAREHOUSE');
     setErrors({});
   };
 
@@ -663,7 +771,7 @@ const TovarlarRoyxati = () => {
   const validateFields = (isCreate = false) => {
     const newErrors = {};
     const name = isCreate ? createName : editName;
-    const barcode = isCreate ? createBarcode : editBarcode;
+    // barcode entry removed
     const model = isCreate ? createModel : editModel;
     const price = isCreate ? createPrice : editPrice;
     const quantity = isCreate ? createQuantity : editQuantity;
@@ -671,7 +779,7 @@ const TovarlarRoyxati = () => {
     const category = isCreate ? createCategory : editCategory;
 
     if (!name.trim()) newErrors.name = 'Nomi kiritilishi shart';
-    if (!barcode.trim()) newErrors.barcode = 'Shtrix kiritilishi shart';
+    // barcode not required
     if (!model.trim()) newErrors.model = 'Model kiritilishi shart';
     if (!price || isNaN(price) || Number(price) < 0)
       newErrors.price = "Narx 0 dan katta yoki teng bo'lishi kerak";
@@ -728,7 +836,7 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products/${selectedProduct.id}`,
         data: {
           name: editName,
-          barcode: editBarcode,
+          // barcode excluded
           model: editModel,
           price: Number(editPrice),
           quantity: Number(editQuantity),
@@ -768,7 +876,7 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products`,
         data: {
           name: createName,
-          barcode: createBarcode,
+          // barcode excluded
           model: createModel,
           price: Number(createPrice),
           quantity: Number(createQuantity),
@@ -906,42 +1014,38 @@ const TovarlarRoyxati = () => {
       setNotification({ message: "Hech qanday mahsulot tanlanmadi", type: 'error' });
       return;
     }
-    if (!window.confirm(`${selectedProducts.length} ta mahsulotni o'chirishni xohlaysizmi?`)) return;
+    const idsToDelete = selectedProducts
+      .map((id) => Number(id))
+      .filter((n) => Number.isFinite(n));
+    if (!window.confirm(`${idsToDelete.length} ta mahsulotni o'chirishni xohlaysizmi?`)) return;
     setSubmitting(true);
     try {
-      const numericIds = selectedProducts.map((id) => Number(id)).filter((n) => Number.isFinite(n));
-      try {
-        await axiosWithAuth({
-          method: 'delete',
-          url: `${API_URL}/products/bulk?hard=true`,
-          data: { ids: numericIds },
-          headers: { 'Content-Type': 'application/json' },
-        });
-      } catch (err) {
-        const message = err?.response?.data?.message || '';
-        if (
-          err?.response?.status === 400 &&
-          (message.includes('numeric string is expected') || message.includes('Validation failed'))
-        ) {
-          await Promise.all(
-            numericIds.map((id) =>
-              axiosWithAuth({ method: 'delete', url: `${API_URL}/products/${id}?hard=true` })
-            )
-          );
-        } else {
-          throw err;
-        }
-      }
-      setNotification({ message: "Tanlangan mahsulotlar o'chirildi", type: 'success' });
-      setSelectedProducts([]);
-      loadAllProducts();
-      loadDefectiveProducts();
-      loadFixedProducts();
-    } catch (err) {
-      setNotification({
-        message: err.response?.data?.message || "Mahsulotlarni o'chirishda xatolik",
-        type: 'error',
+      // Try bulk delete in a single request
+      await axiosWithAuth({
+        method: 'delete',
+        url: `${API_URL}/products/bulk?hard=true`,
+        data: { ids: idsToDelete },
+        headers: { 'Content-Type': 'application/json' },
       });
+      setNotification({ message: `Yakunlandi. O'chirildi: ${idsToDelete.length}`, type: 'success' });
+      setSelectedProducts((prev) => prev.filter((id) => !idsToDelete.includes(Number(id))));
+      await loadAllProducts();
+      await loadDefectiveProducts();
+      await loadFixedProducts();
+    } catch (err) {
+      // Fallback: API may not accept bulk; attempt per-id deletion to avoid failure
+      try {
+        await Promise.all(
+          idsToDelete.map((id) => axiosWithAuth({ method: 'delete', url: `${API_URL}/products/${id}?hard=true` }))
+        );
+        setNotification({ message: `Yakunlandi. O'chirildi: ${idsToDelete.length}`, type: 'success' });
+        setSelectedProducts((prev) => prev.filter((id) => !idsToDelete.includes(Number(id))));
+        await loadAllProducts();
+        await loadDefectiveProducts();
+        await loadFixedProducts();
+      } catch (e2) {
+        setNotification({ message: e2.response?.data?.message || "Mahsulotlarni o'chirishda xatolik", type: 'error' });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -951,18 +1055,14 @@ const TovarlarRoyxati = () => {
     setSelectedProducts((prev) => {
       if (prev.includes(productId)) {
         return prev.filter((id) => id !== productId);
-      } else if (prev.length < 50) {
-        return [...prev, productId];
-      } else {
-        setNotification({ message: "50 tadan ortiq mahsulot tanlab bo'lmaydi", type: 'error' });
-        return prev;
       }
+      return [...prev, productId];
     });
   };
 
   const handleSelect50 = () => {
     const availableProducts = products.filter((product) => !selectedProducts.includes(product.id));
-    const productsToSelect = availableProducts.slice(0, 50 - selectedProducts.length).map((product) => product.id);
+    const productsToSelect = availableProducts.map((product) => product.id);
     setSelectedProducts((prev) => [...prev, ...productsToSelect]);
     if (productsToSelect.length > 0) {
       setNotification({ message: `${productsToSelect.length} ta mahsulot tanlandi`, type: 'success' });
@@ -981,10 +1081,10 @@ const TovarlarRoyxati = () => {
 
   const handleSelectAll = (type) => {
     if (type === 'all') {
-      if (selectedProducts.length === products.length || selectedProducts.length >= 50) {
+      if (selectedProducts.length === products.length) {
         setSelectedProducts([]);
       } else {
-        const newSelection = products.slice(0, 50).map((product) => product.id);
+        const newSelection = products.map((product) => product.id);
         setSelectedProducts(newSelection);
         setNotification({ message: `${newSelection.length} ta mahsulot tanlandi`, type: 'success' });
       }
@@ -1061,76 +1161,76 @@ const TovarlarRoyxati = () => {
 
   const renderTable = (data, selected, onSelect, onSelectAll, type) => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden w-full">
-      <div className="overflow-x-auto">
+      <div>
         <table className="w-full">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
               {type === 'all' && (
-                <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Tanla</th>
+                <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Tanla</th>
               )}
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">ID</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Nomi</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Shtrix</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Model</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Kategoriya</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Narx (USD)</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Narx (сом)</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Sotish narxi (USD)</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Sotish narxi (сом)</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Miqdor</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Nuqsonli</th>
-              <th className="px-3 py-2 text-left text-base font-semibold text-gray-600 uppercase tracking-wider">Amallar</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Nomi</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Shtrix</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Model</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Narx (USD)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Narx (сом)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Sotish narxi (USD)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Sotish narxi (сом)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Miqdor</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Amallar</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {data.map((product, index) => (
               <tr key={product.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors duration-150`}>
                 {type === 'all' && (
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-1 whitespace-nowrap">
                     <input
                       type="checkbox"
                       checked={selected.includes(product.id)}
                       onChange={() => onSelect(product.id)}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      disabled={!isOmborBranch() || selectedProducts.length >= 50 && !selected.includes(product.id)}
+                      disabled={!isOmborBranch()}
                     />
                   </td>
                 )}
-                <td className="px-3 py-2 whitespace-nowrap text-base font-semibold text-gray-900">#{product.id}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base text-gray-900 max-w-xs truncate" title={product.name}>{product.name}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base text-gray-600">{product.barcode || 'N/A'}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base text-gray-600">{product.model || 'N/A'}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base text-gray-600">{product.category?.name || 'Noma\'lum'}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base font-semibold text-gray-900">{formatPrice(product.price)}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base font-semibold text-gray-900">{formatPriceSom(product.price)}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base font-semibold text-gray-900">{formatPrice(product.marketPrice)}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base font-semibold text-gray-900">{formatMarketPriceSom(product.marketPrice)}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base text-gray-900">{formatQuantity(product.quantity)}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base text-gray-600">{formatQuantity(product.defectiveQuantity)}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-base font-medium">
-                  <div className="flex flex-col space-y-1">
+                <td className="px-2 py-1 whitespace-normal break-words text-sm text-gray-900 max-w-[12rem]" title={product.name}>{product.name}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-sm text-gray-600">{product.barcode || 'N/A'}</td>
+                <td className="px-2 py-1 whitespace-normal break-words text-sm text-gray-600 max-w-[10rem]">{product.model || 'N/A'}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-sm font-semibold text-gray-900">{formatPrice(product.price)}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-sm font-semibold text-gray-900">{formatPriceSom(product.price)}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-sm font-semibold text-gray-900">{formatPrice(product.marketPrice)}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-sm font-semibold text-gray-900">{formatMarketPriceSom(product.marketPrice)}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-sm text-gray-900">{formatQuantity(product.quantity)}</td>
+                <td className="px-2 py-1 whitespace-nowrap text-sm font-medium">
+                  <div className="flex space-y-0.5 max-h-24 overflow-y-auto pr-1">
                     {isOmborBranch() && (
                       <>
                         <button
                           onClick={() => openEditModal(product)}
                           disabled={submitting}
-                          className="inline-flex items-center px-1.5 py-0.5 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
+                          title="Таҳрирлаш"
                         >
-                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                          Tahrir
+                          <Edit3 size={16} />
                         </button>
                         <button
                           onClick={() => handleDelete(product)}
                           disabled={submitting}
-                          className="inline-flex items-center px-1.5 py-0.5 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+                          title="Ўчириш"
                         >
-                          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                          O'chirish
+                          <Trash2 size={16} />
                         </button>
+                        {product.barcode && (
+                          <button
+                            onClick={() => handlePrintBarcode(product)}
+                            disabled={submitting}
+                            className="text-green-600 hover:text-green-900 p-2 rounded-lg hover:bg-green-50 transition-all duration-200"
+                            title="Баркод"
+                          >
+                            <ScanLine size={16} />
+                          </button>
+                        )}
                       </>
                     )}
                     {type === 'defective' && product.defectiveQuantity > 0 && (
@@ -1228,33 +1328,7 @@ const TovarlarRoyxati = () => {
               </button>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-sm text-gray-600">Valyuta kursi:</div>
-            <div className="text-lg font-semibold text-blue-600 flex items-center gap-2">
-              1 USD = {exchangeRate.toLocaleString('uz-UZ')} so'm
-            </div>                
-            <button
-              onClick={fetchExchangeRate}
-              disabled={exchangeRateLoading}
-              className={`mt-2 px-3 py-1 text-xs rounded-md transition-colors duration-200 flex items-center gap-1 ${
-                exchangeRateLoading 
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                  : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
-              }`}
-              title="Kursni darhol yangilash"
-            >
-              {exchangeRateLoading ? (
-                <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              ) : (
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              )}
-              {exchangeRateLoading ? 'Yuklanmoqda...' : 'Darhol yangilash'}
-            </button>
-          </div>
+          
         </div>
       </div>
 
@@ -1330,15 +1404,15 @@ const TovarlarRoyxati = () => {
                     <div className="flex gap-3">
                       <button
                         onClick={handleSelect50}
-                        disabled={submitting || selectedProducts.length >= 50 || !isOmborBranch()}
+                        disabled={submitting || selectedProducts.length >= 100 || !isOmborBranch()}
                         className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                       >
                         <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        50 ta tanlash
+                        Barchasini tanlash
                       </button>
-                      {selectedProducts.length === 50 && (
+                      {selectedProducts.length > 0 && (
                         <button
                           onClick={handleBulkDelete}
                           disabled={submitting}
@@ -1418,18 +1492,7 @@ const TovarlarRoyxati = () => {
                   />
                   {errors.name && <span className="text-red-500 text-xs mt-1">{errors.name}</span>}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Shtrix kod</label>
-                  <input
-                    value={editBarcode}
-                    onChange={(e) => setEditBarcode(e.target.value)}
-                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
-                      errors.barcode ? 'border-red-500 ring-red-200' : 'border-gray-300'
-                    }`}
-                    placeholder="Shtrix kod"
-                  />
-                  {errors.barcode && <span className="text-red-500 text-xs mt-1">{errors.barcode}</span>}
-                </div>
+                {/* Shtrix kod removed from edit modal */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
                   <input
@@ -1588,18 +1651,7 @@ const TovarlarRoyxati = () => {
                   />
                   {errors.name && <span className="text-red-500 text-xs mt-1">{errors.name}</span>}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Shtrix kod</label>
-                  <input
-                    value={createBarcode}
-                    onChange={(e) => setCreateBarcode(e.target.value)}
-                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
-                      errors.barcode ? 'border-red-500 ring-red-200' : 'border-gray-300'
-                    }`}
-                    placeholder="Shtrix kod"
-                  />
-                  {errors.barcode && <span className="text-red-500 text-xs mt-1">{errors.barcode}</span>}
-                </div>
+                {/* Shtrix kod removed from create modal */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
                   <input
@@ -2027,8 +2079,100 @@ const TovarlarRoyxati = () => {
           </div>
         </div>
       )}
+      {showBarcodeModal && selectedBarcode && (
+  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+      <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-2xl font-bold text-gray-900">Barkod</h3>
+          <button
+            onClick={closeBarcodeModal}
+            className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="p-6">
+        {/* Print styles for 3x4 label (inches). On larger paper it prints centered small label. */}
+        <style>
+          {`@media print {
+              @page { size: 3in 4in; margin: 0; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .no-print { display: none !important; }
+              .print-label { padding: 0.1in; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; margin: 0 auto; }
+              .print-row { margin: 0; padding: 0; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+              .row-shop { font-size: 12px; font-weight: 700; text-align: center; }
+              .row-name { font-size: 11px; font-weight: 600; text-align: center; }
+              .row-price { font-size: 12px; font-weight: 700; margin-top: 2px; text-align: center; }
+            }`}
+        </style>
+        <div className="no-print mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Do'kon nomi</label>
+          <input
+            value={shopName}
+            onChange={(e) => setShopName(e.target.value)}
+            placeholder="Masalan: Aminov Store"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+        <div className="print-label mx-auto border border-gray-200 rounded p-2" style={{ width: '3in', height: '4in', padding: '0.1in' }}>
+          {/* Row 1: Shop name */}
+          <p className="print-row row-shop">{shopName || ''}</p>
+          {/* Row 2: Product name + model */}
+          {selectedBarcodeProduct && (
+            <p className="print-row row-name" title={`${selectedBarcodeProduct.name}${selectedBarcodeProduct.model ? ' ' + selectedBarcodeProduct.model : ''}`}>
+              {selectedBarcodeProduct.name}{selectedBarcodeProduct.model ? ` ${selectedBarcodeProduct.model}` : ''}
+            </p>
+          )}
+          {/* Row 3: Price in so'm */}
+          {selectedBarcodeProduct && (
+            <p className="print-row row-price">
+              {formatMarketPriceSom(selectedBarcodeProduct.marketPrice || selectedBarcodeProduct.price)}
+            </p>
+          )}
+          {/* Row 4: Barcode */}
+          <div className="mt-1 flex justify-center">
+            <Barcode
+              value={selectedBarcode}
+              format="CODE128"
+              width={2}
+              height={60}
+              displayValue={true}
+              fontSize={10}
+              textMargin={2}
+              margin={0}
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-4 mt-8 no-print">
+          
+          <button
+            onClick={handlePrintReceipt}
+            disabled={submitting}
+            className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-lg font-medium rounded-lg text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l2-2 2 2m0 0l2-2 2 2M7 10h10M5 6h14M7 18h10" />
+            </svg>
+            Chekni chiqarish
+          </button>
+          <button
+            onClick={closeBarcodeModal}
+            disabled={submitting}
+            className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-lg font-medium rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            Bekor qilish
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 };
-
 export default TovarlarRoyxati;

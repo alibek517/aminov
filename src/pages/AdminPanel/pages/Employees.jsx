@@ -170,7 +170,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.WAREHOUSE:
         return "Омборчи";
       case UserRole.AUDITOR:
-        return "Достафка";
+        return "Доставкачи";
         case UserRole.MARKETING:
         return "Сотувчи";
       default:
@@ -187,7 +187,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.WAREHOUSE:
         return "Омбор";
       case UserRole.AUDITOR:
-        return "Достафка";
+        return "Етказиб бериш";
       case UserRole.MARKETING:
         return "Сотувчи";
 
@@ -439,7 +439,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.WAREHOUSE:
         return "Омборчи";
       case UserRole.AUDITOR:
-        return "Аудитор";
+        return "Доставкачи";
  case UserRole.MARKETING:
         return "Сотувчи";
       default:

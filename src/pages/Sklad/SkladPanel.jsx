@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { TrendingDown, BarChart3, Box, Settings, LogOut, Bell, Users, Menu, X } from 'lucide-react';
+import { TrendingDown, BarChart3, Box, Settings, LogOut, Bell, Users, Menu, X, TrendingUp } from 'lucide-react';
 import Chiqim from './pages/Chiqim';
+import Tovarlar from './pages/Tovarlar';
+
 import TovarlarRoyxati from './pages/TovarlarRoyxati';
 import Hisobotlar from './pages/Hisobotlar';
 import Customers from './pages/Customers';
@@ -49,16 +51,20 @@ function SkladPanel() {
   const [branches, setBranches] = useState([{ id: '', name: 'Барча филиаллар' }]);
   const [error, setError] = useState(null);
   const [userName, setUserName] = useState('Test User');
+  const [exchangeRate, setExchangeRate] = useState(0);
+  const [exchangeRateLoading, setExchangeRateLoading] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
 
   const navigation = [
-    { id: 'chiqim', name: 'Чиким', icon: TrendingDown, path: '/sklad/chiqim' },
+    { id: 'chiqim', name: 'Чиким', icon: TrendingUp, path: '/sklad/chiqim' },
+    { id: 'tovarlar', name: 'Товарлар', icon: TrendingDown, path: '/sklad/tovarlar' },   // 🔥 yangi qo‘shildi
     { id: 'tovarlarroyxati', name: "Товарлар Руйхати", icon: Box, path: '/sklad/tovarlarroyxati' },
     { id: 'hisobotlar', name: 'Хисоботлар', icon: BarChart3, path: '/sklad/hisobotlar' },
     { id: 'customers', name: 'Кредит', icon: Users, path: '/sklad/customers' },
   ];
+
 
   useEffect(() => {
     const currentPath = location.pathname;
@@ -103,11 +109,25 @@ function SkladPanel() {
 
     fetchBranches();
 
+    // fetch latest immediately
+    fetchExchangeRate();
+
+    // no localStorage syncing for exchange rate; rely on API fetches
+
     const timer = setInterval(() => {
       setCurrentTime(new Date().toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' }));
     }, 1000);
 
-    return () => clearInterval(timer);
+    const onVisibility = () => {
+      if (!document.hidden) fetchExchangeRate();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(timer);
+      // nothing else to cleanup
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [selectedBranchId, token, location.pathname, navigate]);
 
   useEffect(() => {
@@ -130,6 +150,48 @@ function SkladPanel() {
     setShowLogoutModal(false);
   };
 
+  const fetchExchangeRate = async () => {
+    try {
+      setExchangeRateLoading(true);
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        // Try current-rate endpoint first
+        const resp = await fetch('https://suddocs.uz/currency-exchange-rates/current-rate?fromCurrency=USD&toCurrency=UZS', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.rate) {
+            setExchangeRate(Number(data.rate));
+          } else {
+            throw new Error('No rate in current-rate response');
+          }
+        } else {
+          throw new Error('current-rate failed');
+        }
+      }
+    } catch (e) {
+      // Fallback to list endpoint
+      try {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+          const listResp = await fetch('https://suddocs.uz/currency-exchange-rates', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (listResp.ok) {
+            const arr = await listResp.json();
+            const list = Array.isArray(arr) ? arr : [];
+            const active = list.find(r => r.isActive && r.fromCurrency === 'USD' && r.toCurrency === 'UZS');
+            const rate = Number(active?.rate ?? list[0]?.rate) || 0;
+            if (rate > 0) setExchangeRate(rate);
+          }
+        }
+      } catch {}
+    } finally {
+      setExchangeRateLoading(false);
+    }
+  };
+
   const handleBranchChange = (e) => {
     setSelectedBranchId(e.target.value);
     // No navigation; content re-renders with new selectedBranchId
@@ -144,7 +206,9 @@ function SkladPanel() {
   const renderContent = () => {
     switch (activeTab) {
       case 'chiqim':
-        return <Chiqim selectedBranchId={selectedBranchId} />;
+        return <Chiqim selectedBranchId={selectedBranchId} exchangeRate={exchangeRate} />;
+      case 'tovarlar':
+        return <Tovarlar selectedBranchId={selectedBranchId} />;   // 🔥 yangi qo‘shildi
       case 'tovarlarroyxati':
         return <TovarlarRoyxati selectedBranchId={selectedBranchId} />;
       case 'hisobotlar':
@@ -155,6 +219,7 @@ function SkladPanel() {
         return <Chiqim selectedBranchId={selectedBranchId} />;
     }
   };
+
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userNamee = user.fullName || user.name || user.username || 'User';
@@ -264,6 +329,13 @@ function SkladPanel() {
               </div>
 
               <div className="flex items-center space-x-4 w-full justify-end lg:w-auto">
+                <div className="text-right mr-4">
+                  <div className="text-sm text-gray-600">Valyuta kursi:</div>
+                  <div className="text-lg font-semibold text-blue-600 flex items-center gap-2 justify-end">
+                    1 USD = {exchangeRate.toLocaleString('uz-UZ')} so'm
+                  </div>
+              
+                </div>
                 <div className="flex items-center">
                   <div
                     style={{ marginBottom: "5px" }}

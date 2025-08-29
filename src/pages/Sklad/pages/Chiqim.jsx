@@ -3,10 +3,10 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import Receipt from '../../KassaUser/Receipt/Receipt';
 
-const Chiqim = () => {
+const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExchangeRate }) => {
   const [products, setProducts] = useState([]);
   const [branches, setBranches] = useState([]);
-  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [selectedBranchId, setSelectedBranchId] = useState(propSelectedBranchId || '');
   const [selectedItems, setSelectedItems] = useState([]);
   const [toBranch, setToBranch] = useState('');
   const [operationType, setOperationType] = useState('SALE');
@@ -30,9 +30,11 @@ const Chiqim = () => {
   const [pendingTransfers, setPendingTransfers] = useState([]);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
-  const [exchangeRate, setExchangeRate] = useState(12500);
+  const [exchangeRate, setExchangeRate] = useState(Number(propExchangeRate) || 12500);
   const [showCartModal, setShowCartModal] = useState(false);
   const [isOmbor, setIsOmbor] = useState(false);
+  const [receiptPrinted, setReceiptPrinted] = useState(false);
+  const [pendingTransaction, setPendingTransaction] = useState(null);
   const printWindowRef = useRef(null);
 
   const navigate = useNavigate();
@@ -40,19 +42,32 @@ const Chiqim = () => {
 
   const formatCurrency = (amount) =>
     amount != null && Number.isFinite(Number(amount))
-      ? new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: 'USD',
-          minimumFractionDigits: 2,
-        }).format(Number(amount))
-      : '$0.00';
+      ? new Intl.NumberFormat('uz-UZ').format(Number(amount)) + " so'm"
+      : "0 so'm";
 
   const formatCurrencySom = (amount) => {
     if (amount != null && Number.isFinite(Number(amount))) {
-      const amountInSom = Number(amount) * exchangeRate;
-      return new Intl.NumberFormat('uz-UZ').format(amountInSom) + " so'm";
+      return new Intl.NumberFormat('uz-UZ').format(Number(amount)) + " so'm";
     }
     return "0 so'm";
+  };
+
+  // Helpers for formatted so'm inputs (1 so'm precision)
+  const formatSomInt = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '';
+    return new Intl.NumberFormat('uz-UZ').format(Math.max(0, Math.round(num)));
+  };
+  const parseSomInt = (raw) => {
+    const cleaned = String(raw || '').replace(/[^0-9]/g, '');
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? Math.max(0, Math.round(num)) : 0;
+  };
+
+  const onPriceSomChange = (index, e) => {
+    const somInt = parseSomInt(e.target.value);
+    const usd = somInt / Math.max(1, Number(exchangeRate));
+    updateItem(index, 'marketPrice', usd.toString());
   };
 
   const fetchExchangeRate = async () => {
@@ -62,11 +77,8 @@ const Chiqim = () => {
         const response = await axios.get(`${API_URL}/currency-exchange-rates`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-          const firstExchangeRate = response.data[0];
-          if (firstExchangeRate && firstExchangeRate.rate) {
-            setExchangeRate(firstExchangeRate.rate);
-          }
+        if (response.data?.length > 0 && response.data[0]?.rate) {
+          setExchangeRate(Number(response.data[0].rate));
         } else {
           console.warn('No exchange rates found in response');
         }
@@ -109,12 +121,11 @@ const Chiqim = () => {
     setSelectedBranchId(branchId);
     localStorage.setItem('branchId', branchId);
     setProducts([]);
-    setSelectedItems([]); // Clear cart on branch change
+    setSelectedItems([]);
     setNotification(null);
-    const selectedBranch = branches.find((b) => b.id === Number(branchId));
-    const isOmborBranch = selectedBranch?.name.toLowerCase() === 'ombor';
+    const isOmborBranch = localStorage.getItem('branchId') === branchId;
     setIsOmbor(isOmborBranch);
-    setOperationType(isOmborBranch ? 'SALE' : 'TRANSFER'); // Default to SALE for Ombor, TRANSFER for others
+    setOperationType(isOmborBranch ? 'SALE' : 'TRANSFER');
     if (branchId) {
       setTimeout(() => {
         loadData();
@@ -124,36 +135,31 @@ const Chiqim = () => {
   };
 
   useEffect(() => {
-    const fetchBranches = async () => {
+    const fetchBranchesAndSetBranch = async () => {
       try {
-        const [branchesRes] = await Promise.all([
-          axiosWithAuth({ method: 'get', url: `${API_URL}/branches` }),
-        ]);
+        const branchesRes = await axiosWithAuth({ method: 'get', url: `${API_URL}/branches` });
         const branchesData = Array.isArray(branchesRes.data) ? branchesRes.data : branchesRes.data.branches || [];
         setBranches(branchesData);
-        
-        // Automatically select "Ombor" branch if it exists
-        const omborBranch = branchesData.find((b) => b.name?.toLowerCase() === 'ombor');
-        if (omborBranch) {
-          setSelectedBranchId(omborBranch.id.toString());
-          localStorage.setItem('branchId', omborBranch.id.toString());
+        const storedBranchId = localStorage.getItem('branchId');
+        if (storedBranchId && branchesData.some((b) => b.id.toString() === storedBranchId)) {
+          setSelectedBranchId(storedBranchId);
           setIsOmbor(true);
           setOperationType('SALE');
+        } else if (branchesData.length > 0) {
+          const firstId = branchesData[0].id.toString();
+          setSelectedBranchId(firstId);
+          localStorage.setItem('branchId', firstId);
+          setIsOmbor(storedBranchId === firstId);
+          setOperationType(storedBranchId === firstId ? 'SALE' : 'TRANSFER');
         } else {
-          setNotification({ message: '"Ombor" filiali topilmadi', type: 'warning' });
-          if (branchesData.length > 0) {
-            setSelectedBranchId(branchesData[0].id.toString());
-            localStorage.setItem('branchId', branchesData[0].id.toString());
-            setIsOmbor(false);
-            setOperationType('TRANSFER');
-          }
+          setNotification({ message: 'Filiallar topilmadi', type: 'warning' });
         }
       } catch (err) {
         setNotification({ message: err.message || 'Filiallarni yuklashda xatolik', type: 'error' });
         console.error('Fetch branches error:', err);
       }
     };
-    fetchBranches();
+    fetchBranchesAndSetBranch();
     fetchExchangeRate();
   }, []);
 
@@ -198,8 +204,10 @@ const Chiqim = () => {
             product.product_title ??
             product.item_title ??
             `Product ${product.id}`,
+          // keep backend USD values separately and compute som on render
           price: Number(product.price) || 0,
           quantity: Number(product.quantity) || 0,
+          marketPrice: Number(product.marketPrice || product.price) || 0,
         })),
       );
     } catch (err) {
@@ -244,13 +252,21 @@ const Chiqim = () => {
     if (!selectedBranchId) return;
 
     try {
-      const response = await axiosWithAuth({
-        method: 'get',
-        url: `${API_URL}/transactions?type=SALE&branchId=${selectedBranchId}&limit=50`,
-      });
+      const [salesResponse, transfersResponse] = await Promise.all([
+        axiosWithAuth({
+          method: 'get',
+          url: `${API_URL}/transactions?type=SALE&branchId=${selectedBranchId}&limit=50`,
+        }),
+        axiosWithAuth({
+          method: 'get',
+          url: `${API_URL}/transactions?type=TRANSFER&branchId=${selectedBranchId}&limit=50`,
+        }).catch(() => ({ data: { transactions: [] } })),
+      ]);
 
-      const transfers = response.data.transactions || [];
-      setTransferHistory(transfers);
+      const sales = salesResponse.data.transactions || [];
+      const transfers = transfersResponse.data.transactions || [];
+      const combined = [...sales, ...transfers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setTransferHistory(combined);
     } catch (error) {
       console.error('Error loading transfer history:', error);
       setNotification({ message: 'Transfer tarixini yuklashda xatolik', type: 'error' });
@@ -310,14 +326,15 @@ const Chiqim = () => {
   const updateItem = (index, field, value) => {
     setSelectedItems((prev) => {
       const newItems = prev.map((item, i) =>
-        i === index ? { ...item, [field]: value } : item,
+        i === index
+          ? {
+              ...item,
+              [field]: field === 'marketPrice' ? (Number(value) / Math.max(1, Number(exchangeRate))).toString() : value,
+            }
+          : item,
       );
       return newItems;
     });
-  };
-
-  const removeItem = (index) => {
-    setSelectedItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const clearCart = () => {
@@ -334,6 +351,8 @@ const Chiqim = () => {
     setInterestRate('');
     setToBranch('');
     setErrors({});
+    setReceiptPrinted(false);
+    setPendingTransaction(null);
   };
 
   const validateFields = () => {
@@ -426,7 +445,7 @@ const Chiqim = () => {
     try {
       const userId = Number(localStorage.getItem('userId'));
       const baseTotal = selectedItems.reduce(
-        (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice),
+        (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice) * Number(exchangeRate),
         0,
       );
       const m = Number(months);
@@ -436,9 +455,8 @@ const Chiqim = () => {
       const remaining = paid < finalTotal ? finalTotal - paid : 0;
       const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
 
-      let response;
       if (operationType === 'TRANSFER') {
-        response = await axiosWithAuth({
+        const response = await axiosWithAuth({
           method: 'post',
           url: `${API_URL}/transactions/transfer`,
           data: {
@@ -448,7 +466,8 @@ const Chiqim = () => {
             items: selectedItems.map((item) => ({
               productId: item.id,
               quantity: Number(item.quantity),
-              price: Number(item.marketPrice),
+              // send so'm to backend
+              price: Number(item.marketPrice) * Number(exchangeRate),
             })),
           },
         });
@@ -462,54 +481,14 @@ const Chiqim = () => {
             .join(', ')}`,
           type: 'success',
         });
+
+        clearCart();
+        await loadData();
+        await loadTransferHistory();
       } else {
-        const payload = {
-          type: 'SALE',
-          status: 'PENDING',
-          total: baseTotal,
-          finalTotal,
-          amountPaid: paid,
-          userId,
-          remainingBalance: remaining,
-          paymentType: paymentType === 'INSTALLMENT' ? 'CREDIT' : paymentType,
-          deliveryMethod: paymentType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
-          deliveryAddress:
-            (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' || paymentType === 'DELIVERY')
-              ? downPayment || undefined
-              : undefined,
-          customer: {
-            fullName: `${firstName} ${lastName}`.trim(),
-            phone: phone.replace(/\s+/g, ''),
-            passportSeries: passportSeries || undefined,
-            jshshir: jshshir || undefined,
-            address: downPayment || undefined,
-          },
-          fromBranchId: Number(selectedBranchId),
-          soldByUserId: Number(userId),
-          items: selectedItems.map((item) => ({
-            productId: item.id,
-            productName: item.name,
-            quantity: Number(item.quantity),
-            price: Number(item.marketPrice),
-            total: Number(item.quantity) * Number(item.marketPrice),
-            ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT'
-              ? {
-                  creditMonth: m,
-                  creditPercent: interestRateValue,
-                  monthlyPayment,
-                }
-              : {}),
-          })),
-        };
-
-        response = await axiosWithAuth({
-          method: 'post',
-          url: `${API_URL}/transactions`,
-          data: payload,
-        });
-
-        setReceiptData({
-          ...response.data,
+        const receiptDataForPrint = {
+          id: Date.now(),
+          createdAt: new Date().toISOString(),
           customer: {
             fullName: `${firstName} ${lastName}`.trim(),
             firstName: firstName.trim(),
@@ -530,17 +509,21 @@ const Chiqim = () => {
           paid: paid,
           remaining: remaining,
           monthlyPayment: monthlyPayment,
-          totalInSom: baseTotal * exchangeRate,
-          finalTotalInSom: finalTotal * exchangeRate,
+          totalInSom: baseTotal,
+          finalTotalInSom: finalTotal,
           exchangeRate,
-        });
+        };
 
-        setNotification({ message: 'Sotish muvaffaqiyatli amalga oshirildi', type: 'success' });
+        setPendingTransaction(null);
+        setReceiptData(receiptDataForPrint);
+        setReceiptPrinted(false);
         setShowReceiptModal(true);
+        setShowCartModal(false); // Savat modalini yopish
+        setNotification({
+          message: 'Chekni chop etish majburiy! Chekni chop etgandan so\'ng sotish yuboriladi.',
+          type: 'warning',
+        });
       }
-
-      clearCart();
-      await loadData();
     } catch (err) {
       let message = operationType === 'SALE' ? 'Sotishda xatolik' : 'Transfer qilishda xatolik';
       if (err.response?.data?.message) {
@@ -559,7 +542,7 @@ const Chiqim = () => {
     if (!receiptData) return null;
     return {
       id: receiptData.id || 'N/A',
-      createdAt: receiptData.date || new Date(),
+      createdAt: receiptData.createdAt || new Date(),
       customer: {
         fullName: receiptData.customer?.fullName || "Noma'lum",
         firstName: receiptData.customer?.firstName || '',
@@ -572,8 +555,8 @@ const Chiqim = () => {
       paymentType: receiptData.paymentType || "Noma'lum",
       total: receiptData.total || 0,
       finalTotal: receiptData.finalTotal || receiptData.total || 0,
-      totalInSom: receiptData.totalInSom || 0,
-      finalTotalInSom: receiptData.finalTotalInSom || 0,
+      totalInSom: receiptData.total,
+      finalTotalInSom: receiptData.finalTotal,
       exchangeRate: receiptData.exchangeRate || 12500,
       paid: receiptData.paid || 0,
       remaining: (receiptData.finalTotal || receiptData.total || 0) - (receiptData.paid || 0),
@@ -583,8 +566,8 @@ const Chiqim = () => {
       items: receiptData.items.map((item) => ({
         name: item.name,
         quantity: Number(item.quantity),
-        price: Number(item.price),
-        priceInSom: Number(item.price) * (receiptData.exchangeRate || 12500),
+        price: Number(item.marketPrice),
+        priceInSom: Number(item.marketPrice),
       })),
       seller: {
         firstName: currentUser?.firstName || "Noma'lum",
@@ -593,17 +576,9 @@ const Chiqim = () => {
     };
   };
 
-  const simplePrintReceipt = (transaction) => {
+  const handleReceiptPrint = async () => {
+    const transaction = buildTransactionFromReceiptData();
     if (!transaction) return;
-
-    const formatAmount = (amount) => {
-      const num = Number(amount) || 0;
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 2,
-      }).format(num);
-    };
 
     const formatDateLocal = (dateString) => {
       try {
@@ -622,105 +597,35 @@ const Chiqim = () => {
 
     const getPaymentTypeText = (paymentType) => {
       switch (paymentType) {
-        case 'CASH':
-          return 'Нақд';
-        case 'CARD':
-          return 'Карта';
-        case 'CREDIT':
-          return 'Кредит';
-        case 'INSTALLMENT':
-          return 'Бўлиб тўлаш';
-        default:
-          return "Noma'lum";
+        case 'CASH': return 'Нақд';
+        case 'CARD': return 'Карта';
+        case 'CREDIT': return 'Кредит';
+        case 'INSTALLMENT': return 'Бўлиб тўлаш';
+        default: return "Noma'lum";
       }
     };
 
     const html = `
-    <!DOCTYPE html>
+      <!DOCTYPE html>
       <html>
         <head>
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <title>Aminov Savdo Tizimi</title>
           <style>
-            @page { 
-              margin: 0; 
-              size: 80mm auto; 
-            }
-            body { 
-              font-family: 'Arial', sans-serif; 
-              margin: 0; 
-              padding: 2%; 
-              width: 96%; 
-              font-size: 12px; 
-              line-height: 1.2;
-              color: #000;
-            }
-            .header { 
-              text-align: center; 
-              margin-bottom: 5%; 
-              border-bottom: 1px dashed #000;
-              padding-bottom: 3%;
-            }
-            .header h2 { 
-              margin: 0; 
-              font-size: 16px; 
-              font-weight: bold;
-              color: #000;
-            }
-            .header p { 
-              margin: 2% 0 0 0; 
-              font-size: 11px;
-              color: #000;
-            }
-            .info { 
-              margin-bottom: 4%; 
-            }
-            .products { 
-              margin: 4% 0; 
-              border-top: 1px dashed #000;
-              padding-top: 3%;
-            }
-            .products h4 { 
-              margin: 0 0 3% 0; 
-              font-size: 12px; 
-              font-weight: bold;
-              text-align: center;
-              color: #000;
-            }
-            .product-row { 
-              display: flex; 
-              justify-content: space-between; 
-              margin: 1% 0; 
-              font-size: 10px;
-              border-bottom: 1px dotted #ccc;
-              padding-bottom: 1%;
-              color: #000;
-            }
-            .total { 
-              border-top: 1px dashed #000; 
-              padding-top: 3%; 
-              margin-top: 4%; 
-            }
-            .total-row { 
-              display: flex; 
-              justify-content: space-between; 
-              margin: 2% 0; 
-              font-weight: bold; 
-              font-size: 12px;
-              color: #000;
-            }
-            .footer { 
-              text-align: center; 
-              margin-top: 5%; 
-              padding-top: 3%;
-              border-top: 1px dashed #000;
-              font-size: 10px;
-              color: #000;
-            }
-            @media print { 
-              body { margin: 0; padding: 1%; width: 98%; color: #000; }
-            }
+            @page { margin: 0; size: 80mm auto; }
+            body { font-family: 'Arial', sans-serif; margin: 0; padding: 2%; width: 96%; font-size: 12px; line-height: 1.2; color: #000; }
+            .header { text-align: center; margin-bottom: 5%; border-bottom: 1px dashed #000; padding-bottom: 3%; }
+            .header h2 { margin: 0; font-size: 16px; font-weight: bold; color: #000; }
+            .header p { margin: 2% 0 0 0; font-size: 11px; color: #000; }
+            .info { margin-bottom: 4%; }
+            .products { margin: 4% 0; border-top: 1px dashed #000; padding-top: 3%; }
+            .products h4 { margin: 0 0 3% 0; font-size: 12px; font-weight: bold; text-align: center; color: #000; }
+            .product-row { display: flex; justify-content: space-between; margin: 1% 0; font-size: 10px; border-bottom: 1px dotted #ccc; padding-bottom: 1%; color: #000; }
+            .total { border-top: 1px dashed #000; padding-top: 3%; margin-top: 4%; }
+            .total-row { display: flex; justify-content: space-between; margin: 2% 0; font-weight: bold; font-size: 12px; color: #000; }
+            .footer { text-align: center; margin-top: 5%; padding-top: 3%; border-top: 1px dashed #000; font-size: 10px; color: #000; }
+            @media print { body { margin: 0; padding: 1%; width: 98%; color: #000; } }
             @media print and (max-width: 56mm) {
               body { font-size: 10px; padding: 1%; width: 98%; color: #000; }
               .header h2 { font-size: 14px; color: #000; }
@@ -730,10 +635,8 @@ const Chiqim = () => {
         </head>
         <body>
           <div class="header">
-            <div>
-              <h2>Aminov Savdo Tizimi</h2>
-              <p class="total-row">${formatDateLocal(new Date())}</p>
-            </div>
+            <h2>Aminov Savdo Tizimi</h2>
+            <p class="total-row">${formatDateLocal(new Date())}</p>
           </div>
           <div class="info">
             <div class="total-row">
@@ -748,14 +651,12 @@ const Chiqim = () => {
             <div class="total-row">
               <span>Passport:</span>
               <span>${transaction.customer.passportSeries}</span>
-            </div>
-            ` : ''}
+            </div>` : ''}
             ${transaction.customer.jshshir ? `
             <div class="total-row">
               <span>JSHSHIR:</span>
               <span>${transaction.customer.jshshir}</span>
-            </div>
-            ` : ''}
+            </div>` : ''}
             <div class="total-row">
               <span>Filial:</span>
               <span>${transaction.branch?.name}</span>
@@ -768,37 +669,31 @@ const Chiqim = () => {
           <div class="products">
             <h4>MAHSULOTLAR</h4>
             ${transaction.items
-              .map(
-                (item, index) => `
+              .map((item) => `
               <div class="product-row">
                 <span>${item.name} x${item.quantity}</span>
-                <span>${formatAmount(Number(item.quantity) * Number(item.price))}</span>
-              </div>
-            `,
-              )
+                <span>${formatCurrencySom(Number(item.quantity) * Number(item.priceInSom))}</span>
+              </div>`)
               .join('')}
           </div>
           <div class="total">
             <div class="total-row">
               <span>JAMI:</span>
-              <span>${formatAmount(transaction.finalTotal)}</span>
+              <span>${formatCurrencySom(transaction.finalTotalInSom)}</span>
             </div>
-            ${['CREDIT', 'INSTALLMENT'].includes(transaction.paymentType)
-              ? `
+            ${['CREDIT', 'INSTALLMENT'].includes(transaction.paymentType) ? `
               <div class="total-row">
                 <span>To'langan:</span>
-                <span>${formatAmount(transaction.paid)}</span>
+                <span>${formatCurrencySom(transaction.paid)}</span>
               </div>
               <div class="total-row">
                 <span>Qolgan:</span>
-                <span>${formatAmount(transaction.remaining)}</span>
+                <span>${formatCurrencySom(transaction.remaining)}</span>
               </div>
               <div class="total-row">
                 <span>Oylik:</span>
-                <span>${formatAmount(transaction.monthlyPayment)}</span>
-              </div>
-            `
-              : ''}
+                <span>${formatCurrencySom(transaction.monthlyPayment)}</span>
+              </div>` : ''}
           </div>
           <div class="footer">
             <p>Tashrifingiz uchun rahmat!</p>
@@ -811,23 +706,160 @@ const Chiqim = () => {
     win.document.write(html);
     win.document.close();
     win.focus();
-    win.print();
-    win.close();
-    setShowReceiptModal(false);
+
+    setTimeout(async () => {
+      try {
+        if (operationType === 'SALE') {
+          const baseTotal = selectedItems.reduce(
+            (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice) * Number(exchangeRate),
+            0,
+          );
+          const m = Number(months);
+          const interestRateValue = Number(interestRate) / 100 || 0;
+          const finalTotal = baseTotal * (1 + interestRateValue);
+          const paid = Number(downPayment) || 0;
+          const remaining = paid < finalTotal ? finalTotal - paid : 0;
+          const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
+
+          // values already in so'm (baseTotal/finalTotal/remaining computed with exchangeRate)
+          const somTotal = baseTotal;
+          const somFinalTotal = finalTotal;
+          const somPaid = paid;
+          const somRemaining = remaining;
+
+          const payload = {
+            type: 'SALE',
+            status: 'PENDING',
+            total: somTotal,
+            finalTotal: somFinalTotal,
+            amountPaid: somPaid,
+            userId: Number(localStorage.getItem('userId')),
+            remainingBalance: somRemaining,
+            paymentType: paymentType === 'INSTALLMENT' ? 'CREDIT' : paymentType,
+            deliveryMethod: paymentType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
+            deliveryAddress:
+              (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' || paymentType === 'DELIVERY')
+                ? downPayment || undefined
+                : undefined,
+            customer: {
+              fullName: `${firstName} ${lastName}`.trim(),
+              phone: phone.replace(/\s+/g, ''),
+              passportSeries: passportSeries || undefined,
+              jshshir: jshshir || undefined,
+              address: downPayment || undefined,
+            },
+            fromBranchId: Number(selectedBranchId),
+            soldByUserId: Number(localStorage.getItem('userId')),
+            items: selectedItems.map((item) => ({
+              productId: item.id,
+              productName: item.name,
+              quantity: Number(item.quantity),
+              price: Number(item.marketPrice) * Number(exchangeRate),
+              total: Number(item.quantity) * Number(item.marketPrice) * Number(exchangeRate),
+              ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT'
+                ? { creditMonth: m, creditPercent: interestRateValue, monthlyPayment: somRemaining / Math.max(1, m) }
+                : {}),
+            })),
+          };
+
+          const response = await axiosWithAuth({
+            method: 'post',
+            url: `${API_URL}/transactions`,
+            data: payload,
+          });
+
+          setPendingTransaction(response.data);
+        }
+
+        win.print();
+        setReceiptPrinted(true);
+        setTimeout(() => {
+          win.close();
+          resetToInitialState();
+          completeSale();
+        }, 1000);
+      } catch (err) {
+        console.error('Error submitting sale before print:', err);
+        win.close();
+        setNotification({ message: err.response?.data?.message || err.message || 'Sotishda xatolik', type: 'error' });
+        resetToInitialState();
+      }
+    }, 500);
 
     win.onafterprint = () => {
       win.close();
+      resetToInitialState();
+      completeSale();
     };
   };
 
-  const closeReceiptModal = () => {
-    try {
-      if (printWindowRef.current && !printWindowRef.current.closed) {
-        printWindowRef.current.close();
-      }
-    } catch {}
-    printWindowRef.current = null;
+  const resetToInitialState = async () => {
     setShowReceiptModal(false);
+    setShowCartModal(false);
+    setShowTransferHistory(false);
+    setReceiptData(null);
+    setReceiptPrinted(false);
+    setPendingTransaction(null);
+    clearCart();
+    await loadData();
+    await loadTransferHistory();
+  };
+
+  const completeSale = async () => {
+    if (!receiptPrinted || !pendingTransaction) {
+      setNotification({
+        message: 'Sotishni yakunlash uchun chekni chop etish kerak!',
+        type: 'error',
+      });
+      return;
+    }
+
+    try {
+      await axiosWithAuth({
+        method: 'patch',
+        url: `${API_URL}/transactions/${pendingTransaction.id}`,
+        data: { status: 'COMPLETED' },
+      });
+
+      setNotification({
+        message: 'Sotish muvaffaqiyatli yakunlandi! Chek chop etildi.',
+        type: 'success',
+      });
+    } catch (error) {
+      console.error('Error completing sale:', error);
+      setNotification({
+        message: 'Sotishni yakunlashda xatolik yuz berdi',
+        type: 'error',
+      });
+    }
+  };
+
+  const closeReceiptModal = async () => {
+    if (!receiptPrinted && operationType === 'SALE') {
+      if (!window.confirm('Chek chop etilmadi! Cheksiz yopsangiz sotish bekor bo\'ladi. Davom etasizmi?')) {
+        return;
+      }
+      if (pendingTransaction) {
+        try {
+          await axiosWithAuth({
+            method: 'delete',
+            url: `${API_URL}/transactions/${pendingTransaction.id}`,
+          });
+        } catch (error) {
+          console.error('Error cancelling transaction:', error);
+        }
+      }
+      setNotification({
+        message: 'Sotish bekor qilindi - chek chop etilmadi',
+        type: 'warning',
+      });
+    }
+
+    if (printWindowRef.current && !printWindowRef.current.closed) {
+      printWindowRef.current.close();
+    }
+    printWindowRef.current = null;
+    await resetToInitialState();
   };
 
   const calculatePaymentSchedule = () => {
@@ -837,7 +869,7 @@ const Chiqim = () => {
       return { totalWithInterest: 0, monthlyPayment: 0, schedule: [], change: 0, remaining: 0 };
 
     const baseTotal = selectedItems.reduce(
-      (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice),
+      (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice) * Number(exchangeRate),
       0,
     );
     const paid = Number(downPayment) || 0;
@@ -864,7 +896,7 @@ const Chiqim = () => {
   useEffect(() => {
     if (!isOmbor) {
       setOperationType('TRANSFER');
-      setSelectedItems([]); // Clear cart if not Ombor
+      setSelectedItems([]);
     }
   }, [isOmbor]);
 
@@ -881,6 +913,8 @@ const Chiqim = () => {
               ? 'bg-red-50 text-red-700 border border-red-200'
               : notification.type === 'warning'
               ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
+              : notification.type === 'info'
+              ? 'bg-blue-50 text-blue-700 border border-blue-200'
               : 'bg-green-50 text-green-700 border border-green-200'
           }`}
         >
@@ -947,21 +981,7 @@ const Chiqim = () => {
             >
               {loading ? 'Юкланмоқда...' : 'Янгилаш'}
             </button>
-            <button
-              onClick={() => {
-                setShowTransferHistory(true);
-                loadTransferHistory();
-              }}
-              disabled={!selectedBranchId}
-              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-400 transition-all duration-200 relative"
-            >
-              Ўтказмалар тарихи
-              {pendingTransfers.length > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-6 w-6 flex items-center justify-center">
-                  {pendingTransfers.length}
-                </span>
-              )}
-            </button>
+
           </div>
 
           <div className="overflow-x-auto bg-white rounded-lg shadow">
@@ -987,7 +1007,7 @@ const Chiqim = () => {
                       <td className="p-3">{product.model || 'N/A'}</td>
                       <td className="p-3">{product.branch?.name || "Noma'lum"}</td>
                       <td className="p-3">{formatCurrency(product.marketPrice)}</td>
-                      <td className="p-3">{formatCurrencySom(product.marketPrice)}</td>
+                      <td className="p-3">{formatCurrencySom(product.marketPrice * exchangeRate)}</td>
                       <td className="p-3">{formatQuantity(product.quantity)}</td>
                       <td className="p-3">
                         <button
@@ -1030,29 +1050,28 @@ const Chiqim = () => {
                       <table className="w-full border border-gray-200">
                         <thead>
                           <tr className="bg-gray-50">
-                            <th className="p-3 text-left font-medium">Модел</th>
+                            <th className="p-3 text-left font-medium">№</th>
                             <th className="p-3 text-left font-medium">Маҳсулот</th>
-                            <th className="p-3 text-left font-medium">Нарх (UZS)</th>
+                            <th className="p-3 text-left font-medium">Нарх (сом)</th>
                             <th className="p-3 text-left font-medium">Миқдор</th>
                             <th className="p-3 text-left font-medium">Жами</th>
-                            <th className="p-3 text-left font-medium">Амаллар</th>
                           </tr>
                         </thead>
                         <tbody>
                           {selectedItems.map((item, index) => (
                             <tr key={index} className="border-t border-gray-200">
-                              <td className="p-3">{item.model}</td>
+                              <td className="p-3">{index + 1}</td>
                               <td className="p-3">{item.name}</td>
                               <td className="p-3">
                                 <input
-                                  type="number"
-                                  value={item.marketPrice}
-                                  onChange={(e) => updateItem(index, 'marketPrice', e.target.value)}
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={formatSomInt(Number(item.marketPrice) * Number(exchangeRate))}
+                                  onChange={(e) => onPriceSomChange(index, e)}
                                   className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                                     errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'
                                   }`}
-                                  min="0"
-                                  step="0.01"
+                                  placeholder="0"
                                 />
                                 {errors[`price_${index}`] && (
                                   <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
@@ -1075,20 +1094,25 @@ const Chiqim = () => {
                                 )}
                               </td>
                               <td className="p-3 font-medium">
-                                {formatCurrencySom(Number(item.quantity) * Number(item.marketPrice))}
-                              </td>
-                              <td className="p-3">
-                                <button
-                                  onClick={() => removeItem(index)}
-                                  className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition-colors text-sm"
-                                >
-                                  Ўчириш
-                                </button>
+                                {formatCurrencySom(Number(item.quantity) * Number(item.marketPrice) * Number(exchangeRate))}
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex justify-between text-lg font-semibold">
+                        <span>Жами:</span>
+                        <span>
+                          {formatCurrencySom(
+                            selectedItems.reduce(
+                              (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice) * Number(exchangeRate),
+                              0,
+                            ),
+                          )}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="mb-4">
@@ -1325,19 +1349,9 @@ const Chiqim = () => {
                           <div>
                             <span className="text-gray-600">Асосий сумма:</span>
                             <span className="font-medium ml-2">
-                              {formatCurrency(
-                                selectedItems.reduce(
-                                  (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice),
-                                  0,
-                                ),
-                              )}
-                            </span>
-                            <br />
-                            <span className="text-gray-600 text-sm">Сомда:</span>
-                            <span className="font-medium ml-2 text-sm">
                               {formatCurrencySom(
                                 selectedItems.reduce(
-                                  (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice),
+                                  (sum, item) => sum + Number(item.quantity) * Number(item.marketPrice) * Number(exchangeRate),
                                   0,
                                 ),
                               )}
@@ -1347,30 +1361,17 @@ const Chiqim = () => {
                             <>
                               <div>
                                 <span className="text-gray-600">Фоиз билан:</span>
-                                <span className="font-medium ml-2">{formatCurrency(totalWithInterest)}</span>
-                                <br />
-                                <span className="text-gray-600 text-sm">Сомда:</span>
-                                <span className="font-medium ml-2 text-sm">
-                                  {formatCurrencySom(totalWithInterest)}
-                                </span>
+                                <span className="font-medium ml-2">{formatCurrencySom(totalWithInterest)}</span>
                               </div>
                               <div>
                                 <span className="text-gray-600">Тўланган:</span>
                                 <span className="font-medium ml-2">
-                                  {formatCurrency(Number(downPayment) || 0)}
-                                </span>
-                                <br />
-                                <span className="text-gray-600 text-sm">Сомда:</span>
-                                <span className="font-medium ml-2 text-sm">
                                   {formatCurrencySom(Number(downPayment) || 0)}
                                 </span>
                               </div>
                               <div>
                                 <span className="text-gray-600">Қолган:</span>
-                                <span className="font-medium ml-2">{formatCurrency(remaining)}</span>
-                                <br />
-                                <span className="text-gray-600 text-sm">Сомда:</span>
-                                <span className="font-medium ml-2 text-sm">{formatCurrencySom(remaining)}</span>
+                                <span className="font-medium ml-2">{formatCurrencySom(remaining)}</span>
                               </div>
                             </>
                           )}
@@ -1401,294 +1402,63 @@ const Chiqim = () => {
             </div>
           )}
 
-          {showTransferHistory && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto shadow-xl">
-                <div className="flex justify-between mb-4">
-                  <h3 className="text-lg font-bold">Ўтказмалар тарихи</h3>
-                  <button
-                    onClick={() => setShowTransferHistory(false)}
-                    className="text-gray-600 hover:text-gray-800 transition-all"
-                  >
-                    X
-                  </button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full border">
-                    <thead>
-                      <tr className="bg-gray-100 text-left">
-                        <th className="p-3">ID</th>
-                        <th className="p-3">Сана</th>
-                        <th className="p-3">Жами</th>
-                        <th className="p-3">Тўлов тури</th>
-                        <th className="p-3">Филиал</th>
-                        <th className="p-3">Маҳсулотлар</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transferHistory.length > 0 ? (
-                        transferHistory.map((transfer) => (
-                          <tr key={transfer.id} className="border-t">
-                            <td className="p-3">#{transfer.id}</td>
-                            <td className="p-3">{formatDate(transfer.createdAt)}</td>
-                            <td className="p-3">{formatCurrency(transfer.finalTotal)}</td>
-                            <td className="p-3">{transfer.paymentType || "Noma'lum"}</td>
-                            <td className="p-3">{transfer.branch?.name || "Noma'lum"}</td>
-                            <td className="p-3">
-                              {transfer.items?.map((item) => (
-                                <div key={item.id}>
-                                  {item.name} x{item.quantity} ({formatCurrency(item.price)})
-                                </div>
-                              ))}
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="6" className="p-3 text-center">
-                            Ўтказмалар топилмади
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
+
 
           {showReceiptModal && receiptData && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-lg shadow-xl w-[90%] max-w-md mx-auto">
+                <div className="p-4 border-b">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-red-600">⚠️ Чекни чоп етиш мажбурий!</h3>
+                    <button
+                      onClick={closeReceiptModal}
+                      className="text-gray-600 hover:text-gray-800 transition-all"
+                    >
+                      X
+                    </button>
+                  </div>
+                  <p className="text-sm text-red-600 mt-1">Чекни чоп етмасангиз сотиш беқор бўлади</p>
+                </div>
+
                 <Receipt
-                  transaction={receiptData}
-                  onClose={closeReceiptModal}
-                  onPrint={() => {
-                    const printWindow = window.open('', '_blank');
-                    const receiptContent = `
-                      <!DOCTYPE html>
-                      <html>
-                      <head>
-                      <meta charset="UTF-8" />
-                      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-                      <title>Aminov Savdo Tizimi</title>
-                      <style>
-                        @page { 
-                          margin: 0; 
-                          size: 80mm auto; 
-                        }
-                        body { 
-                          font-family: 'Courier New', monospace; 
-                          margin: 0; 
-                          padding: 2%; 
-                          width: 96%; 
-                          font-size: 12px; 
-                          line-height: 1.2;
-                          color: #000;
-                        }
-                        .header { 
-                          text-align: center; 
-                          margin-bottom: 5%; 
-                          border-bottom: 1px dashed #000;
-                          padding-bottom: 3%;
-                        }
-                        .header h2 { 
-                          margin: 0; 
-                          font-size: 16px; 
-                          font-weight: bold;
-                          color: #000;
-                        }
-                        .header p { 
-                          margin: 2% 0 0 0; 
-                          font-size: 11px;
-                          color: #000;
-                        }
-                        .info { 
-                          margin-bottom: 4%; 
-                        }
-                        .products { 
-                          margin: 4% 0; 
-                          border-top: 1px dashed #000;
-                          padding-top: 3%;
-                        }
-                        .products h4 { 
-                          margin: 0 0 3% 0; 
-                          font-size: 12px; 
-                          font-weight: bold;
-                          text-align: center;
-                          color: #000;
-                        }
-                        .product-row { 
-                          display: flex; 
-                          justify-content: space-between; 
-                          margin: 1% 0; 
-                          font-size: 10px;
-                          border-bottom: 1px dotted #ccc;
-                          padding-bottom: 1%;
-                          color: #000;
-                        }
-                        .total { 
-                          border-top: 1px dashed #000; 
-                          padding-top: 3%; 
-                          margin-top: 4%; 
-                        }
-                        .total-row { 
-                          display: flex; 
-                          justify-content: space-between; 
-                          margin: 2% 0; 
-                          font-weight: bold; 
-                          font-size: 12px;
-                          color: #000;
-                        }
-                        .footer { 
-                          text-align: center; 
-                          margin-top: 5%; 
-                          padding-top: 3%;
-                          border-top: 1px dashed #000;
-                          font-size: 10px;
-                          color: #000;
-                        }
-                        @media print { 
-                          body { margin: 0; padding: 1%; width: 98%; color: #000; }
-                        }
-                        @media print and (max-width: 56mm) {
-                          body { font-size: 10px; padding: 1%; width: 98%; color: #000; }
-                          .header h2 { font-size: 14px; color: #000; }
-                          .total-row { font-size: 11px; color: #000; }
-                        }
-                      </style>
-                      </head>
-                      <body>
-                        <div class="header">
-                          <h2>Aminov Savdo Tizimi</h2>
-                          <p class="total-row">${formatDate(new Date())}</p>
-                        </div>
-                        <div class="info">
-                          <div class="total-row">
-                            <span>ID:</span>
-                            <span>#${receiptData.id}</span>
-                          </div>
-                          <div class="total-row">
-                            <span>Mijoz:</span>
-                            <span>${
-                              receiptData.customer.fullName ||
-                              `${receiptData.customer.firstName} ${receiptData.customer.lastName}`
-                            }</span>
-                          </div>
-                          <div class="total-row">
-                            <span>Tel:</span>
-                            <span>${receiptData.customer.phone}</span>
-                          </div>
-                          ${receiptData.customer.passportSeries ? `
-                          <div class="total-row">
-                            <span>Passport:</span>
-                            <span>${receiptData.customer.passportSeries}</span>
-                          </div>
-                          ` : ''}
-                          ${receiptData.customer.jshshir ? `
-                          <div class="total-row">
-                            <span>JSHSHIR:</span>
-                            <span>${receiptData.customer.jshshir}</span>
-                          </div>
-                          ` : ''}
-                          <div class="total-row">
-                            <span>Filial:</span>
-                            <span>${receiptData.branch?.name}</span>
-                          </div>
-                          <div class="total-row">
-                            <span>To'lov:</span>
-                            <span>${
-                              receiptData.paymentType === 'CASH'
-                                ? 'Naqd'
-                                : receiptData.paymentType === 'CARD'
-                                ? 'Karta'
-                                : receiptData.paymentType === 'CREDIT'
-                                ? 'Kredit'
-                                : receiptData.paymentType === 'INSTALLMENT'
-                                ? "Bo'lib to'lash"
-                                : receiptData.paymentType
-                            }</span>
-                          </div>
-                          <div class="total-row">
-                            <span>Yetkazib berish:</span>
-                            <span>${
-                              receiptData.deliveryType === 'PICKUP'
-                                ? 'Olib ketish'
-                                : receiptData.deliveryType === 'DELIVERY'
-                                ? 'Yetkazib berish'
-                                : receiptData.deliveryType
-                            }</span>
-                          </div>
-                          ${receiptData.deliveryType === 'DELIVERY' && receiptData.deliveryAddress ? `
-                          <div class="total-row">
-                            <span>Manzil:</span>
-                            <span>${receiptData.deliveryAddress}</span>
-                          </div>
-                          ` : ''}
-                        </div>
-                        <div class="products">
-                          <h4>MAHSULOTLAR</h4>
-                          ${receiptData.items
-                            .map(
-                              (item, index) => `
-                            <div class="total-row">
-                              <span>${item.name} x${item.quantity}</span>
-                              <span>${formatCurrencySom(Number(item.quantity) * Number(item.marketPrice))}</span>
-                            </div>
-                          `,
-                            )
-                            .join('')}
-                        </div>
-                        <div class="total">
-                          <div class="total-row">
-                            <span>JAMI:</span>
-                            <span>${formatCurrencySom(receiptData.finalTotal)}</span>
-                          </div>
-                          ${['CREDIT', 'INSTALLMENT'].includes(receiptData.paymentType)
-                            ? `
-                            <div class="total-row">
-                              <span>To'langan:</span>
-                              <span>${formatCurrency(receiptData.paid)} (${formatCurrencySom(receiptData.paid)})</span>
-                            </div>
-                            <div class="total-row">
-                              <span>Qolgan:</span>
-                              <span>${formatCurrency(receiptData.remaining)} (${formatCurrencySom(
-                                receiptData.remaining,
-                              )})</span>
-                            </div>
-                            <div class="total-row">
-                              <span>Oylik:</span>
-                              <span>${formatCurrency(receiptData.monthlyPayment)} (${formatCurrencySom(
-                                receiptData.monthlyPayment,
-                              )})</span>
-                            </div>
-                          `
-                            : ''}
-                        </div>
-                        <div class="total-row">
-                          <p>Tashrifingiz uchun rahmat!</p>
-                        </div>
-                        <div class="total"></div>
-                      </body>
-                      </html>
-                    `;
-                    printWindow.document.write(receiptContent);
-                    printWindow.document.close();
-                    printWindow.focus();
-                    setTimeout(() => {
-                      printWindow.print();
-                      printWindow.close();
-                      closeReceiptModal();
-                    }, 1000);
+                  transaction={{
+                    ...buildTransactionFromReceiptData(),
+                    items: receiptData.items.map((item) => ({
+                      ...item,
+                      price: Number(item.marketPrice) * Number(exchangeRate),
+                      priceInSom: Number(item.marketPrice) * Number(exchangeRate),
+                    })),
+                    total: receiptData.total,
+                    finalTotal: receiptData.finalTotal,
+                    totalInSom: receiptData.total,
+                    finalTotalInSom: receiptData.finalTotal,
+                    paid: receiptData.paid,
+                    remaining: receiptData.remaining,
+                    monthlyPayment: receiptData.monthlyPayment,
                   }}
+                  onClose={closeReceiptModal}
+                  onPrint={handleReceiptPrint}
+                  showPrintWarning={true}
                 />
+
+                <div className="p-4 border-t bg-yellow-50">
+                  <button
+                    onClick={handleReceiptPrint}
+                    className="w-full bg-blue-500 text-white py-3 px-4 rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                  >
+                    🖨️ Чекни чоп етиш ва сотишни якунлаш
+                  </button>
+                </div>
               </div>
             </div>
           )}
         </>
       )}
+
+      
     </div>
   );
+  
 };
 
 export default Chiqim;

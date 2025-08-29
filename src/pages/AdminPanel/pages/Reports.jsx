@@ -24,6 +24,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [overallRepaymentTotal, setOverallRepaymentTotal] = useState(0);
   const [overallRepaymentCash, setOverallRepaymentCash] = useState(0);
   const [overallRepaymentCard, setOverallRepaymentCard] = useState(0);
+  const [defectivePlus, setDefectivePlus] = useState(0);
+  const [defectiveMinus, setDefectiveMinus] = useState(0);
   const [showCashierModal, setShowCashierModal] = useState(false);
   const [selectedCashier, setSelectedCashier] = useState(null);
   const [showWarehouseModal, setShowWarehouseModal] = useState(false);
@@ -187,12 +189,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       const cashierMap = new Map();
       const warehouseMap = new Map();
       const aggregateInMainLoop = false;
+      const processedUsers = new Set(); // Track which users have been processed
 
       if (Array.isArray(transactions)) {
         transactions.forEach((transaction, index) => {
           console.log(`Processing transaction ${index}:`, transaction);
 
-          // Warehouse user aggregation (only if role is WAREHOUSE)
+          // Warehouse user aggregation (only if role is WAREHOUSE and not already counted as cashier)
           const warehouseUser =
             transaction.user?.role === "WAREHOUSE"
               ? transaction.user
@@ -202,6 +205,25 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           const isWarehouse = !!warehouseUser;
           if (warehouseUser && isWarehouse) {
             const wid = warehouseUser.id;
+            const warehouseUserId = String(wid);
+            
+            // Skip if user already processed in any role
+            if (processedUsers.has(warehouseUserId)) {
+              return;
+            }
+            
+            // Check if this user also has CASHIER role - if so, prioritize cashier
+            const hasCashierRole = 
+              (transaction.user?.role === "CASHIER" && transaction.user.id === wid) ||
+              (transaction.soldBy?.role === "CASHIER" && transaction.soldBy.id === wid);
+            
+            if (hasCashierRole) {
+              // Skip warehouse aggregation if user has cashier role (priority to cashier)
+              return;
+            }
+            
+            // Mark user as processed
+            processedUsers.add(warehouseUserId);
             if (!warehouseMap.has(wid)) {
               warehouseMap.set(wid, {
                 id: wid,
@@ -234,6 +256,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             const finalW = Number(
               transaction.finalTotal || transaction.total || 0
             );
+            // Initialize defective adjustments if not present
+            if (wagg.defectivePlus === undefined) wagg.defectivePlus = 0;
+            if (wagg.defectiveMinus === undefined) wagg.defectiveMinus = 0;
             switch (transaction.type) {
               case "PURCHASE":
                 wagg.purchaseTotal += finalW;
@@ -537,6 +562,14 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             const isCashier = !!cashierUser;
             if (isCashier) {
               const cashierId = String(cashierUser.id);
+              
+              // Skip if user already processed in any role
+              if (processedUsers.has(cashierId)) {
+                return;
+              }
+              
+              // Mark user as processed
+              processedUsers.add(cashierId);
               if (!cashierMap.has(cashierId)) {
                 cashierMap.set(cashierId, {
                   id: cashierId,
@@ -753,6 +786,14 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             if (!personIdRaw) continue;
             const personId = String(personIdRaw);
             if (role === "WAREHOUSE") {
+              // Skip if user already processed in any role
+              if (processedUsers.has(personId)) {
+                continue;
+              }
+              
+              // Mark user as processed
+              processedUsers.add(personId);
+              
               if (!warehouseMap.has(personId)) {
                 warehouseMap.set(personId, {
                   id: personId,
@@ -781,6 +822,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               }
               const wag = warehouseMap.get(personId);
               wag.repaymentTotal += installment;
+              // Initialize defective adjustments if not present
+              if (wag.defectivePlus === undefined) wag.defectivePlus = 0;
+              if (wag.defectiveMinus === undefined) wag.defectiveMinus = 0;
               wag.repayments.push({
                 scheduleId: s.id,
                 paidAt: s.paidAt,
@@ -794,6 +838,14 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 soldBy: t.soldBy || null,
               });
             } else if (role === "CASHIER") {
+              // Skip if user already processed in any role
+              if (processedUsers.has(personId)) {
+                continue;
+              }
+              
+              // Mark user as processed
+              processedUsers.add(personId);
+              
               if (!cashierMap.has(personId)) {
                 cashierMap.set(personId, {
                   id: personId,
@@ -817,6 +869,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               }
               const cag = cashierMap.get(personId);
               cag.repaymentTotal += installment;
+              // Initialize defective adjustments if not present
+              if (cag.defectivePlus === undefined) cag.defectivePlus = 0;
+              if (cag.defectiveMinus === undefined) cag.defectiveMinus = 0;
               cag.repayments.push({
                 scheduleId: s.id,
                 paidAt: s.paidAt,
@@ -832,6 +887,20 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             }
           }
         }
+
+        // Include local daily repayments stored client-side
+        try {
+          const rawLocal = localStorage.getItem('tx_daily_repayments');
+          const logs = rawLocal ? JSON.parse(rawLocal) : [];
+          for (const l of Array.isArray(logs) ? logs : []) {
+            const p = l?.paidAt ? new Date(l.paidAt) : null;
+            const inRange = p && (!startBound || p >= startBound) && (!endBound || p <= endBound);
+            if (!inRange) continue;
+            repaymentSum += Number(l.amount || 0);
+            const ch = (l.channel || 'CASH').toUpperCase();
+            if (ch === 'CARD') repaymentCard += Number(l.amount || 0); else repaymentCash += Number(l.amount || 0);
+          }
+        } catch {}
 
         setOverallRepaymentTotal(repaymentSum);
         setOverallRepaymentCash(repaymentCash);
@@ -852,6 +921,51 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       );
       setProductSales(productArray);
 
+      // Attach defective adjustments per person if available
+      try {
+        const params2 = new URLSearchParams();
+        if (selectedBranchId) params2.append('branchId', selectedBranchId);
+        const resDef2 = await fetch(`${BASE_URL}/defective-logs?${params2.toString()}`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (resDef2.ok) {
+          const logs2 = await resDef2.json().catch(() => []);
+          const list2 = Array.isArray(logs2) ? logs2 : (Array.isArray(logs2.items) ? logs2.items : []);
+          const start2 = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
+          const end2 = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
+          const perCashier = new Map();
+          for (const lg of list2) {
+            const createdAt = lg.createdAt ? new Date(lg.createdAt) : null;
+            const inRange = createdAt && (!start2 || createdAt >= start2) && (!end2 || createdAt <= end2);
+            if (!inRange) continue;
+            const rawAmt = Number(lg.cashAmount ?? lg.amount ?? lg.value ?? 0) || 0;
+            if (rawAmt === 0) continue;
+            const actorIdRaw = (lg.createdBy && lg.createdBy.id) ?? lg.createdById ?? (lg.user && lg.user.id) ?? lg.userId ?? (lg.performedBy && lg.performedBy.id) ?? lg.performedById ?? null;
+            if (actorIdRaw == null) continue;
+            const key = String(actorIdRaw);
+            if (!perCashier.has(key)) perCashier.set(key, { plus: 0, minus: 0 });
+            const agg = perCashier.get(key);
+            if (rawAmt > 0) agg.plus += rawAmt; else if (rawAmt < 0) agg.minus += Math.abs(rawAmt);
+          }
+          for (const c of cashierMap.values()) {
+            const adj = perCashier.get(String(c.id)) || { plus: 0, minus: 0 };
+            c.defectivePlus = adj.plus;
+            c.defectiveMinus = adj.minus;
+          }
+          
+          // Also add defective adjustments to warehouse users
+          for (const w of warehouseMap.values()) {
+            const adj = perCashier.get(String(w.id)) || { plus: 0, minus: 0 };
+            w.defectivePlus = adj.plus;
+            w.defectiveMinus = adj.minus;
+          }
+        }
+      } catch {}
+
       // Build cashier summaries array
       const cashierArray = Array.from(cashierMap.values());
       setCashierSummaries(cashierArray);
@@ -859,6 +973,39 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       setWarehouseSummaries(warehouseArray);
       setDailySales(Array.from(dailyMap.values()));
       setSalesTotals({ totalQuantity, totalAmount });
+
+      // Fetch defective logs for the branch and time range; compute net cash +/-
+      try {
+        const params2 = new URLSearchParams();
+        if (selectedBranchId) params2.append("branchId", selectedBranchId);
+        const resDef = await fetch(`${BASE_URL}/defective-logs?${params2.toString()}`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+        let plus = 0;
+        let minus = 0;
+        if (resDef.ok) {
+          const logs = await resDef.json().catch(() => []);
+          const list = Array.isArray(logs) ? logs : (Array.isArray(logs.items) ? logs.items : []);
+          const startBound2 = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
+          const endBound2 = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
+          for (const log of list) {
+            const createdAt = log.createdAt ? new Date(log.createdAt) : null;
+            const inRange = createdAt && (!startBound2 || createdAt >= startBound2) && (!endBound2 || createdAt <= endBound2);
+            if (!inRange) continue;
+            const rawAmt = Number(log.cashAmount ?? log.amount ?? log.value ?? 0) || 0;
+            if (rawAmt > 0) plus += rawAmt; else if (rawAmt < 0) minus += Math.abs(rawAmt);
+          }
+        }
+        setDefectivePlus(plus);
+        setDefectiveMinus(minus);
+      } catch (e) {
+        setDefectivePlus(0);
+        setDefectiveMinus(0);
+      }
     } catch (error) {
       console.error("Error fetching transactions:", error.message);
       toast.error(error.message || "Маълумотларни олишда хатолик юз берди");
@@ -1024,6 +1171,26 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 </div>
               </div>
             </div>
+            <div className="p-3 rounded-lg border bg-orange-50 shadow-sm">
+              <div className="text-sm text-orange-700">Касса тузатишлар</div>
+              <div className="text-2xl font-bold text-orange-900">
+                + {formatAmount(defectivePlus)} / - {formatAmount(defectiveMinus)}
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <div className="text-xs text-green-600">+ Кассага</div>
+                  <div className="font-semibold text-green-600">
+                    {formatAmount(defectivePlus)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-red-600">- Кассадан</div>
+                  <div className="font-semibold text-red-600">
+                    {formatAmount(defectiveMinus)}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* People filter and unified table */}
@@ -1081,7 +1248,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <th className="px-4 py-3 text-center text-gray-600">
                       Олдиндан олинган
                     </th>
-                    
+                    <th className="px-4 py-3 text-center text-gray-600">
+                      Касса тузатишлар
+                    </th>
                     <th className="px-4 py-3 text-center text-gray-600">
                       Сотилган дона
                     </th>
@@ -1112,27 +1281,27 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                       <td className="px-4 py-3 text-center">
                         {formatAmount(c.upfrontTotal)}
                       </td>
-                      
+                      <td className="px-4 py-3 text-center">
+                        <div className="text-xs">
+                          <div className="text-green-600">+ {formatAmount(c.defectivePlus || 0)}</div>
+                          <div className="text-red-600">- {formatAmount(c.defectiveMinus || 0)}</div>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-center">
                         {c.soldQuantity}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {formatAmount(
-                          Number(c.cashTotal || 0) +
-                            Number(c.upfrontTotal || 0) +
-                            (Array.isArray(c.repayments)
-                              ? c.repayments
-                                  .filter(
-                                    (r) =>
-                                      (r.channel || "CASH").toUpperCase() ===
-                                      "CASH"
-                                  )
-                                  .reduce(
-                                    (s, r) => s + Number(r.amount || 0),
-                                    0
-                                  )
-                              : 0)
-                        )}
+                        {(() => {
+                          const cashBase = Number(c.cashTotal || 0);
+                          const upfront = Number(c.upfrontTotal || 0);
+                          const repaymentsCash = (Array.isArray(c.repayments)
+                            ? c.repayments
+                                .filter((r) => (r.channel || 'CASH').toUpperCase() === 'CASH')
+                                .reduce((s, r) => s + Number(r.amount || 0), 0)
+                            : 0);
+                          const defectiveAdj = Number(c.defectivePlus || 0) - Number(c.defectiveMinus || 0);
+                          return formatAmount(cashBase + upfront + repaymentsCash + defectiveAdj);
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button
@@ -1172,6 +1341,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                       Олдиндан олинган
                     </th>
                     <th className="px-4 py-3 text-center text-gray-600">
+                      Касса тузатишлар
+                    </th>
+                    <th className="px-4 py-3 text-center text-gray-600">
                       Сотилган дона
                     </th>
                     <th className="px-4 py-3 text-center text-gray-600">
@@ -1200,6 +1372,12 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {formatAmount(w.upfrontTotal)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="text-xs">
+                          <div className="text-green-600">+ {formatAmount(w.defectivePlus || 0)}</div>
+                          <div className="text-red-600">- {formatAmount(w.defectiveMinus || 0)}</div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         {w.soldQuantity}
@@ -1401,7 +1579,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   selectedCashier.repayments.length > 0 && (
                     <div className="mb-4">
                       <div className="text-sm font-semibold text-gray-700 mb-2">
-                        Кредитдан тўловлар (oylar bo'yicha)
+                        Кредитдан тўловлар (oy/kun bo'yicha)
                       </div>
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1867,16 +2045,33 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                             )}
                           </td>
                           <td className="px-3 py-2">
-                            {it.creditMonth || it.creditPercent ? (
-                              <span>
-                                {it.creditMonth || "-"} ой,{" "}
-                                {typeof it.creditPercent === "number"
-                                  ? `${(it.creditPercent * 100).toFixed(0)}%`
-                                  : "-"}
-                              </span>
-                            ) : (
-                              "-"
-                            )}
+                            {(() => {
+                              const isCreditOrInstallment = selectedTransactionItems.paymentType === 'CREDIT' || selectedTransactionItems.paymentType === 'INSTALLMENT';
+                              if (!isCreditOrInstallment) return '-';
+                              const pct = typeof selectedTransactionItems.interestRate === 'number' ? `${Number(selectedTransactionItems.interestRate).toFixed(0)}%` : (typeof it.creditPercent === 'number' ? `${(it.creditPercent*100).toFixed(0)}%` : '0%');
+                              if (selectedTransactionItems.termUnit === 'DAYS' && Number(selectedTransactionItems.days) > 0) {
+                                const total = Number(selectedTransactionItems.finalTotal || 0);
+                                const paid = Number(selectedTransactionItems.amountPaid || 0) + Number(selectedTransactionItems.downPayment || 0);
+                                const remaining = Math.max(0, total - paid);
+                                return (
+                                  <span>
+                                    {Number(selectedTransactionItems.days)} кун {pct}
+                                    {paid > 0 && remaining > 0 ? ' — Қисман тўланган' : ''}
+                                  </span>
+                                );
+                              }
+                              if (it.creditMonth || it.creditPercent != null) {
+                                return (
+                                  <span>
+                                    {it.creditMonth || '-'} ой, {pct}
+                                  </span>
+                                );
+                              }
+                              if (Array.isArray(selectedTransactionItems.paymentSchedules) && selectedTransactionItems.paymentSchedules.length > 0) {
+                                return <span>{selectedTransactionItems.paymentSchedules.length} ой, {pct}</span>;
+                              }
+                              return pct;
+                            })()}
                           </td>
                         </tr>
                       ))}

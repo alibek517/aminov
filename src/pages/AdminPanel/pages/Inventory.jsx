@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactBarcode from 'react-barcode';
 import {
   Search,
   Filter,
@@ -75,16 +76,14 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
   const [modalMode, setModalMode] = useState(null);
   const [currentProduct, setCurrentProduct] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [formData, setFormData] = useState({
     name: '',
-    barcode: '',
-    description: '',
+    model: '',
     categoryId: '',
     branchId: propSelectedBranchId || localStorage.getItem('selectedBranchId') || '',
     price: 0,
     marketPrice: null,
-    advancePayment: null,
-    creditPayment: null,
     quantity: 0,
     status: 'IN_WAREHOUSE',
   });
@@ -96,11 +95,29 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [creatingCategory, setCreatingCategory] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState(0);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [barcodeShopName, setBarcodeShopName] = useState('');
+  const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState(null);
 
   const API_BASE_URL = 'https://suddocs.uz';
   const formatAmount = (value) => {
     const num = Math.floor(Number(value) || 0);
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  };
+  const getEffectiveRate = () => {
+    const stateRate = Number(exchangeRate) || 0;
+    return stateRate > 0 ? stateRate : 0;
+  };
+  const formatAmountSom = (price) => {
+    const rate = getEffectiveRate();
+    if (price == null || isNaN(Number(price)) || rate <= 0) return "-";
+    const priceInSom = Number(price) * rate;
+    return new Intl.NumberFormat('uz-UZ').format(priceInSom) + " so'm";
+  };
+  const formatUSD = (value) => {
+    const num = Number(value) || 0;
+    return `$${num.toFixed(2)}`;
   };
   const computeSoldAmount = (product) => {
     const sellPrice = Number(product.marketPrice ?? product.price ?? 0);
@@ -112,7 +129,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     if (initial > 0) {
       // Sold count should include defective items - total sold including defective
       const soldCount = Math.max(0, initial - quantity - returned - exchanged);
-      if (soldCount > 0 && sellPrice > 0) return soldCount * sellPrice;
+      if (soldCount > 0 && sellPrice > 0) return soldCount * sellPrice * (Number(exchangeRate) || 0);
     }
     return 0;
   };
@@ -172,8 +189,34 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     const loadData = async () => {
       try {
         setIsLoading(true);
+        // 1) Ensure we have an exchange rate first (to avoid 0 so'm on first render)
+        try {
+          const rateResp = await fetchWithAuth(`${API_BASE_URL}/currency-exchange-rates/current-rate?fromCurrency=USD&toCurrency=UZS`);
+          if (rateResp.ok) {
+            const rateJson = await rateResp.json();
+            const rate = Number(rateJson?.rate) || 0;
+            if (rate > 0) {
+              setExchangeRate(rate);
+            } else {
+              throw new Error('No rate in current-rate response');
+            }
+          }
+        } catch (e) {
+          // Fallback to list endpoint
+          try {
+            const listResp = await fetchWithAuth(`${API_BASE_URL}/currency-exchange-rates`);
+            if (listResp.ok) {
+              const arr = await listResp.json();
+              const active = (Array.isArray(arr) ? arr : []).find(r => r.isActive && r.fromCurrency === 'USD' && r.toCurrency === 'UZS');
+              const rate = Number(active?.rate ?? arr?.[0]?.rate) || 0;
+              if (rate > 0) setExchangeRate(rate);
+            }
+          } catch {}
+        }
+
+        // 2) Load data
         const [productsResponse, categoriesResponse, branchesResponse] = await Promise.all([
-          fetchWithAuth(`${API_BASE_URL}/products`),
+          fetchWithAuth(`${API_BASE_URL}/products?includeZeroQuantity=true`),
           fetchWithAuth(`${API_BASE_URL}/categories`),
           fetchWithAuth(`${API_BASE_URL}/branches`),
         ]);
@@ -184,12 +227,13 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
           branchesResponse.json(),
         ]);
 
+        // rate already set in state above
         console.log('Products Data:', productsData); // Log to inspect the structure
         setProducts((productsData || []).map((p) => updateProductStatus(p)));
         setCategories(categoriesData);
         setBranches(branchesData);
 
-        // ... rest of the code
+        // rate was already handled above
       } catch (error) {
         console.error('Error loading data:', error);
         toast.danger('Маълумотларни юклашда хатолик юз берди: ' + error.message);
@@ -200,6 +244,8 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
 
     loadData();
   }, []);
+
+  // No localStorage syncing for exchange rate; rely on API fetches only
 
   useEffect(() => {
     if (isModalOpen && (modalMode === 'add' || modalMode === 'edit') && nameInputRef.current) {
@@ -249,10 +295,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
 
   const applyStatusFilter = (list) => {
     switch (statusFilter) {
-      case 'IN_STOCK':
-        // Quantity > 0 bo'lganlarni ko'rsatish
-        return list.filter((p) => Number(p.quantity || 0) > 0);
-      case 'SOLD':
+      case 'SOLD': {
         return list.filter((p) => {
           const initial = Number(p.initialQuantity) || 0;
           const quantity = Number(p.quantity) || 0;
@@ -261,13 +304,9 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
           const soldCount = Math.max(0, initial - quantity - returned - exchanged);
           return soldCount > 0 || (quantity === 0 && initial > 0);
         });
-      case 'DEFECTIVE':
-        return list.filter((p) => Number(p.defectiveQuantity || 0) > 0);
-      case 'ZERO_QUANTITY':
-        // Yangi filter - faqat quantity 0 bo'lganlar
-        return list.filter((p) => Number(p.quantity || 0) === 0);
+      }
+      case 'ALL':
       default:
-        // 'ALL' holatida - HAMMA mahsulotlarni ko'rsatish, quantity qanday bo'lishidan qat'iy nazar
         return list;
     }
   };
@@ -293,6 +332,15 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     defective: baseFilteredProducts.filter((p) => p.status === 'DEFECTIVE' || Number(p.defectiveQuantity || 0) > 0).length,
   };
 
+  const zeroQuantityCount = baseFilteredProducts.filter((p) => {
+    const initial = Number(p.initialQuantity) || 0;
+    const quantity = Number(p.quantity || 0);
+    const returned = Number(p.returnedQuantity || 0);
+    const exchanged = Number(p.exchangedQuantity) || 0;
+    const soldCount = Math.max(0, initial - quantity - returned - exchanged);
+    return quantity === 0 && initial > 0 && soldCount > 0;
+  }).length;
+
   const totalProducts = counts.total;
 
   const handleAddProduct = async () => {
@@ -303,15 +351,12 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
 
     const newProduct = {
       name: formData.name,
-      barcode: formData.barcode || null,
-      description: formData.description || null,
+      model: formData.model || null,
       categoryId: Number(formData.categoryId),
       status: formData.status,
       branchId: Number(formData.branchId),
       price: Number(formData.price),
       marketPrice: formData.marketPrice ? Number(formData.marketPrice) : null,
-      advancePayment: formData.advancePayment ? Number(formData.advancePayment) : null,
-      creditPayment: formData.creditPayment ? Number(formData.creditPayment) : null,
       quantity: Number(formData.quantity),
     };
 
@@ -339,15 +384,12 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
 
     const updatedProduct = {
       name: formData.name,
-      barcode: formData.barcode || null,
-      description: formData.description || null,
+      model: formData.model || null,
       categoryId: Number(formData.categoryId),
       status: formData.status,
       branchId: Number(formData.branchId),
       price: Number(formData.price),
       marketPrice: formData.marketPrice ? Number(formData.marketPrice) : null,
-      advancePayment: formData.advancePayment ? Number(formData.advancePayment) : null,
-      creditPayment: formData.creditPayment ? Number(formData.creditPayment) : null,
       quantity: Number(formData.quantity),
     };
 
@@ -385,10 +427,49 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     }
   };
 
+  const handleSelectProduct = (productId) => {
+    setSelectedProductIds((prev) => {
+      if (prev.includes(productId)) return prev.filter((id) => id !== productId);
+      return [...prev, productId];
+    });
+  };
+
+  const handleSelectAll = () => {
+    const allIds = sortedProducts.map((p) => p.id);
+    if (selectedProductIds.length === allIds.length) setSelectedProductIds([]);
+    else setSelectedProductIds(allIds);
+  };
+
+  const handleBulkDeleteProducts = async () => {
+    if (selectedProductIds.length === 0) return;
+    if (!window.confirm(`${selectedProductIds.length} та маҳсулотни ўчиришни хоҳлайсизми?`)) return;
+    try {
+      // Try bulk endpoint first
+      const resp = await fetchWithAuth(`${API_BASE_URL}/products/bulk?hard=true`, {
+        method: 'DELETE',
+        body: JSON.stringify({ ids: selectedProductIds })
+      });
+      if (!resp.ok) {
+        // Fallback to per-id delete in parallel
+        await Promise.all(
+          selectedProductIds.map((id) =>
+            fetchWithAuth(`${API_BASE_URL}/products/${id}`, { method: 'DELETE' })
+          )
+        );
+      }
+      setProducts((prev) => prev.filter((p) => !selectedProductIds.includes(p.id)));
+      setSelectedProductIds([]);
+      toast.success(`Танланган ${selectedProductIds.length} маҳсулот ўчирилди`);
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      toast.error("Маҳсулотларни ўчиришда хатолик");
+    }
+  };
+
   const handleRefresh = async () => {
     try {
       setIsLoading(true);
-      const response = await fetchWithAuth(`${API_BASE_URL}/products`);
+      const response = await fetchWithAuth(`${API_BASE_URL}/products?includeZeroQuantity=true`);
       const updatedProducts = await response.json();
       setProducts(updatedProducts.map((product) => updateProductStatus(product)));
     } catch (error) {
@@ -416,19 +497,92 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     setCurrentProduct(product);
     setFormData({
       name: product.name,
-      barcode: product.barcode || '',
-      description: product.description || '',
+      model: product.model || '',
       categoryId: product.categoryId.toString(),
       branchId: product.branchId.toString(),
       price: product.price,
       marketPrice: product.marketPrice || '',
-      advancePayment: product.advancePayment || null,
-      creditPayment: product.creditPayment || null,
       quantity: product.quantity,
       status: product.status,
     });
     setModalMode('edit');
     setIsModalOpen(true);
+  };
+
+  const openBarcodeModal = (product) => {
+    setSelectedBarcodeProduct(product);
+    setBarcodeShopName('');
+    setShowBarcodeModal(true);
+  };
+
+  const closeBarcodeModal = () => {
+    setShowBarcodeModal(false);
+    setSelectedBarcodeProduct(null);
+    setBarcodeShopName('');
+  };
+
+  const handlePrintReceipt = () => {
+    if (!selectedBarcodeProduct?.barcode) return;
+    // Close modal immediately so it doesn't appear in print
+    const prevShopName = barcodeShopName;
+    closeBarcodeModal();
+    const productName = selectedBarcodeProduct.name || '';
+    const productModel = selectedBarcodeProduct.model ? ` ${selectedBarcodeProduct.model}` : '';
+    const nameLine = `${productName}${productModel}`.trim();
+    const usdPrice = selectedBarcodeProduct.marketPrice ?? selectedBarcodeProduct.price ?? 0;
+    const somPrice = (() => {
+      const rate = Number(exchangeRate) || 0;
+      const som = usdPrice * rate;
+      return Number.isFinite(som) && rate > 0
+        ? som.toLocaleString('uz-UZ') + " so'm"
+        : '';
+    })();
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Chek</title>
+  <style>
+    @page { size: 3in 4in; margin: 0; }
+    body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
+    .receipt { width: 3in; height: 4in; padding: 0.1in; box-sizing: border-box; }
+    .center { text-align: center; }
+    .shop { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
+    .name { font-size: 12px; font-weight: 600; margin: 0 0 4px; }
+    .price { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
+    .barcode { margin-top: 6px; }
+    @media print { .no-print { display: none !important; } }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  </head>
+  <body>
+    <div class="receipt">
+      <div class="center shop">${(prevShopName || '').replace(/</g,'&lt;')}</div>
+      <div class="center name">${nameLine.replace(/</g,'&lt;')}</div>
+      <div class="center price">${somPrice.replace(/</g,'&lt;')}</div>
+      <div class="center barcode">
+        <svg id="barcode"></svg>
+      </div>
+    </div>
+    <script>
+      try {
+        JsBarcode('#barcode', ${JSON.stringify(String(selectedBarcodeProduct.barcode))}, {
+          format: 'CODE128', width: 2, height: 60, displayValue: true, fontSize: 12, textMargin: 2, margin: 0
+        });
+      } catch (e) {}
+      window.print();
+      setTimeout(function(){ window.close(); }, 300);
+    </script>
+  </body>
+  </html>`;
+
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    }
   };
 
   const openViewModal = (product) => {
@@ -440,14 +594,11 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
   const resetForm = () => {
     setFormData({
       name: '',
-      barcode: '',
-      description: '',
+      model: '',
       categoryId: '',
       branchId: selectedBranchId,
       price: 0,
       marketPrice: null,
-      advancePayment: null,
-      creditPayment: null,
       quantity: 0,
       status: 'IN_WAREHOUSE',
     });
@@ -569,7 +720,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                 ))}
               </select>
             </div>
-
           </div>
         </div>
       </div>
@@ -604,10 +754,25 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden w-full">
+        {selectedProductIds.length > 0 && (
+          <div className="flex items-center justify-between p-3 border-b bg-yellow-50">
+            <div className="text-sm text-gray-700">Танланган: {selectedProductIds.length} та</div>
+            <div className="flex gap-2">
+              <button onClick={handleBulkDeleteProducts} className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm">Танланганларни ўчириш</button>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full min-w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedProductIds.length > 0 && selectedProductIds.length === sortedProducts.length}
+                    onChange={handleSelectAll}
+                  />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Маҳсулот
                 </th>
@@ -615,15 +780,10 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Модели
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Нарх
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Сотув
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Олдиндан
-                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Нарх (USD)</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Нарх (so'm)</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (USD)</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (so'm)</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Кредит
                 </th>
@@ -652,6 +812,13 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                   className="hover:bg-gray-50 transition-colors duration-150"
                 >
                   <td className="px-4 py-3 whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={selectedProductIds.includes(product.id)}
+                      onChange={() => handleSelectProduct(product.id)}
+                    />
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">{product.name}</div>
                     <div className="text-sm text-gray-500">
                       ID: {product.id} {product.barcode && `• ${product.barcode}`}
@@ -663,15 +830,10 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       {product.model || 'Номаълум'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {formatAmount(product.price)}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {formatAmount(computeSoldAmount(product))}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {formatAmount(product.advancePayment || 0)}
-                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{formatUSD(product.price)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{formatAmountSom(product.price)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatUSD(product.marketPrice) : '-'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatAmountSom(product.marketPrice) : '-'}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                     {formatAmount(product.creditPayment || 0)}
                   </td>
@@ -739,6 +901,15 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       >
                         <Eye size={16} />
                       </button>
+                      {product.barcode && (
+                        <button
+                          onClick={() => openBarcodeModal(product)}
+                          className="text-green-600 hover:text-green-900 p-2 rounded-lg hover:bg-green-50 transition-all duration-200"
+                          title="Баркод"
+                        >
+                          <ScanLine size={16} />
+                        </button>
+                      )}
                       <button
                         onClick={() => openEditModal(product)}
                         className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
@@ -829,7 +1000,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-500 mb-1">
-                          Нарх (Олинган)
+                          Нарх (Олинган) (USD)
                         </label>
                         <p className="text-lg font-semibold text-gray-900">
                           {formatAmount(currentProduct.price)}
@@ -837,7 +1008,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-500 mb-1">
-                          Нарх (Сотув)
+                          Нарх (Сотув)(USD)
                         </label>
                         <p className="text-lg font-semibold text-gray-900">
                           {currentProduct.marketPrice
@@ -929,28 +1100,19 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                         placeholder="Маҳсулот номини киритинг"
                       />
                     </div>
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Штрих-код
-                        </label>
-                        <input
-                          type="text"
-                          value={formData.barcode}
-                          onChange={(e) =>
-                            setFormData((prev) => ({ ...prev, barcode: e.target.value }))
-                          }
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Штрих-код"
-                        />
-                      </div>
-                      <button
-                        onClick={handleScanBarcode}
-                        className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 color-customBlue hover:text-gray-800 transition-all duration-200"
-                        title="Штрих-кодни сканерлаш"
-                      >
-                        <ScanLine size={26} />
-                      </button>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Модели
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.model || ''}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, model: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Модел номи (ихтиёрий)"
+                      />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1007,7 +1169,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Нарх (Олинган)
+                        Нарх (Олинган) (USD)
                       </label>
                       <input
                         min="0"
@@ -1022,7 +1184,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Нарх (Сотув)
+                        Нарх (Сотув) (USD)
                       </label>
                       <input
                         min="0"
@@ -1039,44 +1201,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       />
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Олдиндан олинган
-                      </label>
-                      <input
-                        min="0"
-                        type="number"
-                        value={formData.advancePayment || ''}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            advancePayment: e.target.value ? Number(e.target.value) : null,
-                          }))
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Олдиндан олинган пул"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Кредитдан тўланган
-                      </label>
-                      <input
-                        min="0"
-                        type="number"
-                        value={formData.creditPayment || ''}
-                        onChange={(e) =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            creditPayment: e.target.value ? Number(e.target.value) : null,
-                          }))
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Кредитдан тўланган пул"
-                      />
-                    </div>
-                  </div>
+                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1113,20 +1238,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       </select>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Тавсиф
-                    </label>
-                    <textarea
-                      value={formData.description}
-                      onChange={(e) =>
-                        setFormData((prev) => ({ ...prev, description: e.target.value }))
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      rows={3}
-                      placeholder="Маҳсулот ҳақида қўшимча маълумот"
-                    />
-                  </div>
+                  
                   <div className="flex justify-end space-x-3">
                     <button
                       onClick={handleModalClose}
@@ -1144,6 +1256,36 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {showBarcodeModal && selectedBarcodeProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold">Баркод</h3>
+              <button onClick={closeBarcodeModal} className="text-gray-500 hover:text-gray-700"><X size={20} /></button>
+            </div>
+            <div className="p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Дўкон номи</label>
+              <input
+                value={barcodeShopName}
+                onChange={(e) => setBarcodeShopName(e.target.value)}
+                placeholder="Масалан: Aminov Store"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <div className="mt-4 border rounded p-3 text-center">
+                <div className="text-sm font-semibold mb-1">{barcodeShopName}</div>
+                <div className="text-sm">{selectedBarcodeProduct.name} {selectedBarcodeProduct.model || ''}</div>
+                <div className="mt-2 flex justify-center">
+                  <ReactBarcode value={String(selectedBarcodeProduct.barcode)} format="CODE128" width={2} height={60} displayValue={true} fontSize={12} textMargin={2} margin={0} />
+                </div>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button onClick={handlePrintReceipt} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Чекни чиқариш</button>
+                <button onClick={closeBarcodeModal} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">Бекор</button>
+              </div>
             </div>
           </div>
         </div>

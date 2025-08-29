@@ -6,14 +6,12 @@ import SalesManagement from './SalesManagement';
 import DefectiveManagement from './DefectiveManagement';
 import Sotuvchilar from './Sotuvchilar'; 
 import Mijozlar from './Mijozlar'; 
-import BrakMaxsulotlar from './BrakMaxsulotlar'; 
 
 function Menyu({ token, socket, locationPermission, locationError }) {
   return (
     <Sidebar token={token} socket={socket} locationPermission={locationPermission} locationError={locationError}>
       <Routes>
         <Route path="/dashboard" element={<Dashboard token={token} socket={socket} />} />
-        <Route path="/braks" element={<BrakMaxsulotlar token={token} socket={socket} />} />
         <Route path="/mijozlar" element={<Mijozlar token={token} socket={socket} />} />
         <Route path="/sotuvchilar" element={<Sotuvchilar token={token} socket={socket} />} />
         <Route path="/sales" element={<SalesManagement token={token} socket={socket} />} />

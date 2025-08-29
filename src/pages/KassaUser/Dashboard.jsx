@@ -52,6 +52,8 @@ const Dashboard = () => {
   const currentUserId = Number(localStorage.getItem("userId")) || null;
   const [cashierLoading, setCashierLoading] = useState(false);
   const [cashierReport, setCashierReport] = useState(null);
+  const [defectivePlus, setDefectivePlus] = useState(0);
+  const [defectiveMinus, setDefectiveMinus] = useState(0);
   const [reportDate, setReportDate] = useState(() => {
     const todayStr = new Date().toLocaleDateString("en-CA");
     return { startDate: todayStr, endDate: todayStr };
@@ -379,7 +381,63 @@ const Dashboard = () => {
           console.warn("Supplemental credit/installment fetch failed", e);
         }
 
+        // Include local daily repayments into cashierReport totals and list
+        try {
+          const logsRaw = localStorage.getItem('tx_daily_repayments');
+          const logs = logsRaw ? JSON.parse(logsRaw) : [];
+          for (const l of Array.isArray(logs) ? logs : []) {
+            const pDate = l.paidAt ? new Date(l.paidAt) : null;
+            const inRange = pDate && (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
+            if (!inRange) continue;
+            const ch = (l.channel || 'CASH').toUpperCase();
+            agg.repaymentTotal += Number(l.amount || 0);
+            agg.repayments.push({
+              scheduleId: `local-${l.transactionId}-${l.paidAt}`,
+              paidAt: l.paidAt,
+              amount: Number(l.amount || 0),
+              channel: ch,
+              transactionId: l.transactionId,
+              month: '-',
+              customer: null,
+              paidBy: { id: l.paidByUserId },
+            });
+          }
+        } catch {}
+
         setCashierReport(agg);
+
+        // Fetch defective logs and compute cash adjustments (+/-) within date range
+        try {
+          const params2 = new URLSearchParams();
+          if (selectedBranchId) params2.append("branchId", selectedBranchId);
+          // backend might not support date filters; fetch and filter client-side
+          const resDef = await fetch(`https://suddocs.uz/defective-logs?${params2.toString()}`, { headers });
+          let plus = 0;
+          let minus = 0;
+          if (resDef.ok) {
+            const logs = await resDef.json().catch(() => []);
+            const list = Array.isArray(logs) ? logs : (Array.isArray(logs.items) ? logs.items : []);
+            const startBound2 = reportDate.startDate ? new Date(`${reportDate.startDate}T00:00:00`) : null;
+            const endBound2 = reportDate.endDate ? new Date(`${reportDate.endDate}T23:59:59`) : null;
+            for (const log of list) {
+              const createdAt = log.createdAt ? new Date(log.createdAt) : null;
+              const inRange = createdAt && (!startBound2 || createdAt >= startBound2) && (!endBound2 || createdAt <= endBound2);
+              if (!inRange) continue;
+              const rawAmt = Number(log.cashAmount ?? log.amount ?? log.value ?? 0) || 0;
+              if (rawAmt === 0) continue;
+              // only count adjustments for this cashier
+              const actorIdRaw = (log.createdBy && log.createdBy.id) ?? log.createdById ?? (log.user && log.user.id) ?? log.userId ?? (log.performedBy && log.performedBy.id) ?? log.performedById ?? null;
+              const actorId = actorIdRaw != null ? Number(actorIdRaw) : null;
+              if (!actorId || actorId !== currentUserId) continue;
+              if (rawAmt > 0) plus += rawAmt; else if (rawAmt < 0) minus += Math.abs(rawAmt);
+            }
+          }
+          setDefectivePlus(plus);
+          setDefectiveMinus(minus);
+        } catch (err) {
+          setDefectivePlus(0);
+          setDefectiveMinus(0);
+        }
       } catch (e) {
         console.error("Cashier report error", e);
         setCashierReport(null);
@@ -487,7 +545,10 @@ const Dashboard = () => {
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Нақд</div>
                     <div className="font-semibold">
-                      {formatAmount(cashierReport.cashTotal)}
+                      {formatAmount(
+                        Number(cashierReport.cashTotal || 0) +
+                        (Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))
+                      )}
                     </div>
                   </div>
                   <div className="p-3 rounded border">
@@ -550,26 +611,22 @@ const Dashboard = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="p-3 rounded border">
-                    <div className="text-sm text-gray-500">Сотилган дона</div>
-                    <div className="font-semibold">
-                      {cashierReport.soldQuantity}
-                    </div>
-                  </div>
+                  
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">
                       Топширадиган пул
                     </div>
                     <div className="font-semibold">
                       {formatAmount(
-                        cashierReport.cashTotal +
+                        Number(cashierReport.cashTotal || 0) +
                           (cashierReport.repayments || [])
                             .filter(
                               (r) =>
                                 (r.channel || "CASH").toUpperCase() === "CASH"
                             )
                             .reduce((s, r) => s + Number(r.amount || 0), 0) +
-                          cashierReport.upfrontTotal
+                          Number(cashierReport.upfrontTotal || 0) +
+                          (Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))
                       )}
                     </div>
                   </div>

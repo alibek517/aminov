@@ -7,8 +7,6 @@ import 'react-toastify/dist/ReactToastify.css';
 const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState(null);
-  const [showDetails, setShowDetails] = useState(false);
   const [filters, setFilters] = useState(() => {
     const todayStr = new Date().toLocaleDateString('en-CA');
     return { startDate: todayStr, endDate: todayStr };
@@ -20,68 +18,25 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [overallRepaymentTotal, setOverallRepaymentTotal] = useState(0);
   const [overallRepaymentCash, setOverallRepaymentCash] = useState(0);
   const [overallRepaymentCard, setOverallRepaymentCard] = useState(0);
-  const [showWarehouseModal, setShowWarehouseModal] = useState(false);
-  const [selectedWarehouse, setSelectedWarehouse] = useState(null);
+  const [overallUpfrontTotal, setOverallUpfrontTotal] = useState(0);
+  const [salesCashTotal, setSalesCashTotal] = useState(0);
+  const [salesCardTotal, setSalesCardTotal] = useState(0);
   const [selectedTransactionItems, setSelectedTransactionItems] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedBranchId, setSelectedBranchId] = useState(
     propSelectedBranchId || localStorage.getItem('selectedBranchId') || ''
   );
-  // New state for exchange rate
-  const [exchangeRate, setExchangeRate] = useState(12650); // Static USD to UZS rate (e.g., 1 USD = 12,650 UZS)
+  const [exchangeRate, setExchangeRate] = useState(12650);
+  const [warehouseViewModes, setWarehouseViewModes] = useState({});
+  const [productNameCache, setProductNameCache] = useState({}); // productId -> name
+  // New state for chiqim history modal
+  const [showChiqimHistory, setShowChiqimHistory] = useState(false);
   const navigate = useNavigate();
 
   const BASE_URL = 'https://suddocs.uz';
 
-  // Optional: Fetch exchange rate dynamically
-  useEffect(() => {
-    const fetchExchangeRate = async () => {
-      try {
-        // Example API: Replace with actual currency API endpoint
-        const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-        const data = await response.json();
-        setExchangeRate(data.rates.UZS || 12650); // Fallback to static rate
-      } catch (error) {
-        console.error('Error fetching exchange rate:', error);
-        toast.error('Курсни олишда хатолик юз берди, стандарт курс ишлатилди');
-      }
-    };
-    // Uncomment to enable dynamic fetching
-    // fetchExchangeRate();
-  }, []);
-
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === 'selectedBranchId') {
-        setSelectedBranchId(e.newValue || '');
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  useEffect(() => {
-    if (propSelectedBranchId !== undefined) {
-      setSelectedBranchId(propSelectedBranchId);
-    }
-  }, [propSelectedBranchId]);
-
-  useEffect(() => {
-    if (selectedBranchId !== undefined) {
-      fetchTransactions();
-    }
-  }, [selectedBranchId, filters.startDate, filters.endDate, exchangeRate]);
-
-  const transactionTypes = {
-    SALE: { label: 'Сотув', color: 'bg-green-100 text-green-800' },
-    RETURN: { label: 'Қайтариш', color: 'bg-yellow-100 text-yellow-800' },
-    TRANSFER: { label: 'Ўтказма', color: 'bg-blue-100 text-blue-800' },
-    WRITE_OFF: { label: 'Ёзиб ташлаш', color: 'bg-red-100 text-red-800' },
-    STOCK_ADJUSTMENT: { label: 'Захира тузатиш', color: 'bg-purple-100 text-purple-800' },
-    PURCHASE: { label: 'Кирим', color: 'bg-indigo-100 text-indigo-800' },
-  };
-
+  // Date formatting
   const formatDate = (dateString) => {
     return dateString
       ? new Date(dateString).toLocaleDateString('uz-UZ', {
@@ -94,39 +49,141 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       : 'Н/И';
   };
 
-  // Modified formatAmount to handle USD to UZS conversion
+  // Amount formatting
   const formatAmount = (value, isUSD = true) => {
-    const num = Math.floor(Number(value) || 0);
-    const converted = isUSD ? num * exchangeRate : num; // Convert if in USD
-    return converted.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' сўм';
+    const num = Number(value) || 0;
+    if (Number.isNaN(num)) return '0 сўм';
+    const converted = isUSD ? num * exchangeRate : num;
+    return Math.floor(converted).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' сўм';
   };
 
+  // Payment type label
   const getPaymentTypeLabel = (pt) => {
     switch (pt) {
-      case 'CASH':
-        return 'Нақд';
-      case 'CARD':
-        return 'Карта';
-      case 'CREDIT':
-        return 'Кредит';
-      case 'INSTALLMENT':
-        return 'Бўлиб тўлаш';
-      default:
-        return pt || 'Н/И';
+      case 'CASH': return 'Нақд';
+      case 'CARD': return 'Карта';
+      case 'CREDIT': return 'Кредит';
+      case 'INSTALLMENT': return 'Бўлиб тўлаш';
+      default: return pt || 'Н/И';
     }
   };
 
+  // Customer name
   const getCustomerName = (customer) => {
     if (!customer) return 'Йўқ';
     return customer.fullName || 'Йўқ';
   };
 
+  // User name
   const getUserName = (user) => {
     if (!user) return 'Йўқ';
     return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Йўқ';
   };
 
-  const fetchTransactions = useCallback(async () => {
+  // Transaction direction
+  const getTransactionDirection = (t) => {
+    switch (t.type) {
+      case 'SALE': 
+        return 'chiqim';
+      case 'RETURN': 
+        return 'kirim';
+      case 'TRANSFER':
+        const isFromCurrentBranch = String(t.fromBranchId) === String(selectedBranchId);
+        const isToCurrentBranch = String(t.toBranchId) === String(selectedBranchId);
+        if (isFromCurrentBranch && isToCurrentBranch) {
+          return 'both';
+        } else if (isFromCurrentBranch) {
+          return 'chiqim';
+        } else if (isToCurrentBranch) {
+          return 'kirim';
+        }
+        return 'other';
+      case 'WRITE_OFF': 
+        return 'chiqim';
+      case 'STOCK_ADJUSTMENT':
+        if (!Array.isArray(t.items) || t.items.length === 0) return 'other';
+        const totalQty = t.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+        if (totalQty > 0) return 'kirim';
+        if (totalQty < 0) return 'chiqim';
+        return 'other';
+      case 'PURCHASE': 
+        return 'kirim';
+      default: 
+        return 'other';
+    }
+  };
+
+  // Transaction types
+  const transactionTypes = {
+    SALE: { label: 'Сотув', color: 'bg-green-100 text-green-800' },
+    RETURN: { label: 'Қайтариш', color: 'bg-yellow-100 text-yellow-800' },
+    TRANSFER: { label: 'Ўтказма', color: 'bg-blue-100 text-blue-800' },
+    WRITE_OFF: { label: 'Ёзиб ташлаш', color: 'bg-red-100 text-red-800' },
+    STOCK_ADJUSTMENT: { label: 'Захира тузатиш', color: 'bg-purple-100 text-purple-800' },
+    PURCHASE: { label: 'Кирим', color: 'bg-indigo-100 text-indigo-800' },
+  };
+
+  // Dynamic product name resolvers (pick first available *name/*title field from backend)
+  const getAnyStringField = (obj) => {
+    if (!obj || typeof obj !== 'object') return '';
+    for (const key of Object.keys(obj)) {
+      if (/(name|title)/i.test(key) && typeof obj[key] === 'string' && obj[key].trim()) {
+        return obj[key];
+      }
+    }
+    return '';
+  };
+  const getProductDisplayName = (item) => {
+    return (
+      (item?.productId && productNameCache[item.productId]) ||
+      getAnyStringField(item?.product) ||
+      getAnyStringField(item) ||
+      (typeof item?.productId !== 'undefined' ? `#${item.productId}` : (typeof item?.id !== 'undefined' ? `#${item.id}` : '-'))
+    );
+  };
+
+  // Set exchange rate from backend
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch(`${BASE_URL}/currency-exchange-rates`, { headers });
+        const data = await res.json().catch(() => ([]));
+        const rate = Array.isArray(data) && data[0]?.rate ? Number(data[0].rate) : null;
+        if (rate && Number.isFinite(rate) && rate > 0) setExchangeRate(rate);
+      } catch {
+        // fallback keeps default
+      }
+    })();
+  }, []);
+
+  // Monitor localStorage changes
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'selectedBranchId') {
+        setSelectedBranchId(e.newValue || '');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Update branch ID
+  useEffect(() => {
+    if (propSelectedBranchId !== undefined) {
+      setSelectedBranchId(propSelectedBranchId);
+    }
+  }, [propSelectedBranchId]);
+
+  // Fetch transactions
+  useEffect(() => {
+    if (selectedBranchId !== undefined) {
+      fetchTransitions();
+    }
+  }, [selectedBranchId, filters.startDate, filters.endDate, exchangeRate]);
+
+  const fetchTransitions = useCallback(async () => {
     setLoading(true);
     setProductSales([]);
     setWarehouseSummaries([]);
@@ -135,6 +192,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     setOverallRepaymentTotal(0);
     setOverallRepaymentCash(0);
     setOverallRepaymentCard(0);
+
     try {
       const token = localStorage.getItem('access_token');
       if (!token) {
@@ -178,27 +236,96 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       }
 
       const data = await response.json();
-      console.log('Raw transaction data:', data);
-
       const transactions = data.transactions || data || [];
-      console.log('Extracted transactions:', transactions);
 
-      setTransactions(transactions);
+      // Use backend-provided values as-is (assuming UZS already)
+      const normalizedTransactions = transactions.map((t) => ({
+        ...t,
+        total: Number(t.total || 0),
+        finalTotal: Number(t.finalTotal || t.total || 0),
+        amountPaid: Number(t.amountPaid || 0),
+        downPayment: Number(t.downPayment || 0),
+        items: Array.isArray(t.items)
+          ? t.items.map((item) => ({
+              ...item,
+              price: Number(item.price || 0),
+              total: Number(item.total || (Number(item.price || 0) * Number(item.quantity || 0))),
+            }))
+          : [],
+      }));
+
+      setTransactions(normalizedTransactions);
+
+      // Prefetch product names by productId when product detail is missing
+      try {
+        const idsToFetch = new Set();
+        for (const tr of normalizedTransactions) {
+          if (!Array.isArray(tr.items)) continue;
+          for (const it of tr.items) {
+            const pid = it?.productId;
+            const hasName = !!(it?.product?.name || it?.name || it?.productName);
+            if (pid && !hasName && !(pid in productNameCache)) idsToFetch.add(pid);
+          }
+        }
+        if (idsToFetch.size > 0) {
+          const token = localStorage.getItem('access_token');
+          const headers = token ? { Authorization: `Bearer ${token}` } : {};
+          const entries = await Promise.all(
+            Array.from(idsToFetch).map(async (pid) => {
+              try {
+                const res = await fetch(`${BASE_URL}/products/${pid}`, { headers });
+                if (!res.ok) return [pid, `#${pid}`];
+                const data = await res.json().catch(() => null);
+                const name = data?.name || data?.productName || data?.title || `#${pid}`;
+                return [pid, name];
+              } catch {
+                return [pid, `#${pid}`];
+              }
+            })
+          );
+          setProductNameCache((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
+        }
+      } catch (e) {
+        // ignore prefetch errors
+      }
 
       const productMap = new Map();
       const dailyMap = new Map();
-      let totalQuantity = 0;
-      let totalAmount = 0;
+      let totalQuantity = 0; // deprecated in favor of tmpSalesQty but keep var to avoid large diff
+      let totalAmount = 0;   // deprecated in favor of tmpSalesTotal but keep var to avoid large diff
+      let tmpSalesCash = 0;
+      let tmpSalesCard = 0;
+      let tmpUpfrontOverall = 0;
+      let tmpSalesTotal = 0; // legacy sales total (SALE only)
+      let tmpFinalColumnSum = 0; // sum of Якýний across all fetched transactions (UZS)
+      let tmpSalesQty = 0;
       const warehouseMap = new Map();
 
-      if (Array.isArray(transactions)) {
-        transactions.forEach((transaction, index) => {
-          console.log(`Processing transaction ${index}:`, transaction);
-
+      if (Array.isArray(normalizedTransactions)) {
+        normalizedTransactions.forEach((transaction) => {
           const warehouseUser = transaction.user?.role === 'WAREHOUSE'
             ? transaction.user
             : (transaction.soldBy?.role === 'WAREHOUSE' ? transaction.soldBy : null);
           const isWarehouse = !!warehouseUser;
+
+          // Always accumulate Yakuniy column sum in so'm (no conversion)
+          tmpFinalColumnSum += Number(transaction.finalTotal || transaction.total || 0);
+          
+          if (transaction.type === 'SALE') {
+            if (transaction.paymentType === 'CASH') tmpSalesCash += Number(transaction.finalTotal || 0);
+            if (transaction.paymentType === 'CARD') tmpSalesCard += Number(transaction.finalTotal || 0);
+            if (transaction.paymentType === 'CREDIT' || transaction.paymentType === 'INSTALLMENT') {
+              // Count upfront received at sale time (amountPaid + downPayment) in so'm; exclude later repayments
+              tmpUpfrontOverall += Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0);
+            }
+            tmpSalesTotal += Number(transaction.finalTotal || 0);
+            if (Array.isArray(transaction.items)) {
+              for (const it of transaction.items) {
+                const qty = Number(it.quantity) || 0;
+                if (qty > 0) tmpSalesQty += qty;
+              }
+            }
+          }
 
           if (isWarehouse) {
             const wid = warehouseUser.id;
@@ -226,7 +353,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               });
             }
             const wagg = warehouseMap.get(wid);
-            const finalW = Number(transaction.finalTotal || transaction.total || 0) * exchangeRate; // Convert USD to UZS
+            const finalW = transaction.finalTotal;
             switch (transaction.type) {
               case 'PURCHASE':
                 wagg.purchaseTotal += finalW;
@@ -249,11 +376,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     break;
                   case 'CREDIT':
                     wagg.creditTotal += finalW;
-                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0)) * exchangeRate;
+                    // Count upfront (amountPaid + downPayment) only at sale creation
+                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
                     break;
                   case 'INSTALLMENT':
                     wagg.installmentTotal += finalW;
-                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0)) * exchangeRate;
+                    // Count upfront (amountPaid + downPayment) only at sale creation
+                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
                     break;
                   default:
                     break;
@@ -262,7 +391,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   for (const it of transaction.items) {
                     const nameRaw = it.product?.name || it.name || '';
                     const qty = Number(it.quantity) || 0;
-                    const amount = (it.total != null ? Number(it.total) : (Number(it.price) || 0) * qty) * exchangeRate; // Convert item total/price
+                    const amount = it.total;
                     if (!nameRaw || qty <= 0 || amount <= 0) continue;
                     wagg.soldQuantity += qty;
                     wagg.soldAmount += amount;
@@ -296,24 +425,26 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               type: transaction.type,
               finalTotal: finalW,
               soldByName: getUserName(transaction.soldBy) || getUserName(transaction.user) || '-',
+              fromBranchId: transaction.fromBranch?.id || transaction.fromBranchId || transaction.branchFromId,
+              toBranchId: transaction.toBranch?.id || transaction.toBranchId || transaction.branchToId,
               fromBranchName: transaction.fromBranch?.name || transaction.fromBranchName || transaction.fromBranchId || transaction.branchFromId,
               toBranchName: transaction.toBranch?.name || transaction.toBranchName || transaction.toBranchId || transaction.branchToId,
               paymentType: transaction.paymentType,
-              amountPaid: Number(transaction.amountPaid || 0) * exchangeRate,
-              downPayment: Number(transaction.downPayment || 0) * exchangeRate,
+              amountPaid: transaction.amountPaid,
+              downPayment: transaction.downPayment,
               items: transaction.items || [],
               customer: transaction.customer || null,
               deliveryType: transaction.deliveryType,
               deliveryAddress: transaction.deliveryAddress,
-              repayments: Array.isArray(transaction.paymentSchedules) 
+              repayments: Array.isArray(transaction.paymentSchedules)
                 ? transaction.paymentSchedules
                     .filter(s => s && s.isPaid && s.paidAt)
                     .map(s => ({
                       scheduleId: s.id,
                       paidAt: s.paidAt,
-                      amount: Number(s.paidAmount || 0) * exchangeRate,
+                      amount: Number(s.paidAmount || 0),
                       month: s.month,
-                    })) 
+                    }))
                 : [],
             });
           }
@@ -326,7 +457,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               const pDate = new Date(s.paidAt);
               const inRange = (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
               if (!inRange) continue;
-              const installment = Number(s.paidAmount || 0) * exchangeRate;
+              const installment = Number(s.paidAmount || 0);
               if (Number.isNaN(installment) || installment <= 0) continue;
               const recipient = (s.paidBy && s.paidBy.role === 'WAREHOUSE') ? s.paidBy : null;
               if (!recipient) continue;
@@ -373,15 +504,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           if (transaction.type === 'SALE' && isWarehouse) {
             const date = transaction.createdAt ? new Date(transaction.createdAt).toDateString() : 'Unknown';
             if (dailyMap.has(date)) {
-              dailyMap.get(date).amount += (transaction.finalTotal || transaction.total || 0) * exchangeRate;
+              dailyMap.get(date).amount += transaction.finalTotal;
               dailyMap.get(date).count += 1;
             } else {
-              dailyMap.set(date, { date, amount: (transaction.finalTotal || transaction.total || 0) * exchangeRate, count: 1 });
+              dailyMap.set(date, { date, amount: transaction.finalTotal, count: 1 });
             }
           }
         });
-      } else {
-        console.log('Transactions is not an array:', typeof transactions, transactions);
       }
 
       try {
@@ -417,18 +546,14 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
         for (const t of allCreditTx) {
           if (t.type !== 'SALE') continue;
           if (selectedBranchId && String(t.fromBranchId || '') !== String(selectedBranchId)) continue;
-          const warehouseUser = t.user?.role === 'WAREHOUSE' ? t.user : (t.soldBy?.role === 'WAREHOUSE' ? t.soldBy : null);
-          if (!warehouseUser) continue;
           const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
           for (const s of schedules) {
             if (!s || !s.isPaid || !s.paidAt) continue;
             const pDate = new Date(s.paidAt);
             const inRange = (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
             if (!inRange) continue;
-            const installment = Number(s.paidAmount || 0) * exchangeRate;
+            const installment = Number(s.paidAmount || 0);
             if (!Number.isNaN(installment) && installment > 0) {
-              const recipient = (s.paidBy && s.paidBy.role === 'WAREHOUSE') ? s.paidBy : null;
-              if (!recipient) continue;
               repaymentSum += installment;
               const ch = (s.paidChannel || 'CASH').toUpperCase();
               if (ch === 'CARD') repaymentCard += installment; else repaymentCash += installment;
@@ -446,18 +571,23 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
         setOverallRepaymentCard(0);
       }
 
-      console.log('Processed data:', {
-        products: Array.from(productMap.values()),
-        daily: Array.from(dailyMap.values()),
-        totals: { totalQuantity, totalAmount }
-      });
-
       const productArray = Array.from(productMap.values()).filter(p => (p.quantity || 0) > 0 && (p.amount || 0) > 0);
       setProductSales(productArray);
       const warehouseArray = Array.from(warehouseMap.values());
       setWarehouseSummaries(warehouseArray);
       setDailySales(Array.from(dailyMap.values()));
-      setSalesTotals({ totalQuantity, totalAmount });
+      // Жами Тушум: exclude CARD from overall total
+      setSalesTotals({ totalQuantity: tmpSalesQty, totalAmount: Math.max(0, tmpFinalColumnSum - tmpSalesCard) });
+      // Expose separate cash/card windows
+      setSalesCashTotal(tmpSalesCash);
+      setSalesCardTotal(tmpSalesCard);
+      setOverallUpfrontTotal(tmpUpfrontOverall);
+
+      const initialViewModes = {};
+      warehouseArray.forEach(w => {
+        initialViewModes[w.id] = 'all';
+      });
+      setWarehouseViewModes(initialViewModes);
     } catch (error) {
       console.error('Error fetching transactions:', error.message);
       toast.error(error.message || 'Маълумотларни олишда хатолик юз берди');
@@ -466,439 +596,481 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     }
   }, [filters.startDate, filters.endDate, selectedBranchId, navigate, exchangeRate]);
 
-  const fetchTransactionDetails = async (id) => {
-    try {
-      const token = localStorage.getItem('access_token');
-      if (!token) {
-        console.error('No access token found in localStorage');
-        navigate('/login');
-        throw new Error('Авторизация токени топилмади');
-      }
-
-      const transactionResponse = await fetch(`${BASE_URL}/transactions/${id}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!transactionResponse.ok) {
-        const errorData = await transactionResponse.json().catch(() => ({}));
-        const errorMessage = errorData.message || 'Сервер хатоси';
-        console.error('Fetch error:', errorMessage);
-        if (transactionResponse.status === 401) {
-          localStorage.removeItem('access_token');
-          navigate('/login');
-          toast.error('Сессия тугади. Илтимос, қайта киринг.');
-        }
-        throw new Error(errorMessage);
-      }
-
-      const transactionData = await transactionResponse.json();
-      // Convert monetary values in transactionData
-      transactionData.finalTotal = Number(transactionData.finalTotal || 0) * exchangeRate;
-      transactionData.total = Number(transactionData.total || 0) * exchangeRate;
-      if (Array.isArray(transactionData.items)) {
-        transactionData.items = transactionData.items.map(item => ({
-          ...item,
-          price: Number(item.price || 0) * exchangeRate,
-          total: Number(item.total || 0) * exchangeRate,
-        }));
-      }
-      setSelectedTransaction(transactionData);
-      setShowDetails(true);
-    } catch (error) {
-      console.error('Error fetching transaction details:', error.message);
-      toast.error(error.message || 'Тафсилотларни олишда хатолик юз берди');
-    }
-  };
-
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="p-6 bg-gray-50 min-h-screen">
-        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-semibold text-gray-800">Транзакциялар Ҳисоботи</h1>
-              {selectedBranchId && (
-                <p className="text-sm text-gray-600 mt-1">
-                  Филиал ID: {selectedBranchId}
-                </p>
-              )}
-              <p className="text-sm text-gray-600 mt-1">
-                USD to UZS kursi: {exchangeRate.toLocaleString('uz-UZ')} сўм
-              </p>
-            </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <input
-                type="date"
-                value={filters.startDate}
-                onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))}
-                className="border rounded px-2 py-1 text-sm"
-              />
-              <input
-                type="date"
-                value={filters.endDate}
-                onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))}
-                className="border rounded px-2 py-1 text-sm"
-              />
-              <button
-                onClick={() => { fetchTransactions(); }}
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm sm:text-base disabled:opacity-50"
-                disabled={loading}
-                title="Маълумотларни янгилаш"
-              >
-                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                Янгилаш
-              </button>
-            </div>
+      <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-semibold text-gray-800">Транзакциялар Ҳисоботи</h1>
+            {selectedBranchId && (
+              <p className="text-sm text-gray-600 mt-1">Филиал ID: {selectedBranchId}</p>
+            )}
+            <p className="text-sm text-gray-600 mt-1">
+              Валюта курси: 1 USD = {exchangeRate.toLocaleString('uz-UZ')} сўм
+            </p>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))}
+              className="border rounded px-2 py-1 text-sm"
+            />
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))}
+              className="border rounded px-2 py-1 text-sm"
+            />
+            <button
+              onClick={fetchTransitions}
+              className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm sm:text-base disabled:opacity-50"
+              disabled={loading}
+              title="Маълумотларни янгилаш"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Янгилаш
+            </button>
+            {/* New button to show chiqim history */}
+
           </div>
         </div>
+      </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
-          <h2 className="text-lg font-semibold mb-3">Ҳисобот — Содда Кўриниш</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="p-3 rounded-lg border bg-white shadow-sm">
-              <div className="text-sm text-gray-600">Жами Сотилган Дона</div>
-              <div className="text-2xl font-bold text-gray-900">{salesTotals.totalQuantity}</div>
-            </div>
-            <div className="p-3 rounded-lg border bg-green-50 shadow-sm">
-              <div className="text-sm text-green-700">Жами Тушум</div>
-              <div className="text-2xl font-bold text-green-900">{formatAmount(salesTotals.totalAmount, false)}</div>
-            </div>
-            <div className="p-3 rounded-lg border bg-blue-50 shadow-sm">
-              <div className="text-sm text-blue-700">Омбор Ходимлари</div>
-              <div className="text-2xl font-bold text-blue-900">{warehouseSummaries.length}</div>
-            </div>
+      <div className="bg-white rounded-lg shadow-sm p-3 sm:p-4 mb-4">
+        <h2 className="text-base font-semibold mb-2">Ҳисобот — Содда Кўриниш</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
+          <div className="p-2 rounded-lg border bg-white shadow-sm">
+            <div className="text-xs text-gray-600">Жами Сотилган Дона</div>
+            <div className="text-xl font-bold text-gray-900">{salesTotals.totalQuantity}</div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-3 rounded-lg border bg-amber-50 shadow-sm">
-              <div className="text-sm text-amber-700">Олдиндан Олинган</div>
-              <div className="text-2xl font-bold text-amber-900">{formatAmount(
-                warehouseSummaries.reduce((s,w)=>s + Number(w.upfrontTotal||0), 0),
-                false
-              )}</div>
-            </div>
+          <div className="p-2 rounded-lg border bg-green-50 shadow-sm">
+            <div className="text-xs text-green-700">Жами Тушум</div>
+            <div className="text-xl font-bold text-green-900">{formatAmount(salesTotals.totalAmount, false)}</div>
           </div>
-          <br/>
+          <div className="p-2 rounded-lg border bg-white shadow-sm">
+            <div className="text-xs text-gray-700">Нақд</div>
+            <div className="text-xl font-bold text-gray-900">{formatAmount(salesCashTotal, false)}</div>
+          </div>
+          <div className="p-2 rounded-lg border bg-white shadow-sm">
+            <div className="text-xs text-gray-700">Карта</div>
+            <div className="text-xl font-bold text-gray-900">{formatAmount(salesCardTotal, false)}</div>
+          </div>
+          <div className="p-2 rounded-lg border bg-blue-50 shadow-sm">
+            <div className="text-xs text-blue-700">Омбор Ходимлари</div>
+            <div className="text-xl font-bold text-blue-900">{warehouseSummaries.length}</div>
+          </div>
+        </div>
+      </div>
 
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-sm font-semibold text-gray-600">
-              Омбор Ходимлари ({warehouseSummaries.length})
-            </div>
+      {warehouseSummaries.map((w) => (
+        <div key={w.id} className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
+          <h3 className="text-lg font-semibold mb-3">{w.name} — Транзакциялар</h3>
+          <div className="flex gap-2 mb-3">
+            <button
+              className={`px-3 py-1 rounded ${warehouseViewModes[w.id] === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}
+              onClick={() => setWarehouseViewModes((prev) => ({ ...prev, [w.id]: 'all' }))}
+            >
+              Ҳаммаси
+            </button>
+            <button
+              className={`px-3 py-1 rounded ${warehouseViewModes[w.id] === 'kirim' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-800'}`}
+              onClick={() => setWarehouseViewModes((prev) => ({ ...prev, [w.id]: 'kirim' }))}
+            >
+              Кирим
+            </button>
+            <button
+              className={`px-3 py-1 rounded ${warehouseViewModes[w.id] === 'chiqim' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-800'}`}
+              onClick={() => setWarehouseViewModes((prev) => ({ ...prev, [w.id]: 'chiqim' }))}
+            >
+              Чиқим
+            </button>
+            <button
+              className="px-3 py-1 rounded bg-amber-500 text-white"
+              onClick={() => setShowChiqimHistory(true)}
+              title="Филиалга ўтказмалар"
+            >
+              Филиалга ўтказмалар
+            </button>
           </div>
-          <div className="border-t my-3" />
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm rounded-lg overflow-hidden">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-4 py-3 text-center text-gray-600">Омбор Ходими</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Нақд</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Карта</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Кредит</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Бўлиб Тўлаш</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Олдиндан Олинган</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Сотилган Дона</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Кассадаги Пул</th>
-                  <th className="px-4 py-3 text-center text-gray-600">Кўриш</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {warehouseSummaries.map((w) => (
-                  <tr key={w.id} className="hover:bg-green-50/40">
-                    <td className="px-4 py-3 text-center">{w.name}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.cashTotal, false)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.cardTotal, false)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.creditTotal, false)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.installmentTotal, false)}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(w.upfrontTotal, false)}</td>
-                    <td className="px-4 py-3 text-center">{w.soldQuantity}</td>
-                    <td className="px-4 py-3 text-center">{formatAmount(
-                      (Number(w.cashTotal||0)) + (Number(w.upfrontTotal||0)) +
-                      (Array.isArray(w.repayments) ? w.repayments.filter(r => (r.channel||'CASH').toUpperCase()==='CASH').reduce((s,r)=> s + Number(r.amount||0), 0) : 0),
-                      false
-                    )}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => { setSelectedWarehouse(w); setShowWarehouseModal(true); }}
-                        className="text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 font-medium"
-                      >
-                        <Eye size={14} /> Кўриш
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Маҳсулот</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Сотилган Дона</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Сумма</th>
+                  <th className="px-3 py-2 text-left">ID</th>
+                  <th className="px-3 py-2 text-left">Сана</th>
+                  <th className="px-3 py-2 text-left">Тури</th>
+                  <th className="px-3 py-2 text-left">Сотган</th>
+                  <th className="px-3 py-2 text-left">Якуний</th>
+                  <th className="px-3 py-2 text-left">Кимдан</th>
+                  <th className="px-3 py-2 text-left">Кимга</th>
+                  <th className="px-3 py-2 text-left">Маҳсулотлар</th>
+                  <th className="px-3 py-2 text-left">Кўриш</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {loading ? (
-                  <tr><td colSpan="3" className="px-4 py-4 text-center">Юкланмоқда...</td></tr>
-                ) : productSales.length === 0 ? (
-                  <tr><td colSpan="3" className="px-4 py-4 text-center text-gray-500">Маълумот Йўқ</td></tr>
+                  <tr>
+                    <td colSpan="9" className="px-3 py-2 text-center">Юкланмоқда...</td>
+                  </tr>
+                ) : w.transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="px-3 py-2 text-center">Маълумот Йўқ</td>
+                  </tr>
                 ) : (
-                  productSales.map((p) => (
-                    <tr key={p.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">{p.name || `#${p.id}`}</td>
-                      <td className="px-4 py-3">{p.quantity}</td>
-                      <td className="px-4 py-3">{formatAmount(p.amount, false)}</td>
-                    </tr>
-                  ))
+                  w.transactions
+                    .filter(t => {
+                      const direction = getTransactionDirection(t);
+                      const viewMode = warehouseViewModes[w.id];
+                      
+                      if (viewMode === 'all') return true;
+                      
+                      if (viewMode === 'kirim') {
+                        if (t.type === 'TRANSFER') {
+                          return String(t.toBranchId) === String(selectedBranchId);
+                        }
+                        return direction === 'kirim';
+                      }
+                      
+                      if (viewMode === 'chiqim') {
+                        if (t.type === 'TRANSFER') {
+                          return String(t.fromBranchId) === String(selectedBranchId);
+                        }
+                        if (t.type === 'SALE' && t.paymentType === 'CASH') {
+                          return true;
+                        }
+                        return direction === 'chiqim' && t.paymentType !== 'CASH';
+                      }
+                      
+                      return direction === viewMode;
+                    })
+                    .map((t) => (
+                      <tr key={t.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2">#{t.id}</td>
+                        <td className="px-3 py-2">{formatDate(t.createdAt)}</td>
+                        <td className="px-3 py-2">{transactionTypes[t.type]?.label || t.type}</td>
+                        <td className="px-3 py-2">{t.soldByName || '-'}</td>
+                        <td className="px-3 py-2">{formatAmount(t.finalTotal, false)}</td>
+                        <td className="px-3 py-2">{t.fromBranchName || '-'}</td>
+                        <td className="px-3 py-2">{t.toBranchName || '-'}</td>
+                        <td className="px-3 py-2 max-w-[280px]">
+                          {Array.isArray(t.items) && t.items.length > 0 ? (
+                            <div className="space-y-1 text-xs text-gray-800">
+                              {t.items.map((it, idx) => {
+                                const name = getProductDisplayName(it) || `#${it?.productId || it?.id || idx}`;
+                                const qty = Number(it?.quantity) || 0;
+                                const price = Number(it?.price) || 0;
+                                const total = Number(it?.total || (qty * price)) || 0;
+                                return (
+                                  <div key={idx} className="flex items-center justify-between gap-2">
+                                    <span className="truncate">{name} x{qty}</span>
+                                    <span className="whitespace-nowrap">{formatAmount(total, false)}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-500">-</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                        <button
+  className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+  onClick={async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+      const res = await fetch(`${BASE_URL}/transactions/${t.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const full = await res.json();
+      setSelectedTransactionItems(full);
+    } catch (e) {
+      // fallback to existing t if fetch fails
+      setSelectedTransactionItems(t);
+    }
+  }}
+>
+  <Eye size={14} /> Кўриш
+</button>
+                        </td>
+                      </tr>
+                    ))
                 )}
               </tbody>
             </table>
           </div>
         </div>
+      ))}
 
-        {showWarehouseModal && selectedWarehouse && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
-            <div className="bg-white w-[95vw] h-[95vh] rounded-lg shadow-xl flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
-                <h3 className="text-lg font-semibold">{selectedWarehouse.name} — Омбор Операциялари</h3>
-                <button
-                  className="text-gray-500 hover:text-gray-700"
-                  onClick={() => { setShowWarehouseModal(false); setSelectedWarehouse(null); }}
-                >
-                  <XIcon size={20} />
-                </button>
-              </div>
-              <div className="p-4 overflow-auto flex-1">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Нақд</div><div className="font-semibold">{formatAmount(selectedWarehouse.cashTotal, false)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Карта</div><div className="font-semibold">{formatAmount(selectedWarehouse.cardTotal, false)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Кредит</div><div className="font-semibold">{formatAmount(selectedWarehouse.creditTotal, false)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Бўлиб Тўлаш</div><div className="font-semibold">{formatAmount(selectedWarehouse.installmentTotal, false)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Олдиндан Олинган</div><div className="font-semibold">{formatAmount(selectedWarehouse.upfrontTotal, false)}</div></div>
-                  <div className="p-3 rounded border bg-purple-50">
-                    <div className="text-sm">Кредитдан Тўланган</div>
-                    <div className="text-xl font-bold">{formatAmount(selectedWarehouse.repaymentTotal || 0, false)}</div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <div className="text-xs">Нақд</div>
-                        <div className="font-semibold">{formatAmount((selectedWarehouse.repayments||[]).filter(r=> (r.channel||'CASH').toUpperCase()==='CASH').reduce((s,r)=> s+Number(r.amount||0),0), false)}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs">Карта</div>
-                        <div className="font-semibold">{formatAmount((selectedWarehouse.repayments||[]).filter(r=> (r.channel||'CASH').toUpperCase()==='CARD').reduce((s,r)=> s+Number(r.amount||0),0), false)}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Сотилган Дона</div><div className="font-semibold">{selectedWarehouse.soldQuantity}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Сотилган Сумма</div><div className="font-semibold">{formatAmount(selectedWarehouse.soldAmount, false)}</div></div>
-                </div>
-
-                {Array.isArray(selectedWarehouse.repayments) && selectedWarehouse.repayments.length > 0 && (
-                  <div className="mb-4">
-                    <div className="text-sm font-semibold text-gray-700 mb-2">Кредитдан Тўловлар (Ойлар Бўйича)</div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-3 py-2 text-left">Ой</th>
-                            <th className="px-3 py-2 text-left">Тўланган Куни</th>
-                            <th className="px-3 py-2 text-left">Сумма</th>
-                            <th className="px-3 py-2 text-left">Транзакция</th>
-                            <th className="px-3 py-2 text-left">Мижоз</th>
-                            <th className="px-3 py-2 text-left">Қабул Қилган</th>
-                            <th className="px-3 py-2 text-left">Сотган</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {selectedWarehouse.repayments.map((r, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50">
-                              <td className="px-3 py-2">{r.month}</td>
-                              <td className="px-3 py-2">{formatDate(r.paidAt)}</td>
-                              <td className="px-3 py-2">{formatAmount(r.amount, false)}</td>
-                              <td className="px-3 py-2">#{r.transactionId}</td>
-                              <td className="px-3 py-2">{r.customer?.fullName || '-'}</td>
-                              <td className="px-3 py-2">{r.paidBy ? `${r.paidBy.firstName || ''} ${r.paidBy.lastName || ''}`.trim() : '-'}</td>
-                              <td className="px-3 py-2">{r.soldBy ? `${r.soldBy.firstName || ''} ${r.soldBy.lastName || ''}`.trim() : '-'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left">ID</th>
-                        <th className="px-3 py-2 text-left">Сана</th>
-                        <th className="px-3 py-2 text-left">Тури</th>
-                        <th className="px-3 py-2 text-left">Сотган</th>
-                        <th className="px-3 py-2 text-left">Якуний</th>
-                        <th className="px-3 py-2 text-left">Кимдан</th>
-                        <th className="px-3 py-2 text-left">Кимга</th>
-                        <th className="px-3 py-2 text-left">Кўриш</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {(selectedWarehouse.transactions || []).map((t) => (
-                        <tr key={t.id} className="hover:bg-gray-50">
-                          <td className="px-3 py-2">#{t.id}</td>
-                          <td className="px-3 py-2">{formatDate(t.createdAt)}</td>
-                          <td className="px-3 py-2">{transactionTypes[t.type]?.label || t.type}</td>
-                          <td className="px-3 py-2">{t.soldByName || '-'}</td>
-                          <td className="px-3 py-2">{formatAmount(t.finalTotal, false)}</td>
-                          <td className="px-3 py-2">{t.fromBranchName || '-'}</td>
-                          <td className="px-3 py-2">{t.toBranchName || '-'}</td>
-                          <td className="px-3 py-2">
-                            <button
-                              className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                              onClick={() => { setSelectedTransactionItems(t); }}
-                            >
-                              <Eye size={14} /> Кўриш
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {selectedTransactionItems && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
-            <div className="bg-white w-[90vw] h-[90vh] rounded-lg shadow-xl flex flex-col">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
-                <h3 className="text-lg font-semibold">Транзакция #{selectedTransactionItems.id}</h3>
-                <div className="flex items-center gap-2">
-                  <button
-                    className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
-                    onClick={() => {
-                      const c = selectedTransactionItems.customer || {};
-                      const merged = {
-                        ...c,
-                        address: c.address || selectedTransactionItems.deliveryAddress || c.address,
-                        deliveryAddress: selectedTransactionItems.deliveryAddress || c.deliveryAddress || c.address,
-                      };
-                      setSelectedCustomer(merged);
-                      setShowCustomerModal(true);
-                    }}
-                  >
-                    <UserIcon size={16} /> Мижоз Маълумоти
-                  </button>
-                  <button
-                    className="text-gray-500 hover:text-gray-700"
-                    onClick={() => setSelectedTransactionItems(null)}
-                  >
-                    <XIcon size={20} />
-                  </button>
-                </div>
-              </div>
-              <div className="p-4 overflow-auto flex-1">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Тўлов Тури</div><div className="font-semibold">{getPaymentTypeLabel(selectedTransactionItems.paymentType)}</div></div>
-                  <div className="p-3 rounded border"><div className="text-sm text-gray-500">Якуний</div><div className="font-semibold">{formatAmount(selectedTransactionItems.finalTotal, false)}</div></div>
-                </div>
-
-                {Array.isArray(selectedTransactionItems.repayments) && selectedTransactionItems.repayments.length > 0 && (
-                  <div className="mb-4">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-3 py-2 text-left">Ой</th>
-                            <th className="px-3 py-2 text-left">Тўланган Куни</th>
-                            <th className="px-3 py-2 text-left">Сумма</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {(selectedTransactionItems.repayments || []).filter((r) => {
-                            const p = r?.paidAt ? new Date(r.paidAt) : null;
-                            const sb = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
-                            const eb = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
-                            if (!p) return false;
-                            const inRange = (!sb || p >= sb) && (!eb || p <= eb);
-                            return inRange;
-                          }).map((r, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50">
-                              <td className="px-3 py-2">{r.month}</td>
-                              <td className="px-3 py-2">{formatDate(r.paidAt)}</td>
-                              <td className="px-3 py-2">{formatAmount(r.amount, false)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Маҳсулот</th>
-                        <th className="px-3 py-2 text-left">Миқдор</th>
-                        <th className="px-3 py-2 text-left">Жами</th>
-                        <th className="px-3 py-2 text-left">Кредит/Бўлиб</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {(selectedTransactionItems.items || []).map((it, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-3 py-2">{it.product?.name || it.name || '-'}</td>
-                          <td className="px-3 py-2">{it.quantity}</td>
-                          <td className="px-3 py-2">{formatAmount((Number(it.price)||0) * (Number(it.quantity)||0), false)}</td>
-                          <td className="px-3 py-2">
-                            {(it.creditMonth || it.creditPercent) ? (
-                              <span>
-                                {it.creditMonth || '-'} ой, {typeof it.creditPercent === 'number' ? `${(it.creditPercent * 100).toFixed(0)}%` : '-'}
-                              </span>
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showCustomerModal && selectedCustomer && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
-            <div className="bg-white w-[600px] max-w-[95vw] rounded-lg shadow-xl">
-              <div className="flex items-center justify-between px-4 py-3 border-b">
-                <h3 className="text-lg font-semibold">Мижоз Маълумотлари</h3>
-                <button
-                  className="text-gray-500 hover:text-gray-700"
-                  onClick={() => { setShowCustomerModal(false); setSelectedCustomer(null); }}
-                >
-                  <XIcon size={20} />
-                </button>
-              </div>
-              <div className="p-4 space-y-2 text-sm">
-                <p><span className="text-gray-600">Ф.И.Ш:</span> <span className="font-medium">{selectedCustomer.fullName || '-'}</span></p>
-                <p><span className="text-gray-600">Телефон:</span> <span className="font-medium">{selectedCustomer.phone || '-'}</span></p>
-                <p><span className="text-gray-600">Паспорт:</span> <span className="font-medium">{selectedCustomer.passportSeries || '-'}</span></p>
-                <p><span className="text-gray-600">ЖШШИР:</span> <span className="font-medium">{selectedCustomer.jshshir || '-'}</span></p>
-                <p><span className="text-gray-600">Манзил:</span> <span className="font-medium">{selectedCustomer.address || selectedCustomer.deliveryAddress || '-'}</span></p>
-              </div>
-            </div>
-          </div>
-        )}
-
+      <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
+        <h3 className="text-md font-semibold mb-2">Сотилган Маҳсулотлар</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Маҳсулот</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Сотилган Дона</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Сумма</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {loading ? (
+                <tr><td colSpan="3" className="px-4 py-4 text-center">Юкланмоқда...</td></tr>
+              ) : productSales.length === 0 ? (
+                <tr><td colSpan="3" className="px-4 py-4 text-center text-gray-500">Маълумот Йўқ</td></tr>
+              ) : (
+                productSales.map((p) => (
+                  <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">{p.name || `#${p.id}`}</td>
+                    <td className="px-4 py-3">{p.quantity}</td>
+                    <td className="px-4 py-3">{formatAmount(p.amount, false)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Chiqim History Modal */}
+      {showChiqimHistory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-6xl max-h-[80vh] overflow-y-auto shadow-xl">
+            <div className="flex justify-between mb-4">
+              <h3 className="text-lg font-bold">Чиқим Тарихи</h3>
+              <button
+                onClick={() => setShowChiqimHistory(false)}
+                className="text-gray-600 hover:text-gray-800 transition-all"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full border">
+                <thead>
+                  <tr className="bg-gray-100 text-left">
+                    <th className="p-3">ID</th>
+                    <th className="p-3">Тип</th>
+                    <th className="p-3">Сана</th>
+                    <th className="p-3">Жами</th>
+                    <th className="p-3">Тўлов тури</th>
+                    <th className="p-3">Филиал</th>
+                    <th className="p-3">Мижоз</th>
+                    <th className="p-3">Маҳсулотлар</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.filter(t => getTransactionDirection(t) === 'chiqim').length > 0 ? (
+                    transactions
+                      .filter(t => getTransactionDirection(t) === 'chiqim')
+                      .map((transfer) => (
+                        <tr key={transfer.id} className="border-t">
+                          <td className="p-3">#{transfer.id}</td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-1 rounded text-xs ${
+                                transfer.type === 'SALE'
+                                  ? 'bg-green-100 text-green-800'
+                                  : transfer.type === 'TRANSFER'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : transfer.type === 'WRITE_OFF'
+                                  ? 'bg-red-100 text-red-800'
+                                  : transfer.type === 'STOCK_ADJUSTMENT'
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              {transactionTypes[transfer.type]?.label || transfer.type}
+                            </span>
+                          </td>
+                          <td className="p-3">{formatDate(transfer.createdAt)}</td>
+                          <td className="p-3">{formatAmount((transfer.finalTotal || transfer.total), false)}</td>
+                          <td className="p-3">{getPaymentTypeLabel(transfer.paymentType) || 'Ўтказма'}</td>
+                          <td className="p-3">{transfer.fromBranch?.name || transfer.fromBranchName || transfer.fromBranchId || "Noma'lum"}</td>
+                          <td className="p-3">
+                            {getCustomerName(transfer.customer) ||
+                              (transfer.customer?.firstName && transfer.customer?.lastName
+                                ? `${transfer.customer.firstName} ${transfer.customer.lastName}`
+                                : 'Ўтказма')}
+                          </td>
+                          <td className="p-3">
+                            {(transfer.items || []).map((item, idx) => (
+                              <div key={idx} className="text-sm">
+                                {getProductDisplayName(item)} x{item.quantity}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      ))
+                  ) : (
+                    <tr>
+                      <td colSpan="8" className="p-3 text-center">
+                        Чиқим транзакциялари топилмади
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedTransactionItems && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
+          <div className="bg-white w-[90vw] h-[90vh] rounded-lg shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="text-lg font-semibold">Транзакция #{selectedTransactionItems.id}</h3>
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                  onClick={() => {
+                    const c = selectedTransactionItems.customer || {};
+                    const merged = {
+                      ...c,
+                      address: c.address || selectedTransactionItems.deliveryAddress || c.address,
+                      deliveryAddress: selectedTransactionItems.deliveryAddress || c.deliveryAddress || c.address,
+                    };
+                    setSelectedCustomer(merged);
+                    setShowCustomerModal(true);
+                  }}
+                >
+                  <UserIcon size={16} /> Мижоз Маълумоти
+                </button>
+                <button
+                  className="text-gray-500 hover:text-gray-700"
+                  onClick={() => setSelectedTransactionItems(null)}
+                >
+                  <XIcon size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-auto flex-1">
+              <div className="mb-3 text-sm text-gray-700">
+                <span className="font-semibold">Маҳсулотлар:</span>
+                <span className="ml-2">
+                  {(selectedTransactionItems.items || [])
+                    .map((it) => getProductDisplayName(it))
+                    .filter(Boolean)
+                    .join(', ') || '-'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                <div className="p-3 rounded border">
+                  <div className="text-sm text-gray-500">Тўлов Тури</div>
+                  <div className="font-semibold">{getPaymentTypeLabel(selectedTransactionItems.paymentType)}</div>
+                </div>
+                <div className="p-3 rounded border">
+                  <div className="text-sm text-gray-500">Якуний</div>
+                  <div className="font-semibold">{formatAmount(selectedTransactionItems.finalTotal, false)}</div>
+                </div>
+                <div className="p-3 rounded border">
+                  <div className="text-sm text-gray-500">Тўланган</div>
+                  <div className="font-semibold">{formatAmount((selectedTransactionItems.amountPaid || 0) + (selectedTransactionItems.downPayment || 0), false)}</div>
+                </div>
+                <div className="p-3 rounded border">
+                  <div className="text-sm text-gray-500">Қолган</div>
+                  <div className="font-semibold">{formatAmount((selectedTransactionItems.finalTotal || 0) - ((selectedTransactionItems.amountPaid || 0) + (selectedTransactionItems.downPayment || 0)), false)}</div>
+                </div>
+              </div>
+
+              {Array.isArray(selectedTransactionItems.repayments) && selectedTransactionItems.repayments.length > 0 && (
+                <div className="mb-4">
+                  <div className="text-sm font-semibold text-gray-700 mb-2">Кредитдан Тўловлар</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Ой</th>
+                          <th className="px-3 py-2 text-left">Тўланган Куни</th>
+                          <th className="px-3 py-2 text-left">Сумма</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {(selectedTransactionItems.repayments || []).filter((r) => {
+                          const p = r?.paidAt ? new Date(r.paidAt) : null;
+                          const sb = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
+                          const eb = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
+                          if (!p) return false;
+                          const inRange = (!sb || p >= sb) && (!eb || p <= eb);
+                          return inRange;
+                        }).map((r, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-3 py-2">{r.month}</td>
+                            <td className="px-3 py-2">{formatDate(r.paidAt)}</td>
+                            <td className="px-3 py-2">{formatAmount(r.amount, false)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Маҳсулот</th>
+                      <th className="px-3 py-2 text-left">Миқдор</th>
+                      {!(selectedTransactionItems?.paymentType === 'CREDIT' || selectedTransactionItems?.paymentType === 'INSTALLMENT') && (
+                        <th className="px-3 py-2 text-left">Нарх</th>
+                      )}
+                      <th className="px-3 py-2 text-left">Жами</th>
+                      <th className="px-3 py-2 text-left">Кредит/Бўлиб</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {(selectedTransactionItems.items || []).map((it, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-3 py-2">{getProductDisplayName(it)}</td>
+                        <td className="px-3 py-2">{it.quantity}</td>
+                        {!(selectedTransactionItems?.paymentType === 'CREDIT' || selectedTransactionItems?.paymentType === 'INSTALLMENT') && (
+                          <td className="px-3 py-2">{formatAmount(it.price, false)}</td>
+                        )}
+                        <td className="px-3 py-2">{formatAmount(it.total, false)}</td>
+                        <td className="px-3 py-2">
+                          {(it.creditMonth || it.creditPercent) ? (
+                            <span>
+                              {it.creditMonth || '-'} ой, {typeof it.creditPercent === 'number' ? `${(it.creditPercent * 100).toFixed(0)}%` : '-'}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCustomerModal && selectedCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
+          <div className="bg-white w-[600px] max-w-[95vw] rounded-lg shadow-xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="text-lg font-semibold">Мижоз Маълумотлари</h3>
+              <button
+                className="text-gray-500 hover:text-gray-700"
+                onClick={() => { setShowCustomerModal(false); setSelectedCustomer(null); }}
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-2 text-sm">
+              <p><span className="text-gray-600">Ф.И.Ш:</span> <span className="font-medium">{selectedCustomer.fullName || '-'}</span></p>
+              <p><span className="text-gray-600">Телефон:</span> <span className="font-medium">{selectedCustomer.phone || '-'}</span></p>
+              <p><span className="text-gray-600">Паспорт:</span> <span className="font-medium">{selectedCustomer.passportSeries || '-'}</span></p>
+              <p><span className="text-gray-600">ЖШШИР:</span> <span className="font-medium">{selectedCustomer.jshshir || '-'}</span></p>
+              <p><span className="text-gray-600">Манзил:</span> <span className="font-medium">{selectedCustomer.address || selectedCustomer.deliveryAddress || '-'}</span></p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );

@@ -23,6 +23,7 @@ const Мижозлар = () => {
   const [transactionSearchTerm, setTransactionSearchTerm] = useState('');
   const [expandedTransactions, setExpandedTransactions] = useState({});
   const API_URL = 'https://suddocs.uz';
+  const [exchangeRate, setExchangeRate] = useState(12650);
 
   // Helpers to compute accurate paid/remaining amounts across different transaction shapes
   const calculateTransactionRemaining = (t) => {
@@ -65,6 +66,14 @@ const Мижозлар = () => {
     if (didInitCustomersRef.current) return;
     didInitCustomersRef.current = true;
     loadCustomers();
+    // fetch exchange rate once
+    (async () => {
+      try {
+        const res = await axiosWithAuth.get('/currency-exchange-rates');
+        const rate = Array.isArray(res.data) && res.data[0]?.rate ? Number(res.data[0].rate) : null;
+        if (rate) setExchangeRate(rate);
+      } catch {}
+    })();
   }, []);
 
   useEffect(() => {
@@ -85,17 +94,15 @@ const Мижозлар = () => {
       const response = await axiosWithAuth.get('/customers?skip=0&take=1000');
       const allCustomers = Array.isArray(response.data) ? response.data : [];
 
-      const customersWithDebt = allCustomers.filter((customer) => {
+      const customersWithCredit = allCustomers.filter((customer) => {
         if (!Array.isArray(customer.transactions) || customer.transactions.length === 0) return false;
         const creditTransactions = customer.transactions.filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
-        if (creditTransactions.length === 0) return false;
-        const totalRemaining = creditTransactions.reduce((sum, t) => sum + calculateTransactionRemaining(t), 0);
-        return totalRemaining > 0;
+        return creditTransactions.length > 0;
       });
 
-      setCustomers(customersWithDebt);
-      setFilteredCustomers(customersWithDebt);
-      console.log('Юкланган мижозлар билан қарз:', customersWithDebt);
+      setCustomers(customersWithCredit);
+      setFilteredCustomers(customersWithCredit);
+      console.log('Юкланган кредит тарихи бор мижозлар:', customersWithCredit);
     } catch (error) {
       console.error('Мижозларни юклашда хатолик:', error);
       setNotification({ message: 'Мижозларни юклашда хатолик', type: 'error' });
@@ -108,16 +115,21 @@ const Мижозлар = () => {
     try {
       setLoading(true);
       const response = await axiosWithAuth.get(`/transactions?customerId=${customerId}&limit=100`);
-      const transactions = response.data.transactions || [];
-      
-      console.log('Юкланган транзакциялар:', transactions);
-      
+      let transactions = response.data.transactions || [];
+      // Enrich from local storage meta (termUnit/days/interestRate) if available
+      try {
+        const metaRaw = localStorage.getItem('tx_term_units');
+        const metaMap = metaRaw ? JSON.parse(metaRaw) : {};
+        if (metaMap && typeof metaMap === 'object') {
+          transactions = transactions.map((tx) => {
+            const meta = metaMap[String(tx.id)];
+            return meta ? { ...tx, ...meta } : tx;
+          });
+        }
+      } catch {}
+      // store raw USD values; conversion is done on render via exchangeRate
       const allTransactions = [];
       for (const transaction of transactions) {
-        console.log('Транзакцияни қайта ишлаш:', transaction);
-        console.log('Тўлов тури:', transaction.paymentType);
-        console.log('Тўлов жадваллари:', transaction.paymentSchedules);
-        
         if (transaction.paymentSchedules && transaction.paymentSchedules.length > 0) {
           allTransactions.push(...transaction.paymentSchedules.map(schedule => ({
             ...schedule,
@@ -135,12 +147,10 @@ const Мижозлар = () => {
             paidAmount: transaction.amountPaid || 0,
             remainingBalance: transaction.remainingBalance || 0,
             month: 1,
-            isPaid: transaction.amountPaid >= transaction.finalTotal
+            isPaid: (transaction.amountPaid || 0) >= (transaction.finalTotal || 0)
           });
         }
       }
-      
-      console.log('Барча транзакциялар қайта ишланди:', allTransactions);
       setPaymentSchedules(allTransactions);
       setSelectedCustomer(customers.find(c => c.id === customerId));
     } catch (error) {
@@ -189,6 +199,22 @@ const Мижозлар = () => {
           console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
           await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, paymentScheduleUpdate);
         }
+      } else {
+        // Daily installment (no schedule): store a local repayment log for dashboards/reports
+        try {
+          const logsRaw = localStorage.getItem('tx_daily_repayments');
+          const logs = logsRaw ? JSON.parse(logsRaw) : [];
+          logs.push({
+            transactionId: selectedSchedule.transaction.id,
+            amount: Number(paymentAmount),
+            paidAt: new Date().toISOString(),
+            channel: paymentChannel,
+            paidByUserId: Number(localStorage.getItem('userId')) || null,
+            customerId: selectedSchedule.transaction.customer?.id || null,
+            branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
+          });
+          localStorage.setItem('tx_daily_repayments', JSON.stringify(logs));
+        } catch {}
       }
 
       const transactionUpdate = {
@@ -226,8 +252,9 @@ const Мижозлар = () => {
   };
 
   const formatCurrency = (amount) => {
-    return amount != null && Number.isFinite(Number(amount))
-      ? new Intl.NumberFormat('uz-UZ').format(Number(amount)) + " сўм"
+    const uzs = Number(amount);
+    return uzs != null && Number.isFinite(uzs)
+      ? new Intl.NumberFormat('uz-UZ').format(uzs) + " сўм"
       : "0 сўм";
   };
 
@@ -420,12 +447,24 @@ const Мижозлар = () => {
                         const months = (t.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || (Array.isArray(t.paymentSchedules) ? t.paymentSchedules.length : 0);
                         const percent = (t.items || []).map(it => (typeof it.creditPercent === 'number' ? Number(it.creditPercent) : null)).find(v => v != null);
                         const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
+                        const totalAmount = Number(t.finalTotal || 0);
+                        const paidAmountCompact = calculateTransactionPaid(t);
+                        const remainingCompact = Math.max(0, totalAmount - paidAmountCompact);
                         return (
                           <div key={t.id} className="border rounded-lg bg-white">
                             <button onClick={toggle} className="w-full text-left p-4 flex items-start justify-between">
                               <div>
                                 <div className="font-medium text-lg">{productNames || `#${t.id}`}</div>
-                                <div className="text-sm text-gray-600">{typeLabel(t.paymentType)} {months ? `— ${months} ой` : ''}{percent != null ? `, ${(percent*100).toFixed(0)}%` : ''}</div>
+                                <div className="text-sm text-gray-600">{typeLabel(t.paymentType)} {t.termUnit === 'DAYS' ? (t.days ? `— ${t.days} кун` : '') : (months ? `— ${months} ой` : '')}{percent != null ? `, ${(percent*100).toFixed(0)}%` : ''}
+                                  {paidAmountCompact > 0 && remainingCompact > 0 && (
+                                    <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 align-middle">Қисман тўланган</span>
+                                  )}
+                                </div>
+                                {t.termUnit === 'DAYS' && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Асосий сумма: {formatCurrency(totalAmount)} | Тўланган: {formatCurrency(paidAmountCompact)} | Қолган: {formatCurrency(remainingCompact)}
+                                  </div>
+                                )}
                                 <div className="text-xs text-gray-500">Сана: {formatDate(t.createdAt)}</div>
                               </div>
                               <div className="text-right">
@@ -449,7 +488,7 @@ const Мижозлар = () => {
                                       <table className="w-full text-sm border">
                                         <thead className="bg-gray-50">
                                           <tr>
-                                            <th className="px-2 py-1 text-left">Ой</th>
+                                            <th className="px-2 py-1 text-left">Ой/Кун</th>
                                             <th className="px-2 py-1 text-left">Тўлов</th>
                                             <th className="px-2 py-1 text-left">Тўланган</th>
                                             <th className="px-2 py-1 text-left">Қолган</th>
@@ -471,7 +510,7 @@ const Мижозлар = () => {
                                                 <td className="px-2 py-1">{sc.month}</td>
                                                 <td className="px-2 py-1">{formatCurrency(sc.payment)}</td>
                                                 <td className="px-2 py-1">{formatCurrency(sc.paidAmount)}</td>
-                                                <td className="px-2 py-1">{formatCurrency(rem)}</td>
+                                                <td className="px-2 py-1">{formatCurrency((Number(sc.payment||0)-Number(sc.paidAmount||0)))}</td>
                                                 <td className={`px-2 py-1 text-xs ${st.color}`}>{st.text}</td>
                                                 <td className="px-2 py-1">{sc.paidAt ? formatDate(sc.paidAt) : '-'}</td>
                                                 <td className="px-2 py-1">{sc.paidChannel === 'CARD' ? 'Карта' : (sc.paidChannel === 'CASH' ? 'Нақд' : '-')}</td>
@@ -534,6 +573,48 @@ const Мижозлар = () => {
                                     ))}
                                   </div>
                                 </div>
+
+                                {(() => {
+                                  if (!(t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT')) return null;
+                                  const total = Number(t.finalTotal || 0);
+                                  const paid = calculateTransactionPaid(t);
+                                  const remaining = Math.max(0, total - paid);
+                                  if (remaining <= 0) return null;
+                                  return (
+                                    <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-2">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="text-sm text-blue-800">Қолган: <span className="font-semibold">{formatCurrency(remaining)}</span></div>
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={paymentAmount}
+                                            onChange={(e)=>setPaymentAmount(e.target.value)}
+                                            placeholder="Сумма"
+                                            className="w-28 p-1.5 border border-blue-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                          />
+                                          <button
+                                            onClick={() => {
+                                              const amt = Number(paymentAmount);
+                                              setSelectedSchedule({
+                                                transaction: t,
+                                                isPaymentSchedule: false,
+                                                payment: total,
+                                                paidAmount: paid,
+                                                remainingBalance: remaining,
+                                              });
+                                              setPaymentAmount(!isNaN(amt) && amt>0 ? String(amt) : String(remaining));
+                                              setShowPaymentModal(true);
+                                            }}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded"
+                                          >
+                                            Тўлаш
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )}
                           </div>
