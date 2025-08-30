@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut, Users, Ban, Menu, X } from 'lucide-react';
-import Logout from '../Chiqish/logout'; 
+import Logout from '../Chiqish/logout';
+import { formatAmount, formatCurrency } from '../../utils/currencyFormat'; 
 
 const Sidebar = ({ token, socket, locationPermission, locationError, children }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);

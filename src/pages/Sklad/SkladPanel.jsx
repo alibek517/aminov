@@ -47,8 +47,8 @@ function SkladPanel() {
   );
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedBranchId, setSelectedBranchId] = useState(() => localStorage.getItem('selectedBranchId') || '');
-  const [branches, setBranches] = useState([{ id: '', name: 'Барча филиаллар' }]);
+  const [selectedBranchId, setSelectedBranchId] = useState(() => localStorage.getItem('branchId') || '');
+  const [branches, setBranches] = useState([]);
   const [error, setError] = useState(null);
   const [userName, setUserName] = useState('Test User');
   const [exchangeRate, setExchangeRate] = useState(0);
@@ -88,21 +88,23 @@ function SkladPanel() {
 
     const fetchBranches = async () => {
       try {
+        console.log('Fetching branches with token:', token ? 'Token exists' : 'No token');
         const response = await fetch('https://suddocs.uz/branches', {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
         });
-        if (!response.ok) throw new Error('Failed to fetch branches');
+        console.log('Branches response status:', response.status);
+        if (!response.ok) throw new Error(`Failed to fetch branches: ${response.status}`);
         const data = await response.json();
-        setBranches([{ id: '', name: 'Барча филиаллар' }, ... (Array.isArray(data) ? data : data.branches || [])]);  // Safe extraction
+        console.log('Branches data:', data);
+        const branchesArray = Array.isArray(data) ? data : (data.branches || []);
+        setBranches(branchesArray);
+        setError(null);
       } catch (err) {
-        setBranches([
-          { id: '', name: 'Барча филиаллар' },
-          { id: '1', name: 'Main Branch' },
-          { id: '2', name: 'Branch 2' },
-        ]);
+        console.error('Error fetching branches:', err);
+        setBranches([]);
         setError(err.message || 'Failed to fetch branches');
       }
     };
@@ -130,13 +132,11 @@ function SkladPanel() {
     };
   }, [selectedBranchId, token, location.pathname, navigate]);
 
-  useEffect(() => {
-    localStorage.setItem('selectedBranchId', selectedBranchId);
-  }, [selectedBranchId]);
+
 
   const handleLogoutConfirm = () => {
     localStorage.removeItem('access_token');
-    localStorage.removeItem('selectedBranchId');
+    localStorage.removeItem('branchId');
     localStorage.removeItem('user');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userId');
@@ -192,10 +192,7 @@ function SkladPanel() {
     }
   };
 
-  const handleBranchChange = (e) => {
-    setSelectedBranchId(e.target.value);
-    // No navigation; content re-renders with new selectedBranchId
-  };
+
 
   const handleNavigation = (item) => {
     setActiveTab(item.id);
@@ -311,18 +308,13 @@ function SkladPanel() {
                 >
                   <Menu size={20} />
                 </button>
-                <select
-                  value={selectedBranchId}
-                  onChange={handleBranchChange}
-                  className="border border-gray-300 rounded-lg py-2 px-4 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={error}
-                >
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-2">
+                  {selectedBranchId && (
+                    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                      {branches.find(b => b.id.toString() === selectedBranchId)?.name || 'Filial'}
+                    </span>
+                  )}
+                </div>
                 {error && (
                   <span className="ml-2 text-red-500 text-sm">{error}</span>
                 )}

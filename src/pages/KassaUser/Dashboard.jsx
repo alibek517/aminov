@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatAmount, formatCurrency } from '../../utils/currencyFormat';
 import {
   DollarSign,
   Package,
@@ -128,10 +129,7 @@ const Dashboard = () => {
         })
       : "N/A";
   };
-  const formatAmount = (value) => {
-    const num = Math.floor(Number(value) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  };
+
   const getPaymentTypeLabel = (pt) => {
     switch (pt) {
       case "CASH":
@@ -198,6 +196,8 @@ const Dashboard = () => {
           creditTotal: 0,
           installmentTotal: 0,
           upfrontTotal: 0,
+          upfrontCash: 0,
+          upfrontCard: 0,
           soldQuantity: 0,
           soldAmount: 0,
           repaymentTotal: 0,
@@ -229,10 +229,24 @@ const Dashboard = () => {
                 case "CREDIT":
                   agg.creditTotal += final;
                   agg.upfrontTotal += upfront;
+                  // Track upfront payment by type
+                  const upfrontType = t.upfrontPaymentType || 'CASH';
+                  if (upfrontType === 'CASH') {
+                    agg.upfrontCash += upfront;
+                  } else if (upfrontType === 'CARD') {
+                    agg.upfrontCard += upfront;
+                  }
                   break;
                 case "INSTALLMENT":
                   agg.installmentTotal += final;
                   agg.upfrontTotal += upfront;
+                  // Track upfront payment by type
+                  const upfrontType2 = t.upfrontPaymentType || 'CASH';
+                  if (upfrontType2 === 'CASH') {
+                    agg.upfrontCash += upfront;
+                  } else if (upfrontType2 === 'CARD') {
+                    agg.upfrontCard += upfront;
+                  }
                   break;
                 default:
                   break;
@@ -503,9 +517,7 @@ const Dashboard = () => {
     },
   ];
 
-  function formatPrice(number) {
-    return number.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  }
+
 
   return (
 <div className="p-6 bg-gray-50 min-h-screen">
@@ -575,6 +587,20 @@ const Dashboard = () => {
                     </div>
                     <div className="font-semibold">
                       {formatAmount(cashierReport.upfrontTotal)}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <div className="text-xs">Naqd</div>
+                        <div className="font-semibold">
+                          {formatAmount(cashierReport.upfrontCash || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Karta</div>
+                        <div className="font-semibold">
+                          {formatAmount(cashierReport.upfrontCard || 0)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="p-3 rounded border bg-purple-50">

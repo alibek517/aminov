@@ -511,15 +511,12 @@ const TovarlarRoyxati = () => {
           setCreateBranch(storedBranchId);
           setUploadBranch(storedBranchId);
         } else {
-          // Agar localStorage da branchId topilmasa yoki noto'g'ri bo'lsa, "Ombor" filialini tanlash
-          const omborBranch = branchesData.find((b) => b.name.toLowerCase() === 'омбор');
-          if (omborBranch) {
-            setSelectedBranchId(omborBranch.id.toString());
-            setEditBranch(omborBranch.id.toString());
-            setCreateBranch(omborBranch.id.toString());
-            setUploadBranch(omborBranch.id.toString());
-          } else {
-            setNotification({ message: '"Омбор" филиали топилмади', type: 'error' });
+          // Allow viewing all branches even if own branch is not found
+          if (branchesData.length > 0) {
+            setSelectedBranchId(branchesData[0].id.toString());
+            setEditBranch(branchesData[0].id.toString());
+            setCreateBranch(branchesData[0].id.toString());
+            setUploadBranch(branchesData[0].id.toString());
           }
         }
       } catch (err) {
@@ -678,6 +675,15 @@ const TovarlarRoyxati = () => {
   const isOmborBranch = () => {
     const stored = localStorage.getItem('branchId');
     return stored && stored === selectedBranchId;
+  };
+
+  const canPerformOperations = () => {
+    const stored = localStorage.getItem('branchId');
+    return stored && stored === selectedBranchId;
+  };
+
+  const canViewAllBranches = () => {
+    return true; // Allow viewing all branches
   };
 
   const openEditModal = (product) => {
@@ -1187,7 +1193,7 @@ const TovarlarRoyxati = () => {
                       checked={selected.includes(product.id)}
                       onChange={() => onSelect(product.id)}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      disabled={!isOmborBranch()}
+                      disabled={!canPerformOperations()}
                     />
                   </td>
                 )}
@@ -1203,33 +1209,42 @@ const TovarlarRoyxati = () => {
                   <div className="flex space-y-0.5 max-h-24 overflow-y-auto pr-1">
                     {isOmborBranch() && (
                       <>
-                        <button
-                          onClick={() => openEditModal(product)}
-                          disabled={submitting}
-                          className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
-                          title="Таҳрирлаш"
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(product)}
-                          disabled={submitting}
-                          className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
-                          title="Ўчириш"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        {product.barcode && (
-                          <button
-                            onClick={() => handlePrintBarcode(product)}
-                            disabled={submitting}
-                            className="text-green-600 hover:text-green-900 p-2 rounded-lg hover:bg-green-50 transition-all duration-200"
-                            title="Баркод"
-                          >
-                            <ScanLine size={16} />
-                          </button>
+                        {canPerformOperations() && (
+                          <>
+                            <button
+                              onClick={() => openEditModal(product)}
+                              disabled={submitting}
+                              className="text-blue-600 hover:text-blue-900 p-2 rounded-lg hover:bg-blue-50 transition-all duration-200"
+                              title="Таҳрирлаш"
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(product)}
+                              disabled={submitting}
+                              className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-all duration-200"
+                              title="Ўчириш"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            {product.barcode && (
+                              <button
+                                onClick={() => handlePrintBarcode(product)}
+                                disabled={submitting}
+                                className="text-green-600 hover:text-green-900 p-2 rounded-lg hover:bg-green-50 transition-all duration-200"
+                                title="Баркод"
+                              >
+                                <ScanLine size={16} />
+                              </button>
+                            )}
+                          </>
                         )}
                       </>
+                    )}
+                    {!isOmborBranch() && (
+                      <div className="text-xs text-gray-500 italic">
+                        Faqat ko'rish
+                      </div>
                     )}
                     {type === 'defective' && product.defectiveQuantity > 0 && (
                       <button
@@ -1276,20 +1291,12 @@ const TovarlarRoyxati = () => {
         <label className="block text-lg font-semibold text-gray-800 mb-3">Филиални танланг</label>
         <select
           value={selectedBranchId}
-          onChange={(e) => {
-            const newBranchId = e.target.value;
-            setSelectedBranchId(newBranchId);
-            setEditBranch(newBranchId);
-            setCreateBranch(newBranchId);
-            setUploadBranch(newBranchId);
-            localStorage.setItem('branchId', newBranchId); // Tanlangan filialni localStorage'ga saqlash
-          }}
-          className="w-full max-w-md px-5 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+          onChange={(e) => setSelectedBranchId(e.target.value)}
+          className="w-full max-w-md px-5 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
         >
-          <option value="">Филиални танланг</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
+          {branches.map((branch) => (
+            <option key={branch.id} value={branch.id}>
+              {branch.name}
             </option>
           ))}
         </select>
@@ -1300,8 +1307,10 @@ const TovarlarRoyxati = () => {
           <div className="flex flex-wrap gap-5 items-center">
             <button
               onClick={openCreateModal}
-              disabled={submitting || !isOmborBranch()}
-              className="inline-flex items-center px-5 py-3 border border-transparent text-xl font-semibold rounded-lg text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              disabled={submitting || !canPerformOperations()}
+              className={`inline-flex items-center px-5 py-3 border border-transparent text-xl font-semibold rounded-lg text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
+                !canPerformOperations() ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -1318,8 +1327,10 @@ const TovarlarRoyxati = () => {
               />
               <button
                 onClick={openUploadModal}
-                disabled={!isOmborBranch()}
-                className="inline-flex items-center px-5 py-3 border border-gray-300 text-xl font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                disabled={!canPerformOperations()}
+                className={`inline-flex items-center px-5 py-3 border border-gray-300 text-xl font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap ${
+                  !canPerformOperations() ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
               >
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -1395,7 +1406,7 @@ const TovarlarRoyxati = () => {
         <>
           {activeTab === 'all' && (
             <div className="space-y-6">
-              {selectedProducts.length > 0 && isOmborBranch() && (
+              {selectedProducts.length > 0 && canPerformOperations() && (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-medium text-gray-900">
@@ -1404,7 +1415,7 @@ const TovarlarRoyxati = () => {
                     <div className="flex gap-3">
                       <button
                         onClick={handleSelect50}
-                        disabled={submitting || selectedProducts.length >= 100 || !isOmborBranch()}
+                        disabled={submitting || selectedProducts.length >= 100 || !canPerformOperations()}
                         className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                       >
                         <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2014,11 +2025,11 @@ const TovarlarRoyxati = () => {
                   />
                 </div>
                 <div className="text-center">
-                  <Barcode value={selectedBarcode} />
-                  <p className="mt-2 text-sm text-gray-600">{selectedBarcodeProduct.name}</p>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {formatMarketPriceSom(selectedBarcodeProduct.marketPrice || selectedBarcodeProduct.price)}
-                  </p>
+                  <Barcode 
+                    value={selectedBarcode} 
+                    productName={selectedBarcodeProduct.name}
+                    price={formatMarketPriceSom(selectedBarcodeProduct.marketPrice || selectedBarcodeProduct.price)}
+                  />
                 </div>
               </div>
               <div className="mt-8 flex justify-end gap-4">

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Plus, Edit3, Trash2 } from 'lucide-react';
+import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
 const Customers = ({ selectedBranchId: propSelectedBranchId }) => {
   const navigate = useNavigate();

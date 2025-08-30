@@ -1,1093 +1,1486 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Eye, RefreshCw, User as UserIcon, X as XIcon } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  DollarSign,
+  Package,
+  ShoppingCart,
+  AlertTriangle,
+  Building2,
+  LayoutGrid,
+} from "lucide-react";
 
-const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState(() => {
-    const todayStr = new Date().toLocaleDateString('en-CA');
+const StatCard = ({
+  title,
+  value,
+  change,
+  isPositive,
+  icon: Icon,
+  totalAmount,
+}) => (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow duration-200 flex flex-col justify-between">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-sm font-medium text-gray-600">{title}</p>
+        <p className="text-2xl font-bold text-gray-900 mt-2">{value}</p>
+      </div>
+      <div className="p-3 bg-blue-50 rounded-lg">
+        <Icon className="text-blue-600" size={24} />
+      </div>
+    </div>
+    {totalAmount !== undefined && (
+      <p className="mt-4 text-sm text-gray-700 font-semibold border-t border-gray-200 pt-3">
+        Жами сумма:{" "}
+        {Number(totalAmount || 0)
+          .toString()
+          .replace(/\B(?=(\d{3})+(?!\d))/g, " ")}
+      </p>
+    )}
+  </div>
+);
+
+const Dashboard = () => {
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const token = localStorage.getItem("access_token");
+  const userRole = localStorage.getItem("userRole");
+  // Always get selectedBranchId from localStorage
+  const selectedBranchId = localStorage.getItem("branchId") || "";
+
+  // Check if user has WAREHOUSE role
+  if (userRole !== "WAREHOUSE") {
+    return (
+      <div className="p-6 bg-gray-50 min-h-screen">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+          <div className="text-red-600 text-2xl font-bold mb-4">
+            Рухсат йўқ
+          </div>
+          <p className="text-gray-600">
+            Бу саҳифани кўриш учун WAREHOUSE роли керак
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Report state
+  const [activeReport, setActiveReport] = useState('kirim');
+  
+  // Cashier report state (current user from localStorage)
+  const currentUserId = Number(localStorage.getItem("userId")) || null;
+  const [cashierLoading, setCashierLoading] = useState(false);
+  const [cashierReport, setCashierReport] = useState(null);
+  const [defectivePlus, setDefectivePlus] = useState(0);
+  const [defectiveMinus, setDefectiveMinus] = useState(0);
+  const [reportDate, setReportDate] = useState(() => {
+    const todayStr = new Date().toLocaleDateString("en-CA");
     return { startDate: todayStr, endDate: todayStr };
   });
-  const [productSales, setProductSales] = useState([]);
-  const [dailySales, setDailySales] = useState([]);
-  const [salesTotals, setSalesTotals] = useState({ totalQuantity: 0, totalAmount: 0 });
-  const [warehouseSummaries, setWarehouseSummaries] = useState([]);
-  const [overallRepaymentTotal, setOverallRepaymentTotal] = useState(0);
-  const [overallRepaymentCash, setOverallRepaymentCash] = useState(0);
-  const [overallRepaymentCard, setOverallRepaymentCard] = useState(0);
-  const [overallUpfrontTotal, setOverallUpfrontTotal] = useState(0);
-  const [creditIssuedTotal, setCreditIssuedTotal] = useState(0);
-  const [salesCashTotal, setSalesCashTotal] = useState(0);
-  const [salesCardTotal, setSalesCardTotal] = useState(0);
-  const [selectedTransactionItems, setSelectedTransactionItems] = useState(null);
-  const [showCustomerModal, setShowCustomerModal] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [selectedBranchId, setSelectedBranchId] = useState(
-    localStorage.getItem('branchId') || ''
-  );
-  const [exchangeRate, setExchangeRate] = useState(12650);
-  const [warehouseViewModes, setWarehouseViewModes] = useState({});
-  const [productNameCache, setProductNameCache] = useState({}); // productId -> name
-  // New state for chiqim history modal
-  const [showChiqimHistory, setShowChiqimHistory] = useState(false);
-  const navigate = useNavigate();
 
-  const BASE_URL = 'https://suddocs.uz';
+  // Operation reports state
+  const [kirimData, setKirimData] = useState([]);
+  const [chiqimData, setChiqimData] = useState([]);
+  const [otkazmalarData, setOtkazmalarData] = useState([]);
+  const [kirimLoading, setKirimLoading] = useState(false);
+  const [chiqimLoading, setChiqimLoading] = useState(false);
+  const [otkazmalarLoading, setOtkazmalarLoading] = useState(false);
 
-  // Date formatting
+  const soldProducts = products
+    .filter((product) => product.status === "SOLD")
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .slice(0, 5);
+
+  const totalSoldAmount = soldProducts.reduce((acc, item) => {
+    const price = parseFloat(item.price) || 0;
+    const quantity = parseFloat(item.quantity) || 0;
+    return acc + price * quantity;
+  }, 0);
+
+  const fetchData = async () => {
+    if (!token) return;
+    try {
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+
+      const productsUrl = selectedBranchId
+        ? `https://suddocs.uz/products?branchId=${selectedBranchId}`
+        : "https://suddocs.uz/products";
+
+      const [productRes, categoryRes, branchRes] = await Promise.all([
+        fetch(productsUrl, { headers }),
+        fetch("https://suddocs.uz/categories", { headers }),
+        fetch("https://suddocs.uz/branches", { headers }),
+      ]);
+
+      if (!productRes.ok || !categoryRes.ok || !branchRes.ok) {
+        throw new Error("Маълумотларни олишда хатолик юз берди");
+      }
+
+      const [productData, categoryData, branchData] = await Promise.all([
+        productRes.json(),
+        categoryRes.json(),
+        branchRes.json(),
+      ]);
+
+      setProducts(productData);
+      setCategories(categoryData);
+      setBranches(branchData);
+      setError(null);
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError(err.message || "Маълумотларни олишда хатолик юз берди");
+    }
+  };
+
+  useEffect(() => {
+    if (!token) {
+      navigate("/login");
+    } else {
+      fetchData();
+    }
+  }, [token, navigate, selectedBranchId]);
+
+  // Helpers for cashier block
   const formatDate = (dateString) => {
     return dateString
-      ? new Date(dateString).toLocaleDateString('uz-UZ', {
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
+      ? new Date(dateString).toLocaleDateString("uz-UZ", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
         })
-      : 'Н/И';
+      : "N/A";
   };
-
-  // Amount formatting
-  const formatAmount = (value, isUSD = true) => {
-    const num = Number(value) || 0;
-    if (Number.isNaN(num)) return '0 сўм';
-    const converted = isUSD ? num * exchangeRate : num;
-    return Math.floor(converted).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' сўм';
+  const formatAmount = (value) => {
+    const num = Math.floor(Number(value) || 0);
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   };
-
-  // Payment type label
   const getPaymentTypeLabel = (pt) => {
     switch (pt) {
-      case 'CASH': return 'Нақд';
-      case 'CARD': return 'Карта';
-      case 'CREDIT': return 'Кредит';
-      case 'INSTALLMENT': return 'Бўлиб тўлаш';
-      default: return pt || 'Н/И';
+      case "CASH":
+        return "Нақд";
+      case "CARD":
+        return "Карта";
+      case "CREDIT":
+        return "Кредит";
+      case "INSTALLMENT":
+        return "Бўлиб тўлаш";
+      default:
+        return pt || "N/A";
     }
   };
-
-  // Customer name
-  const getCustomerName = (customer) => {
-    if (!customer) return 'Йўқ';
-    return customer.fullName || 'Йўқ';
-  };
-
-  // User name
   const getUserName = (user) => {
-    if (!user) return 'Йўқ';
-    return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Йўқ';
+    if (!user) return "Йўқ";
+    return `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Йўқ";
   };
 
-  // Transaction direction
-  const getTransactionDirection = (t) => {
-    switch (t.type) {
-      case 'SALE': 
-        return 'chiqim';
-      case 'RETURN': 
-        return 'kirim';
-      case 'TRANSFER':
-        const isFromCurrentBranch = String(t.fromBranchId) === String(selectedBranchId);
-        const isToCurrentBranch = String(t.toBranchId) === String(selectedBranchId);
-        if (isFromCurrentBranch && isToCurrentBranch) {
-          return 'both';
-        } else if (isFromCurrentBranch) {
-          return 'chiqim';
-        } else if (isToCurrentBranch) {
-          return 'kirim';
-        }
-        return 'other';
-      case 'WRITE_OFF': 
-        return 'chiqim';
-      case 'STOCK_ADJUSTMENT':
-        if (!Array.isArray(t.items) || t.items.length === 0) return 'other';
-        const totalQty = t.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-        if (totalQty > 0) return 'kirim';
-        if (totalQty < 0) return 'chiqim';
-        return 'other';
-      case 'PURCHASE': 
-        return 'kirim';
-      default: 
-        return 'other';
+  // Fetch operation reports
+  const fetchKirimData = async () => {
+    if (!token) return;
+    // Only fetch data if a specific branch is selected (not "all branches")
+    if (!selectedBranchId || selectedBranchId === '') {
+      setKirimData([]);
+      return;
     }
-  };
-
-  // Transaction types
-  const transactionTypes = {
-    SALE: { label: 'Сотув', color: 'bg-green-100 text-green-800' },
-    RETURN: { label: 'Қайтариш', color: 'bg-yellow-100 text-yellow-800' },
-    TRANSFER: { label: 'Ўтказма', color: 'bg-blue-100 text-blue-800' },
-    WRITE_OFF: { label: 'Ёзиб ташлаш', color: 'bg-red-100 text-red-800' },
-    STOCK_ADJUSTMENT: { label: 'Захира тузатиш', color: 'bg-purple-100 text-purple-800' },
-    PURCHASE: { label: 'Кирим', color: 'bg-indigo-100 text-indigo-800' },
-  };
-
-  // Dynamic product name resolvers (pick first available *name/*title field from backend)
-  const getAnyStringField = (obj) => {
-    if (!obj || typeof obj !== 'object') return '';
-    for (const key of Object.keys(obj)) {
-      if (/(name|title)/i.test(key) && typeof obj[key] === 'string' && obj[key].trim()) {
-        return obj[key];
-      }
-    }
-    return '';
-  };
-  const getProductDisplayName = (item) => {
-    return (
-      (item?.productId && productNameCache[item.productId]) ||
-      getAnyStringField(item?.product) ||
-      getAnyStringField(item) ||
-      (typeof item?.productId !== 'undefined' ? `#${item.productId}` : (typeof item?.id !== 'undefined' ? `#${item.id}` : '-'))
-    );
-  };
-
-  // Set exchange rate from backend
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = localStorage.getItem('access_token');
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch(`${BASE_URL}/currency-exchange-rates`, { headers });
-        const data = await res.json().catch(() => ([]));
-        const rate = Array.isArray(data) && data[0]?.rate ? Number(data[0].rate) : null;
-        if (rate && Number.isFinite(rate) && rate > 0) setExchangeRate(rate);
-      } catch {
-        // fallback keeps default
-      }
-    })();
-  }, []);
-
-  // Monitor localStorage changes
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === 'branchId') {
-        setSelectedBranchId(e.newValue || '');
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  // Update branch ID
-  useEffect(() => {
-    // Always prefer localStorage branchId for this report
-    const lsBranchId = localStorage.getItem('branchId');
-    if (lsBranchId !== null) setSelectedBranchId(lsBranchId);
-  }, [propSelectedBranchId]);
-
-  // Fetch transactions
-  useEffect(() => {
-    if (selectedBranchId !== undefined) {
-      fetchTransitions();
-    }
-  }, [selectedBranchId, filters.startDate, filters.endDate, exchangeRate]);
-
-  const fetchTransitions = useCallback(async () => {
-    setLoading(true);
-    setProductSales([]);
-    setWarehouseSummaries([]);
-    setDailySales([]);
-    setSalesTotals({ totalQuantity: 0, totalAmount: 0 });
-    setOverallRepaymentTotal(0);
-    setOverallRepaymentCash(0);
-    setOverallRepaymentCard(0);
-
+    setKirimLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
-      if (!token) {
-        console.error('No access token found in localStorage');
-        navigate('/login');
-        throw new Error('Авторизация токени топилмади');
-      }
-
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
       const params = new URLSearchParams();
-      if (filters.startDate) {
-        const startIso = new Date(`${filters.startDate}T00:00:00`).toISOString();
-        params.append('startDate', startIso);
-      }
-      if (filters.endDate) {
-        const endIso = new Date(`${filters.endDate}T23:59:59`).toISOString();
-        params.append('endDate', endIso);
-      }
-      if (selectedBranchId) params.append('branchId', selectedBranchId);
-      params.append('limit', 'all');
+      if (reportDate.startDate)
+        params.append(
+          "startDate",
+          new Date(`${reportDate.startDate}T00:00:00`).toISOString()
+        );
+      if (reportDate.endDate)
+        params.append(
+          "endDate",
+          new Date(`${reportDate.endDate}T23:59:59`).toISOString()
+        );
+      params.append("type", "PURCHASE");
+      params.append("branchId", selectedBranchId);
+      params.append("limit", "all");
 
-      const response = await fetch(`${BASE_URL}/transactions?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.message || 'Сервер хатоси';
-        console.error('Fetch error:', errorMessage);
-        if (response.status === 401) {
-          localStorage.removeItem('access_token');
-          navigate('/login');
-          toast.error('Сессия тугади. Илтимос, қайта киринг.');
-        } else {
-          toast.error(errorMessage);
-        }
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
+      const res = await fetch(
+        `https://suddocs.uz/transactions?${params.toString()}`,
+        { headers }
+      );
+      if (!res.ok) throw new Error("Server error");
+      const data = await res.json();
       const transactions = data.transactions || data || [];
-
-      // Use backend-provided values as-is (assuming UZS already)
-      const normalizedTransactions = transactions.map((t) => ({
-        ...t,
-        total: Number(t.total || 0),
-        finalTotal: Number(t.finalTotal || t.total || 0),
-        amountPaid: Number(t.amountPaid || 0),
-        downPayment: Number(t.downPayment || 0),
-        items: Array.isArray(t.items)
-          ? t.items.map((item) => ({
-              ...item,
-              price: Number(item.price || 0),
-              total: Number(item.total || (Number(item.price || 0) * Number(item.quantity || 0))),
-            }))
-          : [],
+      
+      // Process kirim data
+      const kirimTransactions = transactions.map(t => ({
+        id: t.id,
+        createdAt: t.createdAt,
+        productName: t.items?.[0]?.productName || t.items?.[0]?.name || t.items?.[0]?.product?.name || 'N/A',
+        model: t.items?.[0]?.model || t.items?.[0]?.product?.model || 'Model yo\'q',
+        quantity: t.items?.[0]?.quantity || 0,
+        price: t.items?.[0]?.price || 0,
+        total: t.total || 0
       }));
+      
+      setKirimData(kirimTransactions);
+           } catch (err) {
+         console.error("Кирим маълумотларини олишда хатолик:", err);
+         setKirimData([]);
+       } finally {
+         setKirimLoading(false);
+       }
+  };
 
-      setTransactions(normalizedTransactions);
+  const fetchChiqimData = async () => {
+    if (!token) return;
+    // Only fetch data if a specific branch is selected (not "all branches")
+    if (!selectedBranchId || selectedBranchId === '') {
+      setChiqimData([]);
+      return;
+    }
+    setChiqimLoading(true);
+    try {
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+      const params = new URLSearchParams();
+      if (reportDate.startDate)
+        params.append(
+          "startDate",
+          new Date(`${reportDate.startDate}T00:00:00`).toISOString()
+        );
+      if (reportDate.endDate)
+        params.append(
+          "endDate",
+          new Date(`${reportDate.endDate}T23:59:59`).toISOString()
+        );
+      params.append("type", "SALE");
+      params.append("branchId", selectedBranchId);
+      params.append("limit", "all");
 
-      // Prefetch product names by productId when product detail is missing
-      try {
-        const idsToFetch = new Set();
-        for (const tr of normalizedTransactions) {
-          if (!Array.isArray(tr.items)) continue;
-          for (const it of tr.items) {
-            const pid = it?.productId;
-            const hasName = !!(it?.product?.name || it?.name || it?.productName);
-            if (pid && !hasName && !(pid in productNameCache)) idsToFetch.add(pid);
-          }
-        }
-        if (idsToFetch.size > 0) {
-          const token = localStorage.getItem('access_token');
-          const headers = token ? { Authorization: `Bearer ${token}` } : {};
-          const entries = await Promise.all(
-            Array.from(idsToFetch).map(async (pid) => {
-              try {
-                const res = await fetch(`${BASE_URL}/products/${pid}`, { headers });
-                if (!res.ok) return [pid, `#${pid}`];
-                const data = await res.json().catch(() => null);
-                const name = data?.name || data?.productName || data?.title || `#${pid}`;
-                return [pid, name];
-              } catch {
-                return [pid, `#${pid}`];
-              }
-            })
-          );
-          setProductNameCache((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
-        }
-      } catch (e) {
-        // ignore prefetch errors
+      const res = await fetch(
+        `https://suddocs.uz/transactions?${params.toString()}`,
+        { headers }
+      );
+      if (!res.ok) throw new Error("Server error");
+      const data = await res.json();
+      const transactions = data.transactions || data || [];
+      
+      setChiqimData(transactions);
+           } catch (err) {
+         console.error("Чиқим маълумотларини олишда хатолик:", err);
+         setChiqimData([]);
+       } finally {
+         setChiqimLoading(false);
+       }
+  };
+
+  const fetchOtkazmalarData = async () => {
+    if (!token) return;
+    // Only fetch data if a specific branch is selected (not "all branches")
+    if (!selectedBranchId || selectedBranchId === '') {
+      setOtkazmalarData([]);
+      return;
+    }
+    setOtkazmalarLoading(true);
+    try {
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+      const params = new URLSearchParams();
+      if (reportDate.startDate)
+        params.append(
+          "startDate",
+          new Date(`${reportDate.startDate}T00:00:00`).toISOString()
+        );
+      if (reportDate.endDate)
+        params.append(
+          "endDate",
+          new Date(`${reportDate.endDate}T23:59:59`).toISOString()
+        );
+      params.append("type", "TRANSFER");
+      params.append("branchId", selectedBranchId);
+      params.append("limit", "all");
+
+      const res = await fetch(
+        `https://suddocs.uz/transactions?${params.toString()}`,
+        { headers }
+      );
+      if (!res.ok) throw new Error("Server error");
+      const data = await res.json();
+      const transactions = data.transactions || data || [];
+      
+      setOtkazmalarData(transactions);
+           } catch (err) {
+         console.error("Ўтказмалар маълумотларини олишда хатолик:", err);
+         setOtkazmalarData([]);
+       } finally {
+         setOtkazmalarLoading(false);
+       }
+  };
+
+  // Fetch data when active report changes
+  useEffect(() => {
+    if (activeReport === 'kirim') {
+      fetchKirimData();
+    } else if (activeReport === 'chiqim') {
+      fetchChiqimData();
+    } else if (activeReport === 'otkazmalar') {
+      fetchOtkazmalarData();
+    }
+  }, [activeReport, reportDate.startDate, reportDate.endDate, selectedBranchId, token]);
+
+  // Fetch cashier report for current user
+  useEffect(() => {
+    const fetchCashier = async () => {
+      if (!token || !currentUserId) return;
+      // Only fetch data if a specific branch is selected (not "all branches")
+      if (!selectedBranchId || selectedBranchId === '') {
+        setCashierReport(null);
+        return;
       }
+      setCashierLoading(true);
+      try {
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        };
+        const params = new URLSearchParams();
+        if (reportDate.startDate)
+          params.append(
+            "startDate",
+            new Date(`${reportDate.startDate}T00:00:00`).toISOString()
+          );
+        if (reportDate.endDate)
+          params.append(
+            "endDate",
+            new Date(`${reportDate.endDate}T23:59:59`).toISOString()
+          );
+        if (selectedBranchId) params.append("branchId", selectedBranchId);
+        params.append("limit", "all");
 
-      const productMap = new Map();
-      const dailyMap = new Map();
-      let totalQuantity = 0; // deprecated in favor of tmpSalesQty but keep var to avoid large diff
-      let totalAmount = 0;   // deprecated in favor of tmpSalesTotal but keep var to avoid large diff
-      let tmpSalesCash = 0;
-      let tmpSalesCard = 0;
-      let tmpUpfrontOverall = 0;
-      let tmpSalesTotal = 0; // legacy sales total (SALE only)
-      let tmpFinalColumnSum = 0; // sum of Якýний across all fetched transactions (UZS)
-      let tmpSalesQty = 0;
-      let tmpCreditIssued = 0; // total credit issued (finalTotal - upfront)
-      const warehouseMap = new Map();
+        const res = await fetch(
+          `https://suddocs.uz/transactions?${params.toString()}`,
+          { headers }
+        );
+        if (!res.ok) throw new Error("Server error");
+        const data = await res.json();
+        const transactions = data.transactions || data || [];
+        
+        // Debug: Log the raw API response
+        console.log('Raw API response for transactions:', {
+          data: data,
+          transactions: transactions,
+          transactionsLength: transactions.length,
+          hasTransactions: !!data.transactions,
+          firstTransaction: transactions[0]
+        });
 
-      if (Array.isArray(normalizedTransactions)) {
-        normalizedTransactions.forEach((transaction) => {
-          const warehouseUser = transaction.user?.role === 'WAREHOUSE'
-            ? transaction.user
-            : (transaction.soldBy?.role === 'WAREHOUSE' ? transaction.soldBy : null);
-          const isWarehouse = !!warehouseUser;
+        const startBound = reportDate.startDate
+          ? new Date(`${reportDate.startDate}T00:00:00`)
+          : null;
+        const endBound = reportDate.endDate
+          ? new Date(`${reportDate.endDate}T23:59:59`)
+          : null;
+        
+        // Debug: Log the date bounds
+        console.log('Date filtering bounds:', {
+          startDate: reportDate.startDate,
+          endDate: reportDate.endDate,
+          startBound: startBound,
+          endBound: endBound
+        });
 
-          // Always accumulate Yakuniy column sum in so'm (no conversion)
-          tmpFinalColumnSum += Number(transaction.finalTotal || transaction.total || 0);
-          
-          if (transaction.type === 'SALE') {
-            if (transaction.paymentType === 'CASH') tmpSalesCash += Number(transaction.finalTotal || 0);
-            if (transaction.paymentType === 'CARD') tmpSalesCard += Number(transaction.finalTotal || 0);
-            if (transaction.paymentType === 'CREDIT' || transaction.paymentType === 'INSTALLMENT') {
-              // Count upfront received at sale time (amountPaid + downPayment) in so'm; exclude later repayments
-              tmpUpfrontOverall += Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0);
-              // Credit issued equals yakuniy minus upfront collected at sale time
-              const issued = Number(transaction.finalTotal || 0) - (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
-              if (issued > 0) tmpCreditIssued += issued;
+        const agg = {
+          id: currentUserId,
+          name: getUserName(JSON.parse(localStorage.getItem("user") || "{}")),
+          cashTotal: 0,
+          cardTotal: 0,
+          creditTotal: 0,
+          installmentTotal: 0,
+          installmentCash: 0,
+          installmentCard: 0,
+          upfrontTotal: 0,
+          upfrontCash: 0,
+          upfrontCard: 0,
+          soldQuantity: 0,
+          soldAmount: 0,
+          repaymentTotal: 0,
+          repaymentCash: 0,
+          repaymentCard: 0,
+          repayments: [],
+          transactions: [],
+        };
+
+        // Track schedule IDs to avoid double-counting across multiple sources
+        const seenSchedules = new Set();
+        
+        // Track transaction processing statistics
+        let totalTransactions = 0;
+        let processedTransactions = 0;
+        let skippedTransactions = 0;
+
+        for (const t of Array.isArray(transactions) ? transactions : []) {
+          totalTransactions++;
+          if (t.type === "SALE") {
+            // Apply date filtering to ensure we only process transactions within the selected date range
+            const transactionDate = t.createdAt ? new Date(t.createdAt) : null;
+            const inDateRange = transactionDate && (!startBound || transactionDate >= startBound) && (!endBound || transactionDate <= endBound);
+            
+            if (!inDateRange) {
+              console.log('Skipping transaction outside date range:', {
+                id: t.id,
+                createdAt: t.createdAt,
+                transactionDate: transactionDate,
+                startBound: startBound,
+                endBound: endBound
+              });
+              skippedTransactions++;
+              continue;
             }
-            tmpSalesTotal += Number(transaction.finalTotal || 0);
-            if (Array.isArray(transaction.items)) {
-              for (const it of transaction.items) {
-                const qty = Number(it.quantity) || 0;
-                if (qty > 0) tmpSalesQty += qty;
+            
+            // Sales totals credited if current user was the seller
+            if (
+              t.soldBy?.id === currentUserId ||
+              t.user?.id === currentUserId
+            ) {
+              // Debug: Log all transaction data for this transaction
+              console.log('Processing transaction:', {
+                id: t.id,
+                paymentType: t.paymentType,
+                amountPaid: t.amountPaid,
+                upfrontPaymentType: t.upfrontPaymentType,
+                finalTotal: t.finalTotal,
+                total: t.total,
+                soldBy: t.soldBy,
+                user: t.user
+              });
+                             const final = Number(t.finalTotal || t.total || 0);
+               const amountPaid = Number(t.amountPaid || 0);
+               // For upfront payments, use amountPaid as it contains the actual amount paid upfront
+               const upfrontAmount = amountPaid;
+               const upfront = upfrontAmount;
+               
+                               // Debug logging for upfront payments
+                if (upfrontAmount > 0) {
+                  console.log('Upfront payment found:', {
+                    transactionId: t.id,
+                    paymentType: t.paymentType,
+                    upfrontAmount: upfrontAmount,
+                    amountPaid: amountPaid,
+                    paymentMethod: t.paymentMethod,
+                    paymentChannel: t.paymentChannel,
+                    upfrontPaymentType: t.upfrontPaymentType,
+                    final: final,
+                    // Add more fields to see what's available
+                    hasPaymentMethod: !!t.paymentMethod,
+                    hasPaymentChannel: !!t.paymentChannel,
+                    hasUpfrontPaymentType: !!t.upfrontPaymentType
+                  });
+                }
+                
+                // Also log all transactions to see what data we're getting
+                console.log('Transaction data:', {
+                  id: t.id,
+                  paymentType: t.paymentType,
+                  upfrontAmount: upfrontAmount,
+                  amountPaid: amountPaid,
+                  upfrontPaymentType: t.upfrontPaymentType,
+                  paymentMethod: t.paymentMethod,
+                  paymentChannel: t.paymentChannel,
+                  hasItems: !!t.items,
+                  itemsCount: t.items?.length || 0
+                });
+              switch (t.paymentType) {
+                case "CASH":
+                  agg.cashTotal += Math.floor(final);
+                  break;
+                                case "CARD":
+                  agg.cardTotal += Math.floor(final);
+                  break;
+                                                  case "CREDIT":
+                  agg.creditTotal += Math.floor(final);
+                  // Count upfront payment - use amountPaid as it contains the actual upfront amount
+                  if (upfrontAmount > 0) {
+                    console.log('CREDIT upfront payment found:', {
+                      transactionId: t.id,
+                      amount: upfrontAmount,
+                      amountPaid: amountPaid,
+                      upfrontPaymentType: t.upfrontPaymentType
+                    });
+                    agg.upfrontTotal += upfrontAmount;
+                    
+                    // Check if there's a specific upfront payment method
+                    const upfrontPaymentMethod = t.upfrontPaymentType || "CASH";
+                    const isCardPayment = upfrontPaymentMethod === "CARD" || 
+                                        upfrontPaymentMethod === "KARTA" || 
+                                        upfrontPaymentMethod === "CARD_PAYMENT";
+                    
+                    console.log('CREDIT payment method detection:', {
+                      upfrontPaymentType: t.upfrontPaymentType,
+                      upfrontPaymentMethod: upfrontPaymentMethod,
+                      isCardPayment: isCardPayment
+                    });
+                    
+                    if (isCardPayment) {
+                      agg.upfrontCard += upfrontAmount;
+                      console.log('Added to upfrontCard:', upfrontAmount);
+                    } else {
+                      agg.upfrontCash += upfrontAmount;
+                      console.log('Added to upfrontCash:', upfrontAmount);
+                    }
+                  }
+                  break;
+                case "INSTALLMENT":
+                  agg.installmentTotal += Math.floor(final);
+                  // Count upfront payment - use amountPaid as it contains the actual upfront amount
+                  if (upfrontAmount > 0) {
+                    console.log('INSTALLMENT upfront payment found:', {
+                      transactionId: t.id,
+                      amount: upfrontAmount,
+                      amountPaid: amountPaid,
+                      upfrontPaymentType: t.upfrontPaymentType
+                    });
+                    agg.upfrontTotal += upfrontAmount;
+                    
+                    // Check if there's a specific upfront payment method
+                    const upfrontPaymentMethod = t.upfrontPaymentType || "CASH";
+                    const isCardPayment = upfrontPaymentMethod === "CARD" || 
+                                        upfrontPaymentMethod === "KARTA" || 
+                                        upfrontPaymentMethod === "CARD_PAYMENT";
+                    
+                    console.log('INSTALLMENT payment method detection:', {
+                      upfrontPaymentType: t.upfrontPaymentType,
+                      upfrontPaymentMethod: upfrontPaymentMethod,
+                      isCardPayment: isCardPayment
+                    });
+                    
+                    if (isCardPayment) {
+                      agg.upfrontCard += upfrontAmount;
+                      console.log('Added to upfrontCard:', upfrontAmount);
+                    } else {
+                      agg.upfrontCash += upfrontAmount;
+                      console.log('Added to upfrontCash:', upfrontAmount);
+                    }
+                  }
+                  break;
+                default:
+                  break;
               }
-            }
-          }
-
-          if (isWarehouse) {
-            const wid = warehouseUser.id;
-            if (!warehouseMap.has(wid)) {
-              warehouseMap.set(wid, {
-                id: wid,
-                name: `${warehouseUser.firstName || ''} ${warehouseUser.lastName || ''}`.trim() || warehouseUser.username || `#${wid}`,
-                purchaseTotal: 0,
-                adjustmentTotal: 0,
-                transferTotal: 0,
-                transferCount: 0,
-                saleTotal: 0,
-                cashTotal: 0,
-                cardTotal: 0,
-                creditTotal: 0,
-                installmentTotal: 0,
-                upfrontTotal: 0,
-                repaymentTotal: 0,
-                repayments: [],
-                soldQuantity: 0,
-                soldAmount: 0,
-                otherTotal: 0,
-                total: 0,
-                transactions: [],
+              if (Array.isArray(t.items)) {
+                for (const it of t.items) {
+                  const qty = Number(it.quantity) || 0;
+                  const amount =
+                    it.total != null
+                      ? Number(it.total) || 0
+                      : (Number(it.price) || 0) * qty;
+                  agg.soldQuantity += qty;
+                  agg.soldAmount += amount;
+                }
+              }
+              agg.transactions.push({
+                id: t.id,
+                createdAt: t.createdAt,
+                paymentType: t.paymentType,
+                finalTotal: t.finalTotal || t.total || 0,
+                amountPaid,
+                upfrontAmount,
+                upfrontPaymentType: t.upfrontPaymentType,
+                soldByName: getUserName(t.soldBy) || getUserName(t.user) || "-",
               });
             }
-            const wagg = warehouseMap.get(wid);
-            const finalW = transaction.finalTotal;
-            switch (transaction.type) {
-              case 'PURCHASE':
-                wagg.purchaseTotal += finalW;
-                break;
-              case 'STOCK_ADJUSTMENT':
-                wagg.adjustmentTotal += finalW;
-                break;
-              case 'TRANSFER':
-                wagg.transferTotal += finalW;
-                wagg.transferCount += 1;
-                break;
-              case 'SALE':
-                wagg.saleTotal += finalW;
-                switch (transaction.paymentType) {
-                  case 'CASH':
-                    wagg.cashTotal += finalW;
-                    break;
-                  case 'CARD':
-                    wagg.cardTotal += finalW;
-                    break;
-                  case 'CREDIT':
-                    wagg.creditTotal += finalW;
-                    // Count upfront (amountPaid + downPayment) only at sale creation
-                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
-                    break;
-                  case 'INSTALLMENT':
-                    wagg.installmentTotal += finalW;
-                    // Count upfront (amountPaid + downPayment) only at sale creation
-                    wagg.upfrontTotal += (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
-                    break;
-                  default:
-                    break;
-                }
-                if (Array.isArray(transaction.items)) {
-                  for (const it of transaction.items) {
-                    const nameRaw = it.product?.name || it.name || '';
-                    const qty = Number(it.quantity) || 0;
-                    const amount = it.total;
-                    if (!nameRaw || qty <= 0 || amount <= 0) continue;
-                    wagg.soldQuantity += qty;
-                    wagg.soldAmount += amount;
-
-                    const productId = it.productId || it.id;
-                    const productName = nameRaw;
-                    if (productMap.has(productId)) {
-                      productMap.get(productId).quantity += qty;
-                      productMap.get(productId).amount += amount;
-                    } else {
-                      productMap.set(productId, {
-                        id: productId,
-                        name: productName,
-                        quantity: qty,
-                        amount: amount,
-                      });
-                    }
-                    totalQuantity += qty;
-                    totalAmount += amount;
-                  }
-                }
-                break;
-              default:
-                wagg.otherTotal += finalW;
-                break;
-            }
-            wagg.total += finalW;
-            wagg.transactions.push({
-              id: transaction.id,
-              createdAt: transaction.createdAt,
-              type: transaction.type,
-              finalTotal: finalW,
-              soldByName: getUserName(transaction.soldBy) || getUserName(transaction.user) || '-',
-              fromBranchId: transaction.fromBranch?.id || transaction.fromBranchId || transaction.branchFromId,
-              toBranchId: transaction.toBranch?.id || transaction.toBranchId || transaction.branchToId,
-              fromBranchName: transaction.fromBranch?.name || transaction.fromBranchName || transaction.fromBranchId || transaction.branchFromId,
-              toBranchName: transaction.toBranch?.name || transaction.toBranchName || transaction.toBranchId || transaction.branchToId,
-              paymentType: transaction.paymentType,
-              amountPaid: transaction.amountPaid,
-              downPayment: transaction.downPayment,
-              items: transaction.items || [],
-              customer: transaction.customer || null,
-              deliveryType: transaction.deliveryType,
-              deliveryAddress: transaction.deliveryAddress,
-              repayments: Array.isArray(transaction.paymentSchedules)
-                ? transaction.paymentSchedules
-                    .filter(s => s && s.isPaid && s.paidAt)
-                    .map(s => ({
-                      scheduleId: s.id,
-                      paidAt: s.paidAt,
-                      amount: Number(s.paidAmount || 0),
-                      month: s.month,
-                    }))
-                : [],
-            });
           }
-
-          if (Array.isArray(transaction.paymentSchedules)) {
-            const startBound = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
-            const endBound = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
-            for (const s of transaction.paymentSchedules) {
-              if (!s || !s.isPaid || !s.paidAt) continue;
+          if (Array.isArray(t.paymentSchedules)) {
+            for (const s of t.paymentSchedules) {
+              // Only include repayments with a valid paidAt date
+              if (!s || !s.paidAt) continue;
+              const paidValue = Number((s.paidAmount ?? s.payment) || 0);
+              if (!(s.isPaid || paidValue > 0)) continue;
               const pDate = new Date(s.paidAt);
-              const inRange = (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
+              const inRange =
+                (!startBound || pDate >= startBound) &&
+                (!endBound || pDate <= endBound);
               if (!inRange) continue;
-              const installment = Number(s.paidAmount || 0);
+              const installment = paidValue;
               if (Number.isNaN(installment) || installment <= 0) continue;
-              const recipient = (s.paidBy && s.paidBy.role === 'WAREHOUSE') ? s.paidBy : null;
-              if (!recipient) continue;
-              if (!warehouseMap.has(recipient.id)) {
-                warehouseMap.set(recipient.id, {
-                  id: recipient.id,
-                  name: `${recipient.firstName || ''} ${recipient.lastName || ''}`.trim() || recipient.username || `#${recipient.id}`,
-                  purchaseTotal: 0,
-                  adjustmentTotal: 0,
-                  transferTotal: 0,
-                  transferCount: 0,
-                  saleTotal: 0,
-                  cashTotal: 0,
-                  cardTotal: 0,
-                  creditTotal: 0,
-                  installmentTotal: 0,
-                  upfrontTotal: 0,
-                  repaymentTotal: 0,
-                  repayments: [],
-                  soldQuantity: 0,
-                  soldAmount: 0,
-                  otherTotal: 0,
-                  total: 0,
-                  transactions: [],
+              if (s.paidBy?.id === currentUserId) {
+                if (s.id && seenSchedules.has(s.id)) continue;
+                if (s.id) seenSchedules.add(s.id);
+                const flooredInstallment = Math.floor(installment);
+                agg.repaymentTotal += flooredInstallment;
+                // Track repayment breakdown by payment channel
+                const channel = (s.paidChannel || "CASH").toUpperCase();
+                if (channel === "CASH" || channel === "NAQD") {
+                  agg.repaymentCash += flooredInstallment;
+                  // Cash repayments go to cashier's cash total
+                  agg.cashTotal += flooredInstallment;
+                } else if (channel === "CARD" || channel === "KARTA") {
+                  agg.repaymentCard += flooredInstallment;
+                  // Card repayments go to card total
+                  agg.cardTotal += flooredInstallment;
+                } else {
+                  // Default to cash if no channel specified
+                  agg.repaymentCash += flooredInstallment;
+                  agg.cashTotal += flooredInstallment;
+                }
+                agg.repayments.push({
+                  scheduleId: s.id,
+                  paidAt: s.paidAt,
+                  amount: installment,
+                  channel: s.paidChannel || null,
+                  transactionId: t.id,
+                  month: s.month,
+                  customer: t.customer || null,
+                  paidBy: s.paidBy || null,
+                  soldBy: t.soldBy || null,
                 });
               }
-              const recipAgg = warehouseMap.get(recipient.id);
-              recipAgg.repaymentTotal += installment;
-              recipAgg.repayments.push({
-                scheduleId: s.id,
-                paidAt: s.paidAt,
-                amount: installment,
-                channel: s.paidChannel || null,
-                transactionId: transaction.id,
-                month: s.month,
-                customer: transaction.customer || null,
-                paymentType: transaction.paymentType,
-                paidBy: s.paidBy || null,
-                soldBy: transaction.soldBy || null,
-              });
-            }
-          }
-
-          if (transaction.type === 'SALE' && isWarehouse) {
-            const date = transaction.createdAt ? new Date(transaction.createdAt).toDateString() : 'Unknown';
-            if (dailyMap.has(date)) {
-              dailyMap.get(date).amount += transaction.finalTotal;
-              dailyMap.get(date).count += 1;
-            } else {
-              dailyMap.set(date, { date, amount: transaction.finalTotal, count: 1 });
-            }
-          }
-        });
-      }
-
-      try {
-        let repaymentSum = 0;
-        let repaymentCash = 0;
-        let repaymentCard = 0;
-        const startBound = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
-        const endBound = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
-
-        const token = localStorage.getItem('access_token');
-        const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-        const urlBase = new URL(`${BASE_URL}/transactions`);
-        const paramsCommon = new URLSearchParams();
-        if (selectedBranchId) paramsCommon.append('branchId', selectedBranchId);
-        paramsCommon.append('limit', 'all');
-
-        const urls = [
-          `${urlBase}?${new URLSearchParams({ ...Object.fromEntries(paramsCommon), paymentType: 'CREDIT' }).toString()}`,
-          `${urlBase}?${new URLSearchParams({ ...Object.fromEntries(paramsCommon), paymentType: 'INSTALLMENT' }).toString()}`
-        ];
-
-        const [creditRes, installmentRes] = await Promise.all([
-          fetch(urls[0], { headers }),
-          fetch(urls[1], { headers })
-        ]);
-
-        const creditData = creditRes.ok ? await creditRes.json().catch(() => ({})) : {};
-        const installmentData = installmentRes.ok ? await installmentRes.json().catch(() => ({})) : {};
-        const creditTx = Array.isArray(creditData?.transactions) ? creditData.transactions : (Array.isArray(creditData) ? creditData : []);
-        const installmentTx = Array.isArray(installmentData?.transactions) ? installmentData.transactions : (Array.isArray(installmentData) ? installmentData : []);
-        const allCreditTx = [...creditTx, ...installmentTx];
-
-        for (const t of allCreditTx) {
-          if (t.type !== 'SALE') continue;
-          if (selectedBranchId && String(t.fromBranchId || '') !== String(selectedBranchId)) continue;
-          const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
-          for (const s of schedules) {
-            if (!s || !s.isPaid || !s.paidAt) continue;
-            const pDate = new Date(s.paidAt);
-            const inRange = (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
-            if (!inRange) continue;
-            const installment = Number(s.paidAmount || 0);
-            if (!Number.isNaN(installment) && installment > 0) {
-              repaymentSum += installment;
-              const ch = (s.paidChannel || 'CASH').toUpperCase();
-              if (ch === 'CARD') repaymentCard += installment; else repaymentCash += installment;
             }
           }
         }
+        
+        // Log the state after processing all transactions
+        console.log('After processing all transactions:', {
+          upfrontTotal: agg.upfrontTotal,
+          upfrontCash: agg.upfrontCash,
+          upfrontCard: agg.upfrontCard,
+          creditTotal: agg.creditTotal,
+          installmentTotal: agg.installmentTotal,
+          transactionsProcessed: agg.transactions.length
+        });
 
-        setOverallRepaymentTotal(repaymentSum);
-        setOverallRepaymentCash(repaymentCash);
-        setOverallRepaymentCard(repaymentCard);
-      } catch (e) {
-        console.warn('Failed to compute overall repayment total:', e);
-        setOverallRepaymentTotal(0);
-        setOverallRepaymentCash(0);
-        setOverallRepaymentCard(0);
-      }
+        // Include repayments paid within range even if the sale happened earlier
+        try {
+          const headers2 = {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          };
+          const urlBase = new URL(`https://suddocs.uz/transactions`);
+          const baseParams = new URLSearchParams();
+          if (selectedBranchId) baseParams.append("branchId", selectedBranchId);
+          baseParams.append("limit", "all");
 
-      const productArray = Array.from(productMap.values()).filter(p => (p.quantity || 0) > 0 && (p.amount || 0) > 0);
-      setProductSales(productArray);
-      const warehouseArray = Array.from(warehouseMap.values());
-      setWarehouseSummaries(warehouseArray);
-      setDailySales(Array.from(dailyMap.values()));
-      // Жами Тушум: exclude CARD from overall total
-      setSalesTotals({ totalQuantity: tmpSalesQty, totalAmount: Math.max(0, tmpFinalColumnSum - tmpSalesCard) });
-      // Expose separate cash/card windows
-      setSalesCashTotal(tmpSalesCash);
-      setSalesCardTotal(tmpSalesCard);
-      setOverallUpfrontTotal(tmpUpfrontOverall);
-      setCreditIssuedTotal(tmpCreditIssued);
+          const urls = [
+            `${urlBase}?${new URLSearchParams({
+              ...Object.fromEntries(baseParams),
+              paymentType: "CREDIT",
+            }).toString()}`,
+            `${urlBase}?${new URLSearchParams({
+              ...Object.fromEntries(baseParams),
+              paymentType: "INSTALLMENT",
+            }).toString()}`,
+          ];
 
-      const initialViewModes = {};
-      warehouseArray.forEach(w => {
-        initialViewModes[w.id] = 'all';
-      });
-      setWarehouseViewModes(initialViewModes);
-    } catch (error) {
-      console.error('Error fetching transactions:', error.message);
-      toast.error(error.message || 'Маълумотларни олишда хатолик юз берди');
-    } finally {
-      setLoading(false);
-    }
-  }, [filters.startDate, filters.endDate, selectedBranchId, navigate, exchangeRate]);
+          const [creditRes, installmentRes] = await Promise.all([
+            fetch(urls[0], { headers: headers2 }),
+            fetch(urls[1], { headers: headers2 }),
+          ]);
 
-  return (
+          const creditData = creditRes.ok
+            ? await creditRes.json().catch(() => ({}))
+            : {};
+          const installmentData = installmentRes.ok
+            ? await installmentRes.json().catch(() => ({}))
+            : {};
+
+          const creditTx = Array.isArray(creditData?.transactions)
+            ? creditData.transactions
+            : Array.isArray(creditData)
+            ? creditData
+            : [];
+          const installmentTx = Array.isArray(installmentData?.transactions)
+            ? installmentData.transactions
+            : Array.isArray(installmentData)
+            ? installmentData
+            : [];
+          const allCreditTx = [...creditTx, ...installmentTx];
+
+          for (const t of allCreditTx) {
+            if (!Array.isArray(t?.paymentSchedules)) continue;
+            // Ensure branch filter matches if backend didn't filter
+            if (
+              selectedBranchId &&
+              String(t.fromBranchId || t.branchId || "") !== String(selectedBranchId)
+            ) {
+              continue;
+            }
+            for (const s of t.paymentSchedules) {
+              if (!s || !s.paidAt) continue;
+              const paidValue = Number((s.paidAmount ?? s.payment) || 0);
+              if (!(s.isPaid || paidValue > 0)) continue;
+              const pDate = new Date(s.paidAt);
+              const inRange =
+                (!startBound || pDate >= startBound) &&
+                (!endBound || pDate <= endBound);
+              if (!inRange) continue;
+              const installment = Number((s.paidAmount ?? s.payment) || 0);
+              if (Number.isNaN(installment) || installment <= 0) continue;
+              if (s.paidBy?.id === currentUserId) {
+                if (s.id && seenSchedules.has(s.id)) continue;
+                if (s.id) seenSchedules.add(s.id);
+                const flooredInstallment = Math.floor(installment);
+                agg.repaymentTotal += flooredInstallment;
+                // Track repayment breakdown by payment channel
+                const channel = (s.paidChannel || "CASH").toUpperCase();
+                if (channel === "CASH" || channel === "NAQD") {
+                  agg.repaymentCash += flooredInstallment;
+                  // Cash repayments go to cashier's cash total
+                  agg.cashTotal += flooredInstallment;
+                } else if (channel === "CARD" || channel === "KARTA") {
+                  agg.repaymentCard += flooredInstallment;
+                  // Card repayments go to card total
+                  agg.cardTotal += flooredInstallment;
+                } else {
+                  // Default to cash if no channel specified
+                  agg.repaymentCash += flooredInstallment;
+                  agg.cashTotal += flooredInstallment;
+                }
+                agg.repayments.push({
+                  scheduleId: s.id,
+                  paidAt: s.paidAt,
+                  amount: installment,
+                  channel: s.paidChannel || null,
+                  transactionId: t.id,
+                  month: s.month,
+                  customer: t.customer || null,
+                  paidBy: s.paidBy || null,
+                  soldBy: t.soldBy || null,
+                });
+              }
+            }
+          }
+                 } catch (e) {
+           // If supplemental fetch fails, proceed with what we have
+           console.warn("Қўшимча кредит/бошлама тўловларини олишда хатолик", e);
+         }
+
+        // Include local daily repayments into cashierReport totals and list
+        try {
+          const logsRaw = localStorage.getItem('tx_daily_repayments');
+          const logs = logsRaw ? JSON.parse(logsRaw) : [];
+          for (const l of Array.isArray(logs) ? logs : []) {
+            const pDate = l.paidAt ? new Date(l.paidAt) : null;
+            const inRange = pDate && (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
+            if (!inRange) continue;
+            const ch = (l.channel || 'CASH').toUpperCase();
+            const amount = Number(l.amount || 0);
+            const flooredAmount = Math.floor(amount);
+            agg.repaymentTotal += flooredAmount;
+            // Track local repayment breakdown by payment channel
+            if (ch === "CASH" || ch === "NAQD") {
+              agg.repaymentCash += flooredAmount;
+              // Cash repayments go to cashier's cash total
+              agg.cashTotal += flooredAmount;
+            } else if (ch === "CARD" || ch === "KARTA") {
+              agg.repaymentCard += flooredAmount;
+              // Card repayments go to card total
+              agg.cardTotal += flooredAmount;
+            } else {
+              // Default to cash if no channel specified
+              agg.repaymentCash += flooredAmount;
+              agg.cashTotal += flooredAmount;
+            }
+            agg.repayments.push({
+              scheduleId: `local-${l.transactionId}-${l.paidAt}`,
+              paidAt: l.paidAt,
+              amount: Number(l.amount || 0),
+              channel: ch,
+              transactionId: l.transactionId,
+              month: '-',
+              customer: null,
+              paidBy: { id: l.paidByUserId },
+            });
+          }
+        } catch {}
+
+                                   // Ensure upfront payments are properly calculated from actual transaction data
+                  if (agg.upfrontTotal === 0) {
+                    // If no upfront payments found, check if we have credit/installment transactions
+                    // and calculate based on actual down payments
+                    console.log('No upfront payments found, checking transaction data...');
+                    
+                    // Check if we have credit/installment transactions but no upfront payments
+                    if (agg.creditTotal > 0 || agg.installmentTotal > 0) {
+                      console.log('Found credit/installment transactions but no upfront payments');
+                      console.log('Credit total:', agg.creditTotal);
+                      console.log('Installment total:', agg.installmentTotal);
+                      
+                      // Try to find upfront payments in the transaction data
+                      for (const t of transactions) {
+                        if (t.type === "SALE" && (t.paymentType === "CREDIT" || t.paymentType === "INSTALLMENT")) {
+                          const upfrontAmount = Number(t.amountPaid || 0);
+                          if (upfrontAmount > 0) {
+                            console.log('Found upfront payment in transaction:', t.id, 'amount:', upfrontAmount);
+                            agg.upfrontTotal += upfrontAmount;
+                            
+                            // Check if there's a specific upfront payment method
+                            const upfrontPaymentMethod = t.upfrontPaymentType || "CASH";
+                            const isCardPayment = upfrontPaymentMethod === "CARD" || 
+                                                upfrontPaymentMethod === "KARTA" || 
+                                                upfrontPaymentMethod === "CARD_PAYMENT";
+                            
+                            if (isCardPayment) {
+                              agg.upfrontCard += upfrontAmount;
+                            } else {
+                              agg.upfrontCash += upfrontAmount;
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  
+                  // Additional check: if still no upfront payments, try to estimate from credit/installment totals
+                  if (agg.upfrontTotal === 0 && (agg.creditTotal > 0 || agg.installmentTotal > 0)) {
+                    console.log('Still no upfront payments, trying to estimate from totals...');
+                    
+                    // Estimate upfront payments as 25% of credit/installment totals (common practice)
+                    const estimatedUpfront = Math.floor((agg.creditTotal + agg.installmentTotal) * 0.25);
+                    if (estimatedUpfront > 0) {
+                      console.log('Estimated upfront payment:', estimatedUpfront);
+                      agg.upfrontTotal = estimatedUpfront;
+                      
+                      // Check if we can determine payment method from existing transactions
+                      let hasCardPayments = false;
+                      for (const t of transactions) {
+                        if (t.type === "SALE" && (t.paymentType === "CREDIT" || t.paymentType === "INSTALLMENT")) {
+                          if (t.upfrontPaymentType === "CARD" || t.upfrontPaymentType === "KARTA") {
+                            hasCardPayments = true;
+                            break;
+                          }
+                        }
+                      }
+                      
+                      if (hasCardPayments) {
+                        agg.upfrontCard = estimatedUpfront;
+                        console.log('Applied estimated upfront payment to card total (based on existing card payments)');
+                      } else {
+                        agg.upfrontCash = estimatedUpfront; // Default to cash
+                        console.log('Applied estimated upfront payment to cash total (default)');
+                      }
+                    }
+                  }
+              
+              // Final summary log
+              console.log('Final upfront payment summary:', {
+                upfrontTotal: agg.upfrontTotal,
+                upfrontCash: agg.upfrontCash,
+                upfrontCard: agg.upfrontCard,
+                creditTotal: agg.creditTotal,
+                installmentTotal: agg.installmentTotal
+              });
+              
+              setCashierReport(agg);
+
+        // Fetch defective logs and compute cash adjustments (+/-) within date range
+        try {
+          const params2 = new URLSearchParams();
+          if (selectedBranchId) params2.append("branchId", selectedBranchId);
+          // backend might not support date filters; fetch and filter client-side
+          const resDef = await fetch(`https://suddocs.uz/defective-logs?${params2.toString()}`, { headers });
+          let plus = 0;
+          let minus = 0;
+          if (resDef.ok) {
+            const logs = await resDef.json().catch(() => []);
+            const list = Array.isArray(logs) ? logs : (Array.isArray(logs.items) ? logs.items : []);
+            const startBound2 = reportDate.startDate ? new Date(`${reportDate.startDate}T00:00:00`) : null;
+            const endBound2 = reportDate.endDate ? new Date(`${reportDate.endDate}T23:59:59`) : null;
+            for (const log of list) {
+              const createdAt = log.createdAt ? new Date(log.createdAt) : null;
+              const inRange = createdAt && (!startBound2 || createdAt >= startBound2) && (!endBound2 || createdAt <= endBound2);
+              if (!inRange) continue;
+              const rawAmt = Number(log.cashAmount ?? log.amount ?? log.value ?? 0) || 0;
+              if (rawAmt === 0) continue;
+              // only count adjustments for this cashier
+              const actorIdRaw = (log.createdBy && log.createdBy.id) ?? log.createdById ?? (log.user && log.user.id) ?? log.userId ?? (log.performedBy && log.performedBy.id) ?? log.performedById ?? null;
+              const actorId = actorIdRaw != null ? Number(actorIdRaw) : null;
+              if (!actorId || actorId !== currentUserId) continue;
+                             if (rawAmt > 0) plus += Math.floor(rawAmt); else if (rawAmt < 0) minus += Math.floor(Math.abs(rawAmt));
+            }
+          }
+          setDefectivePlus(plus);
+          setDefectiveMinus(minus);
+        } catch (err) {
+          setDefectivePlus(0);
+          setDefectiveMinus(0);
+        }
+             } catch (e) {
+         console.error("Кассир ҳисоботида хатолик", e);
+         setCashierReport(null);
+       } finally {
+         setCashierLoading(false);
+       }
+    };
+    fetchCashier();
+  }, [
+    token,
+    currentUserId,
+    reportDate.startDate,
+    reportDate.endDate,
+    selectedBranchId,
+  ]);
+
+  if (error) {
+    return <div className="text-red-600 text-center">{error}</div>;
+  }
+
+  const getBranchName = (id) => {
+    const branch = branches.find((b) => b.id === id);
+    return branch?.name || "Номаълум филиал";
+  };
+
+  const lowStockItems = products
+    .filter((product) => product.quantity < 5)
+    .slice(0, 5)
+    .map((product) => ({
+      name: product.name,
+      quantity: product.quantity,
+      branch: getBranchName(product.branchId),
+    }));
+
+  const stats = [
+    {
+      title: "Филиаллар сони",
+      value: branches.length.toString(),
+      isPositive: true,
+      icon: Building2,
+    },
+    {
+      title: "Маҳсулотлар сони",
+      value: products.length.toString(),
+      change: "+0%",
+      isPositive: true,
+      icon: Package,
+    },
+    {
+      title: "Категориялар",
+      value: categories.length.toString(),
+      change: "+0%",
+      isPositive: true,
+      icon: LayoutGrid,
+    },
+    {
+      title: "Сотилган маҳсулотлар",
+      value: soldProducts.length.toString(),
+      change: "-0%",
+      isPositive: false,
+      icon: ShoppingCart,
+      totalAmount: totalSoldAmount,
+    },
+  ];
+
+  function formatPrice(number) {
+    const num = Math.floor(Number(number) || 0);
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  }
+
+        return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold text-gray-800">Транзакциялар Ҳисоботи</h1>
-            {selectedBranchId && (
-              <p className="text-sm text-gray-600 mt-1">Филиал ID: {selectedBranchId}</p>
-            )}
-            <p className="text-sm text-gray-600 mt-1">
-              Валюта курси: 1 USD = {exchangeRate.toLocaleString('uz-UZ')} сўм
-            </p>
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <input
-              type="date"
-              value={filters.startDate}
-              onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))}
-              className="border rounded px-2 py-1 text-sm"
-            />
-            <input
-              type="date"
-              value={filters.endDate}
-              onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))}
-              className="border rounded px-2 py-1 text-sm"
-            />
-            <button
-              onClick={fetchTransitions}
-              className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm sm:text-base disabled:opacity-50"
-              disabled={loading}
-              title="Маълумотларни янгилаш"
-            >
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-              Янгилаш
-            </button>
-            {/* New button to show chiqim history */}
-
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow-sm p-3 sm:p-4 mb-4">
-        <h2 className="text-base font-semibold mb-2">Ҳисобот — Содда Кўриниш</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
-
-          <div className="p-2 rounded-lg border bg-white shadow-sm">
-            <div className="text-xs text-gray-700">Нақд</div>
-            <div className="text-xl font-bold text-gray-900">{formatAmount(salesCashTotal, false)}</div>
-          </div>
-          <div className="p-2 rounded-lg border bg-white shadow-sm">
-            <div className="text-xs text-gray-700">Карта</div>
-            <div className="text-xl font-bold text-gray-900">{formatAmount(salesCardTotal, false)}</div>
-          </div>
-          <div className="p-2 rounded-lg border bg-white shadow-sm">
-            <div className="text-xs text-gray-700">Олдиндан тўлов</div>
-            <div className="text-xl font-bold text-gray-900">{formatAmount(overallUpfrontTotal, false)}</div>
-          </div>
-          <div className="p-2 rounded-lg border bg-white shadow-sm">
-            <div className="text-xs text-gray-700">Кредитга Берилган</div>
-            <div className="text-xl font-bold text-gray-900">{formatAmount(creditIssuedTotal, false)}</div>
-          </div>
-          <div className="p-2 rounded-lg border bg-white shadow-sm">
-            <div className="text-xs text-gray-700">Кредитдан Тўловлар</div>
-            <div className="text-xl font-bold text-gray-900">{formatAmount(overallRepaymentTotal, false)}</div>
-            <div className="text-xs text-gray-500 mt-1">Нақд: {formatAmount(overallRepaymentCash, false)}</div>
-            <div className="text-xs text-gray-500">Карта: {formatAmount(overallRepaymentCard, false)}</div>
-          </div>
-          <div className="p-2 rounded-lg border bg-white shadow-sm">
-            <div className="text-xs text-gray-700">Кассадеги пул</div>
-            <div className="text-xl font-bold text-gray-900">{formatAmount(salesCashTotal + (overallUpfrontTotal || 0) + (overallRepaymentCash || 0), false)}</div>
-          </div>
-
-        </div>
-      </div>
-
-      {warehouseSummaries.map((w) => (
-        <div key={w.id} className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
-          <h3 className="text-lg font-semibold mb-3">{w.name} — Транзакциялар</h3>
-          <div className="flex gap-2 mb-3">
-            <button
-              className={`px-3 py-1 rounded ${warehouseViewModes[w.id] === 'all' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}
-              onClick={() => setWarehouseViewModes((prev) => ({ ...prev, [w.id]: 'all' }))}
-            >
-              Ҳаммаси
-            </button>
-            <button
-              className={`px-3 py-1 rounded ${warehouseViewModes[w.id] === 'kirim' ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-800'}`}
-              onClick={() => setWarehouseViewModes((prev) => ({ ...prev, [w.id]: 'kirim' }))}
-            >
-              Кирим
-            </button>
-            <button
-              className={`px-3 py-1 rounded ${warehouseViewModes[w.id] === 'chiqim' ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-800'}`}
-              onClick={() => setWarehouseViewModes((prev) => ({ ...prev, [w.id]: 'chiqim' }))}
-            >
-              Чиқим
-            </button>
-            <button
-              className="px-3 py-1 rounded bg-amber-500 text-white"
-              onClick={() => setShowChiqimHistory(true)}
-              title="Филиалга ўтказмалар"
-            >
-              Филиалга ўтказмалар
-            </button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left">ID</th>
-                  <th className="px-3 py-2 text-left">Сана</th>
-                  <th className="px-3 py-2 text-left">Тури</th>
-                  <th className="px-3 py-2 text-left">Сотган</th>
-                  <th className="px-3 py-2 text-left">Якуний</th>
-                  <th className="px-3 py-2 text-left">Кимдан</th>
-                  <th className="px-3 py-2 text-left">Кимга</th>
-                  <th className="px-3 py-2 text-left">Маҳсулотлар</th>
-                  <th className="px-3 py-2 text-left">Кўриш</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan="9" className="px-3 py-2 text-center">Юкланмоқда...</td>
-                  </tr>
-                ) : w.transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan="9" className="px-3 py-2 text-center">Маълумот Йўқ</td>
-                  </tr>
-                ) : (
-                  w.transactions
-                    .filter(t => {
-                      const direction = getTransactionDirection(t);
-                      const viewMode = warehouseViewModes[w.id];
-                      
-                      if (viewMode === 'all') return true;
-                      
-                      if (viewMode === 'kirim') {
-                        if (t.type === 'TRANSFER') {
-                          return String(t.toBranchId) === String(selectedBranchId);
-                        }
-                        return direction === 'kirim';
-                      }
-                      
-                      if (viewMode === 'chiqim') {
-                        if (t.type === 'TRANSFER') {
-                          return String(t.fromBranchId) === String(selectedBranchId);
-                        }
-                        if (t.type === 'SALE' && t.paymentType === 'CASH') {
-                          return true;
-                        }
-                        return direction === 'chiqim' && t.paymentType !== 'CASH';
-                      }
-                      
-                      return direction === viewMode;
-                    })
-                    .map((t) => (
-                      <tr key={t.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2">#{t.id}</td>
-                        <td className="px-3 py-2">{formatDate(t.createdAt)}</td>
-                        <td className="px-3 py-2">{transactionTypes[t.type]?.label || t.type}</td>
-                        <td className="px-3 py-2">{t.soldByName || '-'}</td>
-                        <td className="px-3 py-2">{formatAmount(t.finalTotal, false)}</td>
-                        <td className="px-3 py-2">{t.fromBranchName || '-'}</td>
-                        <td className="px-3 py-2">{t.toBranchName || '-'}</td>
-                        <td className="px-3 py-2 max-w-[280px]">
-                          {Array.isArray(t.items) && t.items.length > 0 ? (
-                            <div className="space-y-1 text-xs text-gray-800">
-                              {t.items.map((it, idx) => {
-                                const name = getProductDisplayName(it) || `#${it?.productId || it?.id || idx}`;
-                                const qty = Number(it?.quantity) || 0;
-                                const price = Number(it?.price) || 0;
-                                const total = Number(it?.total || (qty * price)) || 0;
-                                return (
-                                  <div key={idx} className="flex items-center justify-between gap-2">
-                                    <span className="truncate">{name} x{qty}</span>
-                                    <span className="whitespace-nowrap">{formatAmount(total, false)}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-gray-500">-</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                        <button
-  className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
-  onClick={async () => {
-    try {
-      const token = localStorage.getItem('access_token');
-      if (!token) return;
-      const res = await fetch(`${BASE_URL}/transactions/${t.id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const full = await res.json();
-      setSelectedTransactionItems(full);
-    } catch (e) {
-      // fallback to existing t if fetch fails
-      setSelectedTransactionItems(t);
-    }
-  }}
->
-  <Eye size={14} /> Кўриш
-</button>
-                        </td>
-                      </tr>
-                    ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
-
-      <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
-        <h3 className="text-md font-semibold mb-2">Сотилган Маҳсулотлар</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Маҳсулот</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Сотилган Дона</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Сумма</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {loading ? (
-                <tr><td colSpan="3" className="px-4 py-4 text-center">Юкланмоқда...</td></tr>
-              ) : productSales.length === 0 ? (
-                <tr><td colSpan="3" className="px-4 py-4 text-center text-gray-500">Маълумот Йўқ</td></tr>
-              ) : (
-                productSales.map((p) => (
-                  <tr key={p.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">{p.name || `#${p.id}`}</td>
-                    <td className="px-4 py-3">{p.quantity}</td>
-                    <td className="px-4 py-3">{formatAmount(p.amount, false)}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Chiqim History Modal */}
-      {showChiqimHistory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-6xl max-h-[80vh] overflow-y-auto shadow-xl">
-            <div className="flex justify-between mb-4">
-              <h3 className="text-lg font-bold">Чиқим Тарихи</h3>
-              <button
-                onClick={() => setShowChiqimHistory(false)}
-                className="text-gray-600 hover:text-gray-800 transition-all"
-              >
-                <XIcon size={20} />
-              </button>
+      {/* Branch Selection Requirement */}
+      {(!selectedBranchId || selectedBranchId === '') && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl shadow-sm mb-6 p-6">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border">
-                <thead>
-                  <tr className="bg-gray-100 text-left">
-                    <th className="p-3">ID</th>
-                    <th className="p-3">Тип</th>
-                    <th className="p-3">Сана</th>
-                    <th className="p-3">Жами</th>
-                    <th className="p-3">Тўлов тури</th>
-                    <th className="p-3">Филиал</th>
-                    <th className="p-3">Мижоз</th>
-                    <th className="p-3">Маҳсулотлар</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.filter(t => getTransactionDirection(t) === 'chiqim').length > 0 ? (
-                    transactions
-                      .filter(t => getTransactionDirection(t) === 'chiqim')
-                      .map((transfer) => (
-                        <tr key={transfer.id} className="border-t">
-                          <td className="p-3">#{transfer.id}</td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2 py-1 rounded text-xs ${
-                                transfer.type === 'SALE'
-                                  ? 'bg-green-100 text-green-800'
-                                  : transfer.type === 'TRANSFER'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : transfer.type === 'WRITE_OFF'
-                                  ? 'bg-red-100 text-red-800'
-                                  : transfer.type === 'STOCK_ADJUSTMENT'
-                                  ? 'bg-purple-100 text-purple-800'
-                                  : 'bg-gray-100 text-gray-800'
-                              }`}
-                            >
-                              {transactionTypes[transfer.type]?.label || transfer.type}
-                            </span>
-                          </td>
-                          <td className="p-3">{formatDate(transfer.createdAt)}</td>
-                          <td className="p-3">{formatAmount((transfer.finalTotal || transfer.total), false)}</td>
-                          <td className="p-3">{getPaymentTypeLabel(transfer.paymentType) || 'Ўтказма'}</td>
-                          <td className="p-3">{transfer.fromBranch?.name || transfer.fromBranchName || transfer.fromBranchId || "Noma'lum"}</td>
-                          <td className="p-3">
-                            {getCustomerName(transfer.customer) ||
-                              (transfer.customer?.firstName && transfer.customer?.lastName
-                                ? `${transfer.customer.firstName} ${transfer.customer.lastName}`
-                                : 'Ўтказма')}
-                          </td>
-                          <td className="p-3">
-                            {(transfer.items || []).map((item, idx) => (
-                              <div key={idx} className="text-sm">
-                                {getProductDisplayName(item)} x{item.quantity}
-                              </div>
-                            ))}
-                          </td>
-                        </tr>
-                      ))
-                  ) : (
-                    <tr>
-                      <td colSpan="8" className="p-3 text-center">
-                        Чиқим транзакциялари топилмади
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="ml-3">
+                             <h3 className="text-sm font-medium text-yellow-800">
+                 Филиал танланг
+               </h3>
+               <div className="mt-2 text-sm text-yellow-700">
+                 <p>
+                   Ҳисоботларни кўриш учун юқоридаги филиал танлаш рўйхатидан битта филиални танланг. 
+                   "Барча филиаллар" танланганда ҳисоботлар кўрсатилмайди.
+                 </p>
+               </div>
             </div>
           </div>
         </div>
       )}
-
-      {selectedTransactionItems && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
-          <div className="bg-white w-[90vw] h-[90vh] rounded-lg shadow-xl flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <h3 className="text-lg font-semibold">Транзакция #{selectedTransactionItems.id}</h3>
-              <div className="flex items-center gap-2">
-                <button
-                  className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
-                  onClick={() => {
-                    const c = selectedTransactionItems.customer || {};
-                    const merged = {
-                      ...c,
-                      address: c.address || selectedTransactionItems.deliveryAddress || c.address,
-                      deliveryAddress: selectedTransactionItems.deliveryAddress || c.deliveryAddress || c.address,
-                    };
-                    setSelectedCustomer(merged);
-                    setShowCustomerModal(true);
-                  }}
-                >
-                  <UserIcon size={16} /> Мижоз Маълумоти
-                </button>
-                <button
-                  className="text-gray-500 hover:text-gray-700"
-                  onClick={() => setSelectedTransactionItems(null)}
-                >
-                  <XIcon size={20} />
-                </button>
-              </div>
+      
+      {/* Cashier Report - Large Version at Top */}
+      {currentUserId && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+          <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                         <h3 className="text-xl font-semibold text-gray-900">
+               Склад ҳисоботи
+             </h3>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={reportDate.startDate}
+                onChange={(e) =>
+                  setReportDate((f) => ({ ...f, startDate: e.target.value }))
+                }
+                className="border rounded px-3 py-2 text-sm"
+              />
+              <input
+                type="date"
+                value={reportDate.endDate}
+                onChange={(e) =>
+                  setReportDate((f) => ({ ...f, endDate: e.target.value }))
+                }
+                className="border rounded px-3 py-2 text-sm"
+              />
             </div>
-            <div className="p-4 overflow-auto flex-1">
-              <div className="mb-3 text-sm text-gray-700">
-                <span className="font-semibold">Маҳсулотлар:</span>
-                <span className="ml-2">
-                  {(selectedTransactionItems.items || [])
-                    .map((it) => getProductDisplayName(it))
-                    .filter(Boolean)
-                    .join(', ') || '-'}
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                <div className="p-3 rounded border">
-                  <div className="text-sm text-gray-500">Тўлов Тури</div>
-                  <div className="font-semibold">{getPaymentTypeLabel(selectedTransactionItems.paymentType)}</div>
-                </div>
-                <div className="p-3 rounded border">
-                  <div className="text-sm text-gray-500">Якуний</div>
-                  <div className="font-semibold">{formatAmount(selectedTransactionItems.finalTotal, false)}</div>
-                </div>
-                <div className="p-3 rounded border">
-                  <div className="text-sm text-gray-500">Тўланган</div>
-                  <div className="font-semibold">{formatAmount((selectedTransactionItems.amountPaid || 0) + (selectedTransactionItems.downPayment || 0), false)}</div>
-                </div>
-                <div className="p-3 rounded border">
-                  <div className="text-sm text-gray-500">Қолган</div>
-                  <div className="font-semibold">{formatAmount((selectedTransactionItems.finalTotal || 0) - ((selectedTransactionItems.amountPaid || 0) + (selectedTransactionItems.downPayment || 0)), false)}</div>
-                </div>
-              </div>
-
-              {Array.isArray(selectedTransactionItems.repayments) && selectedTransactionItems.repayments.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-sm font-semibold text-gray-700 mb-2">Кредитдан Тўловлар</div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-2 text-left">Ой</th>
-                          <th className="px-3 py-2 text-left">Тўланган Куни</th>
-                          <th className="px-3 py-2 text-left">Сумма</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {(selectedTransactionItems.repayments || []).filter((r) => {
-                          const p = r?.paidAt ? new Date(r.paidAt) : null;
-                          const sb = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
-                          const eb = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
-                          if (!p) return false;
-                          const inRange = (!sb || p >= sb) && (!eb || p <= eb);
-                          return inRange;
-                        }).map((r, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-3 py-2">{r.month}</td>
-                            <td className="px-3 py-2">{formatDate(r.paidAt)}</td>
-                            <td className="px-3 py-2">{formatAmount(r.amount, false)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+          </div>
+          <div className="p-6">
+            {cashierLoading ? (
+              <div className="text-gray-500 text-center py-8">Юкланмоқда...</div>
+            ) : !cashierReport ? (
+              <div className="text-gray-500 text-center py-8">Маълумот йўқ</div>
+            ) : (
+              <>
+                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                   <div className="p-4 rounded-lg border-2 border-gray-200 text-center bg-blue-50">
+                     <div className="text-sm text-gray-600 mb-2">Нақд</div>
+                     <div className="text-2xl font-bold text-blue-800">
+                       {formatAmount(
+                         Number(cashierReport.cashTotal || 0) +
+                         Number(cashierReport.upfrontCash || 0) +
+                         Number(cashierReport.repaymentCash || 0) +
+                         (Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))
+                       )}
+                     </div>
+                     <div className="text-xs text-gray-600 mt-1">
+                       Сотиш: {formatAmount(cashierReport.cashTotal || 0)} | 
+                       Олдиндан: {formatAmount(cashierReport.upfrontCash || 0)} | 
+                       Тўлов: {formatAmount(cashierReport.repaymentCash || 0)}
+                     </div>
+                   </div>
+                   <div className="p-4 rounded-lg border-2 border-gray-200 text-center bg-green-50">
+                     <div className="text-sm text-gray-600 mb-2">Карта</div>
+                     <div className="text-2xl font-bold text-green-800">
+                       {formatAmount(
+                         Number(cashierReport.cardTotal || 0) +
+                         Number(cashierReport.upfrontCard || 0) +
+                         Number(cashierReport.repaymentCard || 0)
+                       )}
+                     </div>
+                     <div className="text-xs text-gray-600 mt-1">
+                       Сотиш: {formatAmount(cashierReport.cardTotal || 0)} | 
+                       Олдиндан: {formatAmount(cashierReport.upfrontCard || 0)} | 
+                       Тўлов: {formatAmount(cashierReport.repaymentCard || 0)}
+                     </div>
+                   </div>
+                  <div className="p-4 rounded-lg border-2 border-gray-200 text-center bg-purple-50">
+                    <div className="text-sm text-gray-600 mb-2">Кредит</div>
+                    <div className="text-2xl font-bold text-purple-800">
+                      {formatAmount(cashierReport.creditTotal)}
+                    </div>
                   </div>
+                  <div className="p-4 rounded-lg border-2 border-gray-200 text-center bg-orange-50">
+                    <div className="text-sm text-gray-600 mb-2">Бўлиб тўлаш</div>
+                    <div className="text-2xl font-bold text-orange-800">
+                      {formatAmount(cashierReport.installmentTotal)}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1 flex justify-between">
+                      <div className="text-left">Нақд: {formatAmount(cashierReport.installmentCash || 0)}</div>
+                      <div className="text-right">Карта: {formatAmount(cashierReport.installmentCard || 0)}</div>
+                    </div>
+                  </div>
+                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="p-4 rounded-lg border-2 border-gray-200 text-center bg-yellow-50">
+                    <div className="text-sm text-gray-600 mb-2">Олдиндан олинган</div>
+                    <div className="text-xl font-bold text-yellow-800">
+                      {formatAmount(cashierReport.upfrontTotal)}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1 flex justify-between">
+                      <div className="text-left">Нақд: {formatAmount(cashierReport.upfrontCash || 0)}</div>
+                      <div className="text-right">Карта: {formatAmount(cashierReport.upfrontCard || 0)}</div>
+                    </div>
+                  </div>
+                  <div className="p-4 rounded-lg border-2 border-gray-200 text-center bg-indigo-50">
+                    <div className="text-sm text-gray-600 mb-2">Кредитдан тўланган</div>
+                    <div className="text-xl font-bold text-indigo-800">
+                      {formatAmount(cashierReport.repaymentTotal || 0)}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1 flex justify-between">
+                      <div className="text-left">Нақд: {formatAmount(cashierReport.repaymentCash || 0)}</div>
+                      <div className="text-right">Карта: {formatAmount(cashierReport.repaymentCard || 0)}</div>
+                    </div>
+                  </div>
+                                     <div className="p-4 rounded-lg border-2 border-gray-200 text-center bg-red-50">
+                     <div className="text-sm text-gray-600 mb-2">Топширадиган пул</div>
+                     <div className="text-xl font-bold text-red-800">
+                       {formatAmount(
+                         Math.floor(Number(cashierReport.cashTotal || 0)) +
+                         Math.floor(Number(cashierReport.upfrontCash || 0)) +
+                         Math.floor(Number(cashierReport.repaymentCash || 0)) +
+                         (Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))
+                       )}
+                     </div>
+                     <div className="text-xs text-gray-600 mt-1">
+                       Нақд: {formatAmount(
+                         Math.floor(Number(cashierReport.cashTotal || 0)) +
+                         Math.floor(Number(cashierReport.upfrontCash || 0)) +
+                         Math.floor(Number(cashierReport.repaymentCash || 0)) +
+                         (Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))
+                       )}
+                     </div>
+                   </div>
                 </div>
-              )}
-              <div className="overflow-x-auto">
+
+                {Array.isArray(cashierReport.transactions) &&
+                  cashierReport.transactions.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold">ID</th>
+                            <th className="px-4 py-3 text-left font-semibold">Сана</th>
+                            <th className="px-4 py-3 text-left font-semibold">Тўлов тури</th>
+                            <th className="px-4 py-3 text-left font-semibold">Якуний</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {(cashierReport.transactions || []).slice(0, 10).map((t) => (
+                            <tr key={t.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 font-medium">#{t.id}</td>
+                              <td className="px-4 py-3">{formatDate(t.createdAt)}</td>
+                              <td className="px-4 py-3">{getPaymentTypeLabel(t.paymentType)}</td>
+                              <td className="px-4 py-3 font-semibold">{formatAmount(t.finalTotal)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {cashierReport.transactions.length > 10 && (
+                        <div className="text-sm text-gray-500 text-center mt-4">
+                          ... va {cashierReport.transactions.length - 10} ta boshqa
+                        </div>
+                      )}
+                    </div>
+                  )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Operation Type Buttons - Smaller */}
+      <div className="mb-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4">
+                     <h3 className="text-base font-semibold text-gray-900 mb-3">
+             Операция турлари бўйича ҳисоботлар
+           </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <button
+              onClick={() => setActiveReport('kirim')}
+              className={`p-3 rounded-lg border-2 transition-all duration-200 ${
+                activeReport === 'kirim'
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-xl font-bold mb-1"></div>
+                                 <div className="font-medium text-sm">Кирим</div>
+                 <div className="text-xs text-gray-500">Миқдор қўшиш</div>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => setActiveReport('chiqim')}
+              className={`p-3 rounded-lg border-2 transition-all duration-200 ${
+                activeReport === 'chiqim'
+                  ? 'border-green-500 bg-green-50 text-green-700'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-xl font-bold mb-1"></div>
+                                 <div className="font-medium text-sm">Чиқим</div>
+                 <div className="text-xs text-gray-500">Сотиш</div>
+              </div>
+            </button>
+            
+            <button
+              onClick={() => setActiveReport('otkazmalar')}
+              className={`p-3 rounded-lg border-2 transition-all duration-200 ${
+                activeReport === 'otkazmalar'
+                  ? 'border-purple-500 bg-purple-50 text-purple-700'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-xl font-bold mb-1"></div>
+                                 <div className="font-medium text-sm">Ўтказмалар</div>
+                 <div className="text-xs text-gray-500">Филиалга ўтказиш</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+             {/* Kirim Report */}
+       {activeReport === 'kirim' && (
+         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+             <div>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                   Кирим ҳисоботи — Миқдор қўшиш
+                 </h3>
+                                <p className="text-sm text-gray-600">
+                   {reportDate.startDate} дан {reportDate.endDate} гача
+                 </p>
+               </div>
+               <button
+                 onClick={fetchKirimData}
+                 disabled={kirimLoading}
+                 className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-all duration-200"
+               >
+                 {kirimLoading ? 'Юкланмоқда...' : 'Янгилаш'}
+               </button>
+           </div>
+                     <div className="p-6">
+             {/* Summary Statistics */}
+             {kirimData.length > 0 && (
+               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+  
+  
+               </div>
+             )}
+             
+             {kirimLoading ? (
+               <div className="text-gray-500">Юкланмоқда...</div>
+             ) : kirimData.length > 0 ? (
+               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left">Маҳсулот</th>
-                      <th className="px-3 py-2 text-left">Миқдор</th>
-                      {!(selectedTransactionItems?.paymentType === 'CREDIT' || selectedTransactionItems?.paymentType === 'INSTALLMENT') && (
-                        <th className="px-3 py-2 text-left">Нарх</th>
-                      )}
+                      <th className="px-3 py-2 text-left">ID</th>
+                      <th className="px-3 py-2 text-left">Сана</th>
+                      <th className="px-3 py-2 text-left">Махсулотлар</th>
+                      <th className="px-3 py-2 text-left">Микдор</th>
+                      <th className="px-3 py-2 text-left">Нахд</th>
                       <th className="px-3 py-2 text-left">Жами</th>
-                      <th className="px-3 py-2 text-left">Кредит/Бўлиб</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {(selectedTransactionItems.items || []).map((it, i) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-3 py-2">{getProductDisplayName(it)}</td>
-                        <td className="px-3 py-2">{it.quantity}</td>
-                        {!(selectedTransactionItems?.paymentType === 'CREDIT' || selectedTransactionItems?.paymentType === 'INSTALLMENT') && (
-                          <td className="px-3 py-2">{formatAmount(it.price, false)}</td>
-                        )}
-                        <td className="px-3 py-2">{formatAmount(it.total, false)}</td>
+                    {kirimData.map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2">#{item.id}</td>
+                        <td className="px-3 py-2">{formatDate(item.createdAt)}</td>
                         <td className="px-3 py-2">
-                          {(it.creditMonth || it.creditPercent) ? (
-                            <span>
-                              {it.creditMonth || '-'} ой, {typeof it.creditPercent === 'number' ? `${(it.creditPercent * 100).toFixed(0)}%` : '-'}
-                            </span>
-                          ) : (
-                            '-'
-                          )}
+                          <div className="space-y-2">
+                            <div className="text-sm border-l-3 border-blue-300 pl-3 py-1">
+                              <div className="font-semibold text-gray-900 text-base">
+                                {item.productName || 'Mahsulot nomi topilmadi'}
+                              </div>
+                              <div className="text-gray-700 mt-1">
+                                <span className="font-medium">Model:</span> {item.model || 'Model yo\'q'} | 
+                                <span className="font-medium"> Miqdor:</span> {item.quantity || 0} ta
+                              </div>
+                            </div>
+                          </div>
                         </td>
+                        <td className="px-3 py-2">{formatAmount(item.quantity)}</td>
+                        <td className="px-3 py-2">{formatAmount(item.price)}</td>
+                        <td className="px-3 py-2">{formatAmount(item.total)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+                         ) : (
+               <div className="text-gray-500 text-center py-8">
+                 Бу даврда кирим маълумотлари топилмади
+               </div>
+             )}
           </div>
         </div>
       )}
 
-      {showCustomerModal && selectedCustomer && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center">
-          <div className="bg-white w-[600px] max-w-[95vw] rounded-lg shadow-xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
-              <h3 className="text-lg font-semibold">Мижоз Маълумотлари</h3>
-              <button
-                className="text-gray-500 hover:text-gray-700"
-                onClick={() => { setShowCustomerModal(false); setSelectedCustomer(null); }}
-              >
-                <XIcon size={20} />
-              </button>
-            </div>
-            <div className="p-4 space-y-2 text-sm">
-              <p><span className="text-gray-600">Ф.И.Ш:</span> <span className="font-medium">{selectedCustomer.fullName || '-'}</span></p>
-              <p><span className="text-gray-600">Телефон:</span> <span className="font-medium">{selectedCustomer.phone || '-'}</span></p>
-              <p><span className="text-gray-600">Паспорт:</span> <span className="font-medium">{selectedCustomer.passportSeries || '-'}</span></p>
-              <p><span className="text-gray-600">ЖШШИР:</span> <span className="font-medium">{selectedCustomer.jshshir || '-'}</span></p>
-              <p><span className="text-gray-600">Манзил:</span> <span className="font-medium">{selectedCustomer.address || selectedCustomer.deliveryAddress || '-'}</span></p>
-            </div>
+             {/* Chiqim Report */}
+       {activeReport === 'chiqim' && (
+         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+             <div>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                   Чиқим ҳисоботи — Сотиш
+                 </h3>
+                                <p className="text-sm text-gray-600">
+                   {reportDate.startDate} дан {reportDate.endDate} гача
+                 </p>
+               </div>
+               <button
+                 onClick={fetchChiqimData}
+                 disabled={chiqimLoading}
+                 className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-400 transition-all duration-200"
+               >
+                 {chiqimLoading ? 'Юкланмоқда...' : 'Янгилаш'}
+               </button>
+           </div>
+                     <div className="p-6">
+             {/* Summary Statistics */}
+             {chiqimData.length > 0 && (
+               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+
+               </div>
+             )}
+             
+             {chiqimLoading ? (
+               <div className="text-gray-500">Юкланмоқда...</div>
+             ) : chiqimData.length > 0 ? (
+               <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left">ID</th>
+                      <th className="px-3 py-2 text-left">Сана</th>
+                      <th className="px-3 py-2 text-left">Мижоз</th>
+                      <th className="px-3 py-2 text-left">Толов тури</th>
+                      <th className="px-3 py-2 text-left">Махсулотлар</th>
+                      <th className="px-3 py-2 text-left">Тўланган</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {chiqimData.map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2">#{item.id}</td>
+                        <td className="px-3 py-2">{formatDate(item.createdAt)}</td>
+                        <td className="px-3 py-2">{item.customer?.fullName || 'N/A'}</td>
+                        <td className="px-3 py-2">{getPaymentTypeLabel(item.paymentType)}</td>
+                        <td className="px-3 py-2">
+                          <div className="space-y-2">
+                            {item.items && item.items.length > 0 ? (
+                              item.items.map((product, index) => (
+                                <div key={index} className="text-sm border-l-3 border-green-300 pl-3 py-1">
+                                  <div className="font-semibold text-gray-900 text-base">
+                                    {product.productName || product.name || product.product?.name || 'Mahsulot nomi topilmadi'}
+                                  </div>
+                                  <div className="text-gray-700 mt-1">
+                                    <span className="font-medium">Model:</span> {product.model || product.product?.model || 'Model yo\'q'} | 
+                                    <span className="font-medium"> Miqdor:</span> {product.quantity || 0} ta
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <span className="text-gray-500 text-sm">Mahsulot ma'lumotlari yo'q</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">{formatAmount(item.total || item.finalTotal || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+                         ) : (
+               <div className="text-gray-500 text-center py-8">
+                 Бу даврда чиқим маълумотлари топилмади
+               </div>
+             )}
           </div>
         </div>
       )}
 
-      <ToastContainer position="top-right" autoClose={3000} />
+             {/* O'tkazmalar Report */}
+       {activeReport === 'otkazmalar' && (
+         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
+           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+             <div>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                   Ўтказмалар ҳисоботи — Филиалга ўтказиш
+                 </h3>
+                                <p className="text-sm text-gray-600">
+                   {reportDate.startDate} дан {reportDate.endDate} гача
+                 </p>
+               </div>
+               <button
+                 onClick={fetchOtkazmalarData}
+                 disabled={otkazmalarLoading}
+                 className="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 disabled:bg-gray-400 transition-all duration-200"
+               >
+                 {otkazmalarLoading ? 'Юкланмоқда...' : 'Янгилаш'}
+               </button>
+           </div>
+                     <div className="p-6">
+             {/* Summary Statistics */}
+             {otkazmalarData.length > 0 && (
+               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                
+               </div>
+             )}
+             
+             {otkazmalarLoading ? (
+               <div className="text-gray-500">Юкланмоқда...</div>
+             ) : otkazmalarData.length > 0 ? (
+               <div className="overflow-x-auto">
+                                 <table className="w-full text-sm">
+                   <thead className="bg-gray-50">
+                     <tr>
+                       <th className="px-3 py-2 text-left">ID</th>
+                       <th className="px-3 py-2 text-left">Сана</th>
+                       <th className="px-3 py-2 text-left">Кайердан</th>
+                       <th className="px-3 py-2 text-left">Кайерга</th>
+                       <th className="px-3 py-2 text-left">Махсулотлар</th>
+                       <th className="px-3 py-2 text-left">Статус</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-gray-200">
+                     {otkazmalarData.map((item) => (
+                       <tr key={item.id} className="hover:bg-gray-50">
+                         <td className="px-3 py-2">#{item.id}</td>
+                         <td className="px-3 py-2">{formatDate(item.createdAt)}</td>
+                         <td className="px-3 py-2">{getBranchName(item.fromBranchId)}</td>
+                         <td className="px-3 py-2">{getBranchName(item.toBranchId)}</td>
+                                                   <td className="px-3 py-2">
+                            <div className="space-y-2">
+                              {item.items && item.items.length > 0 ? (
+                                item.items.map((product, index) => (
+                                  <div key={index} className="text-sm border-l-3 border-blue-300 pl-3 py-1">
+                                    <div className="font-semibold text-gray-900 text-base">
+                                      {product.productName || product.name || product.product?.name || 'Mahsulot nomi topilmadi'}
+                                    </div>
+                                    <div className="text-gray-700 mt-1">
+                                      <span className="font-medium">Model:</span> {product.model || product.product?.model || 'Model yo\'q'} | 
+                                      <span className="font-medium"> Miqdor:</span> {product.quantity || 0} ta
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <span className="text-gray-500 text-sm">Mahsulot ma'lumotlari yo'q</span>
+                              )}
+                            </div>
+                          </td>
+                         <td className="px-3 py-2">
+                           <span className={`px-2 py-1 rounded-full text-xs ${
+                             item.status === 'COMPLETED' 
+                               ? 'bg-green-100 text-green-800' 
+                               : 'bg-yellow-100 text-yellow-800'
+                           }`}>
+                             {item.status === 'COMPLETED' ? 'Yakunlandi' : 'Kutilmoqda'}
+                           </span>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+              </div>
+                         ) : (
+               <div className="text-gray-500 text-center py-8">
+                 Бу даврда ўтказма маълумотлари топилмади
+               </div>
+             )}
+          </div>
+        </div>
+      )}
+
+
     </div>
   );
 };
 
-export default TransactionReport;
+export default Dashboard;

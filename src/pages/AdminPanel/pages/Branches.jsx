@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
 const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
   const navigate = useNavigate();
@@ -289,35 +290,7 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
   const totalEmployees = branches.reduce((sum, branch) => sum + branch.employeeCount, 0);
   const totalInventoryValue = branches.reduce((sum, branch) => sum + branch.inventoryValue, 0);
 
-  const formatCurrencyUzbek = (value) => {
-    if (value >= 1e63) return `${(value / 1e63).toFixed(1)} вигинтилион сўм`;
-    if (value >= 1e60) return `${(value / 1e60).toFixed(1)} новемдецилион сўм`;
-    if (value >= 1e57) return `${(value / 1e57).toFixed(1)} окто-децилион сўм`;
-    if (value >= 1e54) return `${(value / 1e54).toFixed(1)} септендецилион сўм`;
-    if (value >= 1e51) return `${(value / 1e51).toFixed(1)} сексдецилион сўм`;
-    if (value >= 1e48) return `${(value / 1e48).toFixed(1)} квиндецилион сўм`;
-    if (value >= 1e45) return `${(value / 1e45).toFixed(1)} кваттордецилион сўм`;
-    if (value >= 1e42) return `${(value / 1e42).toFixed(1)} тредецилион сўм`;
-    if (value >= 1e39) return `${(value / 1e39).toFixed(1)} дуодецилион сўм`;
-    if (value >= 1e36) return `${(value / 1e36).toFixed(1)} ундецилион сўм`;
-    if (value >= 1e33) return `${(value / 1e33).toFixed(1)} децилион сўм`;
-    if (value >= 1e30) return `${(value / 1e30).toFixed(1)} нониллион сўм`;
-    if (value >= 1e27) return `${(value / 1e27).toFixed(1)} октиллион сўм`;
-    if (value >= 1e24) return `${(value / 1e24).toFixed(1)} септиллион сўм`;
-    if (value >= 1e21) return `${(value / 1e21).toFixed(1)} секстиллион сўм`;
-    if (value >= 1e18) return `${(value / 1e18).toFixed(1)} квинтиллион сўм`;
-    if (value >= 1e15) return `${(value / 1e15).toFixed(1)} квадриллион сўм`;
-    if (value >= 1e12) return `${(value / 1e12).toFixed(1)} триллион сўм`;
-    if (value >= 1e9) return `${(value / 1e9).toFixed(1)} миллиард сўм`;
-    if (value >= 1e6) return `${(value / 1e6).toFixed(1)} миллион сўм`;
-    if (value >= 1e3) return `${(value / 1e3).toFixed(1)} минг сўм`;
-    return `${value.toFixed(0)} сўм`;
-  };
 
-  const formatAmount = (value) => {
-    const num = Math.floor(Number(value) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  };
 
   return (
     <div className="space-y-6">

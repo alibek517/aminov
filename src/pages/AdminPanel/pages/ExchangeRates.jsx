@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, Plus, Edit, Trash2, RefreshCw, CheckCircle } from 'lucide-react';
+import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
 const ExchangeRates = () => {
   const [exchangeRates, setExchangeRates] = useState([]);
@@ -258,7 +259,7 @@ const ExchangeRates = () => {
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0"
                   value={formData.rate}
                   onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"

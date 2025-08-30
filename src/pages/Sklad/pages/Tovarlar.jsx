@@ -30,7 +30,7 @@ const Kirim = () => {
   const API_URL = 'https://suddocs.uz';
 
   const formatQuantity = (qty) =>
-    qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' dona' : '0 dona';
+    qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' дона' : '0 дона';
 
   const axiosWithAuth = async (config) => {
     const token = localStorage.getItem('access_token') || 'mock-token';
@@ -52,12 +52,37 @@ const Kirim = () => {
     const branchIdFromStorage = localStorage.getItem('branchId');
     if (branchIdFromStorage) {
       setSelectedBranchId(branchIdFromStorage);
+    } else {
+      setNotification({ message: 'Filial ID topilmadi', type: 'error' });
     }
+  }, []);
+
+  const [branches, setBranches] = useState([]);
+
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const branchesRes = await axiosWithAuth({ method: 'get', url: `${API_URL}/branches` });
+        setBranches(branchesRes.data);
+      } catch (err) {
+        console.error('Failed to fetch branches:', err);
+      }
+    };
+    fetchBranches();
   }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     const branchId = Number(selectedBranchId);
+    const storedBranchId = Number(localStorage.getItem('branchId'));
+    
+    // Only allow operations on the branch from localStorage
+    if (branchId !== storedBranchId) {
+            setProducts([]);
+      setLoading(false);
+      return;
+    }
+
     const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
 
     if (!isValidBranchId) {
@@ -102,6 +127,14 @@ const Kirim = () => {
       setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
       return;
     }
+    
+    // Check if user is operating on their own branch
+    const storedBranchId = Number(localStorage.getItem('branchId'));
+    if (Number(selectedBranchId) !== storedBranchId) {
+      setNotification({ message: 'Faqat sizning filialingizda miqdor qo\'shish mumkin', type: 'error' });
+      return;
+    }
+    
     setSubmitting(true);
     try {
       const userId = Number(localStorage.getItem('userId')) || 1;
@@ -127,7 +160,6 @@ const Kirim = () => {
         url: `${API_URL}/transactions`,
         data: payload,
       });
-      setNotification({ message: "Miqdor muvaffaqiyatli qo'shildi", type: 'success' });
       setModalOpen(false);
       resetForm();
       loadData();
@@ -165,18 +197,34 @@ const Kirim = () => {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">Kirim</h1>
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">Кирим</h1>
 
       {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
 
+      <div className="mb-6">
+        <label className="block text-lg font-semibold text-gray-800 mb-3">Филиални танланг</label>
+        <select
+          value={selectedBranchId}
+          onChange={(e) => setSelectedBranchId(e.target.value)}
+          className="w-full max-w-md px-5 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+        >
+          <option value="">Филиални танланг</option>
+          {branches.map((branch) => (
+            <option key={branch.id} value={branch.id}>
+              {branch.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {loading ? (
-        <div className="text-center text-gray-600">Yuklanmoqda...</div>
+        <div className="text-center text-gray-600">Юкланмоқда...</div>
       ) : (
         <>
           <div className="mb-4">
             <input
               type="text"
-              placeholder="Qidiruv: nomi, modeli, barcode yoki oxirgi 4 raqam..."
+              placeholder="Қидирув: номи, модели, баркод ёки охирги 4 рақам..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full p-2 border rounded-md focus:outline-none focus:border-blue-500 border-gray-300 transition-all duration-200"
@@ -187,12 +235,12 @@ const Kirim = () => {
               <thead>
                 <tr className="bg-gray-100 text-gray-700">
                   <th className="p-4 text-left font-semibold">ID</th>
-                  <th className="p-4 text-left font-semibold">Nomi</th>
-                  <th className="p-4 text-left font-semibold">Model</th>
-                  <th className="p-4 text-left font-semibold">Barcode</th>
-                  <th className="p-4 text-left font-semibold">Filial</th>
-                  <th className="p-4 text-left font-semibold">Miqdor</th>
-                  <th className="p-4 text-left font-semibold">Amallar</th>
+                  <th className="p-4 text-left font-semibold">Номи</th>
+                  <th className="p-4 text-left font-semibold">Модели</th>
+                  <th className="p-4 text-left font-semibold">Баркод</th>
+                  <th className="p-4 text-left font-semibold">Филиал</th>
+                  <th className="p-4 text-left font-semibold">Миқдор</th>
+                  <th className="p-4 text-left font-semibold">Амаллар</th>
                 </tr>
               </thead>
               <tbody>
@@ -201,9 +249,9 @@ const Kirim = () => {
                     <tr key={product.id} className="border-b border-gray-200 last:border-none">
                       <td className="p-4 text-gray-800">#{product.id}</td>
                       <td className="p-4 text-gray-800">{product.name}</td>
-                      <td className="p-4 text-gray-800">{product.model || 'N/A'}</td>
-                      <td className="p-4 text-gray-800">{product.barcode || 'N/A'}</td>
-                      <td className="p-4 text-gray-800">{product.branch?.name || "Noma'lum"}</td>
+                      <td className="p-4 text-gray-800">{product.model || "N/A"}</td>
+                      <td className="p-4 text-gray-800">{product.barcode || "N/A"}</td>
+                      <td className="p-4 text-gray-800">{product.branch?.name || "Номаълум"}</td>
                       <td className="p-4 text-gray-800">{formatQuantity(product.quantity)}</td>
                       <td className="p-4">
                         <button
@@ -211,9 +259,14 @@ const Kirim = () => {
                             setSelectedProductId(product.id);
                             setModalOpen(true);
                           }}
-                          className="bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition-all duration-200"
+                          disabled={Number(selectedBranchId) !== Number(localStorage.getItem('branchId'))}
+                          className={`px-3 py-1 rounded-md transition-all duration-200 ${
+                            Number(selectedBranchId) === Number(localStorage.getItem('branchId'))
+                              ? 'bg-blue-500 text-white hover:bg-blue-600'
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          }`}
                         >
-                          Miqdor qo'shish
+                          Миқдор қўшиш
                         </button>
                       </td>
                     </tr>
@@ -221,7 +274,7 @@ const Kirim = () => {
                 ) : (
                   <tr>
                     <td colSpan="7" className="p-4 text-center text-gray-600">
-                      Mahsulotlar topilmadi
+                      Маҳсулотлар топилмади
                     </td>
                   </tr>
                 )}
@@ -233,7 +286,7 @@ const Kirim = () => {
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-lg p-6 w-full max-w-md">
                 <div className="flex justify-between mb-4">
-                  <h3 className="text-xl font-semibold text-gray-800">Miqdor Qo'shish</h3>
+                  <h3 className="text-xl font-semibold text-gray-800">Миқдор Қўшиш</h3>
                   <button onClick={closeModal} className="text-gray-600 hover:text-gray-900">
                     X
                   </button>
@@ -241,25 +294,25 @@ const Kirim = () => {
                 <table className="w-full text-sm">
                   <tbody>
                     <tr>
-                      <td className="py-2 text-gray-700">Mahsulot</td>
+                      <td className="py-2 text-gray-700">Маҳсулот</td>
                       <td className="py-2 text-gray-800">
-                        {products.find((p) => p.id === selectedProductId)?.name || "Noma'lum"}
+                        {products.find((p) => p.id === selectedProductId)?.name || "Номаълум"}
                       </td>
                     </tr>
                     <tr>
-                      <td className="py-2 text-gray-700">Model</td>
+                      <td className="py-2 text-gray-700">Модели</td>
                       <td className="py-2 text-gray-800">
                         {products.find((p) => p.id === selectedProductId)?.model || "N/A"}
                       </td>
                     </tr>
                     <tr>
-                      <td className="py-2 text-gray-700">Barcode</td>
+                      <td className="py-2 text-gray-700">Баркод</td>
                       <td className="py-2 text-gray-800">
                         {products.find((p) => p.id === selectedProductId)?.barcode || "N/A"}
                       </td>
                     </tr>
                     <tr>
-                      <td className="py-2 text-gray-700">Miqdor</td>
+                      <td className="py-2 text-gray-700">Миқдор</td>
                       <td>
                         <input
                           type="number"
@@ -284,13 +337,13 @@ const Kirim = () => {
                     disabled={submitting}
                     className="flex-1 bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:bg-gray-400 transition-all duration-200"
                   >
-                    {submitting ? 'Yuklanmoqda...' : 'Saqlash'}
+                    {submitting ? 'Юкланмоқда...' : 'Сақлаш'}
                   </button>
                   <button
                     onClick={closeModal}
                     className="flex-1 bg-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 transition-all duration-200"
                   >
-                    Bekor
+                    Бекор
                   </button>
                 </div>
               </div>

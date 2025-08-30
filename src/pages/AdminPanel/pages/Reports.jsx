@@ -3,6 +3,7 @@ import { Eye, RefreshCw, User as UserIcon, X as XIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
 const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [transactions, setTransactions] = useState([]);
@@ -64,6 +65,55 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     }
   }, [selectedBranchId, filters.startDate, filters.endDate]);
 
+  // Cleanup effect - component unmount yoki branch o'zgarganda state ni tozalash
+  useEffect(() => {
+    return () => {
+      // Component unmount bo'lganda state ni tozalash
+      setProductSales([]);
+      setCashierSummaries([]);
+      setWarehouseSummaries([]);
+      setDailySales([]);
+      setSalesTotals({ totalQuantity: 0, totalAmount: 0 });
+      setDefectivePlus(0);
+      setDefectiveMinus(0);
+      setTransactions([]);
+      setSelectedTransaction(null);
+      setSelectedCashier(null);
+      setSelectedWarehouse(null);
+      setSelectedTransactionItems(null);
+      setSelectedCustomer(null);
+      setShowDetails(false);
+      setShowCashierModal(false);
+      setShowWarehouseModal(false);
+      setShowCustomerModal(false);
+    };
+  }, [selectedBranchId]); // selectedBranchId o'zgarganda ham cleanup
+
+  // Branch o'zgarganda avtomatik cleanup
+  useEffect(() => {
+    if (selectedBranchId !== undefined) {
+      // Branch o'zgarganda state ni tozalash
+      console.log('Branch changed, clearing state...');
+      setProductSales([]);
+      setCashierSummaries([]);
+      setWarehouseSummaries([]);
+      setDailySales([]);
+      setSalesTotals({ totalQuantity: 0, totalAmount: 0 });
+      setDefectivePlus(0);
+      setDefectiveMinus(0);
+      setTransactions([]);
+      setSelectedTransaction(null);
+      setSelectedCashier(null);
+      setSelectedWarehouse(null);
+      setSelectedTransactionItems(null);
+      setSelectedCustomer(null);
+      setShowDetails(false);
+      setShowCashierModal(false);
+      setShowWarehouseModal(false);
+      setShowCustomerModal(false);
+    }
+  }, [selectedBranchId]);
+
   const transactionTypes = {
     SALE: { label: "Sotuv", color: "bg-green-100 text-green-800" },
     RETURN: { label: "Qaytarish", color: "bg-yellow-100 text-yellow-800" },
@@ -88,10 +138,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       : "N/A";
   };
 
-  const formatAmount = (value) => {
-    const num = Math.floor(Number(value) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  };
+
 
   const getPaymentTypeLabel = (pt) => {
     switch (pt) {
@@ -118,13 +165,19 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     return `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Йўқ";
   };
 
+  // Manual refresh function - state ni to'liq tozalaydi
+  // Bu function ni fetchTransactions dan keyin e'lon qilamiz
+
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     // Reset summaries to avoid showing stale data when backend has no results
     setProductSales([]);
     setCashierSummaries([]);
+    setWarehouseSummaries([]); // Add this line to reset warehouse summaries
     setDailySales([]);
     setSalesTotals({ totalQuantity: 0, totalAmount: 0 });
+    setDefectivePlus(0);
+    setDefectiveMinus(0);
     try {
       const token = localStorage.getItem("access_token");
       if (!token) {
@@ -175,13 +228,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       const data = await response.json();
       console.log("Raw transaction data:", data);
 
-      // Extract transactions from the response - backend returns { transactions: [], pagination: {} }
       const transactions = data.transactions || data || [];
       console.log("Extracted transactions:", transactions);
 
       setTransactions(transactions);
 
-      // Process the data to create product sales and cashier summaries
       const productMap = new Map();
       const dailyMap = new Map();
       let totalQuantity = 0;
@@ -189,36 +240,45 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       const cashierMap = new Map();
       const warehouseMap = new Map();
       const aggregateInMainLoop = false;
-      // Removed processedUsers Set since we want to allow multiple operations per user
+      
+      const processedUserIds = new Set();
+      const processedWarehouseUsers = new Set();
+      const processedCashierUsers = new Set();
+      console.log('Clearing previous data and starting fresh processing...');
 
       if (Array.isArray(transactions)) {
+        console.log(`Processing ${transactions.length} transactions...`);
+        
         transactions.forEach((transaction, index) => {
           console.log(`Processing transaction ${index}:`, transaction);
 
-          // Warehouse user aggregation (only if role is WAREHOUSE and not already counted as cashier)
+          // Warehouse user processing - faqat WAREHOUSE role ga ega bo'lganlar
           const warehouseUser =
             transaction.user?.role === "WAREHOUSE"
               ? transaction.user
               : transaction.soldBy?.role === "WAREHOUSE"
               ? transaction.soldBy
               : null;
-          const isWarehouse = !!warehouseUser;
-          if (warehouseUser && isWarehouse) {
-            const wid = warehouseUser.id;
-            const warehouseUserId = String(wid);
+          
+          if (warehouseUser) {
+            const wid = String(warehouseUser.id);
             
-            // Don't skip if user already processed - allow multiple operations from same user
-            // processedUsers.add(warehouseUserId); // Remove this line
-            
-            // Check if this user also has CASHIER role - if so, prioritize cashier
-            const hasCashierRole = 
-              (transaction.user?.role === "CASHIER" && transaction.user.id === wid) ||
-              (transaction.soldBy?.role === "CASHIER" && transaction.soldBy.id === wid);
-            
-            if (hasCashierRole) {
-              // Skip warehouse aggregation if user has cashier role (priority to cashier)
+            // Agar bu user allaqachon cashier sifatida qayta ishlangan bo'lsa, uni o'tkazib yubor
+            if (processedCashierUsers.has(wid)) {
+              console.log(`Skipping warehouse user ${wid} - already processed as cashier`);
               return;
             }
+            
+            // Agar bu user allaqachon warehouse sifatida qayta ishlangan bo'lsa, uni o'tkazib yubor
+            if (processedWarehouseUsers.has(wid)) {
+              console.log(`Skipping warehouse user ${wid} - already processed as warehouse`);
+              return;
+            }
+            
+            // User ni warehouse sifatida belgilash
+            processedWarehouseUsers.add(wid);
+            processedUserIds.add(`warehouse_${wid}`);
+            
             if (!warehouseMap.has(wid)) {
               warehouseMap.set(wid, {
                 id: wid,
@@ -238,6 +298,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 creditTotal: 0,
                 installmentTotal: 0,
                 upfrontTotal: 0,
+                upfrontCash: 0,
+                upfrontCard: 0,
                 repaymentTotal: 0,
                 repayments: [],
                 soldQuantity: 0,
@@ -251,7 +313,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             const finalW = Number(
               transaction.finalTotal || transaction.total || 0
             );
-            // Initialize defective adjustments if not present
             if (wagg.defectivePlus === undefined) wagg.defectivePlus = 0;
             if (wagg.defectiveMinus === undefined) wagg.defectiveMinus = 0;
             switch (transaction.type) {
@@ -267,7 +328,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 break;
               case "SALE":
                 wagg.saleTotal += finalW;
-                // Payment distribution similar to cashiers
                 switch (transaction.paymentType) {
                   case "CASH":
                     wagg.cashTotal += finalW;
@@ -277,15 +337,25 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     break;
                   case "CREDIT":
                     wagg.creditTotal += finalW;
-                    wagg.upfrontTotal +=
-                      Number(transaction.amountPaid || 0) +
-                      Number(transaction.downPayment || 0);
+                    const upfront1 = Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0);
+                    wagg.upfrontTotal += upfront1;
+                    const upfrontType1 = transaction.upfrontPaymentType || 'CASH';
+                    if (upfrontType1 === 'CASH') {
+                      wagg.upfrontCash += upfront1;
+                    } else if (upfrontType1 === 'CARD') {
+                      wagg.upfrontCard += upfront1;
+                    }
                     break;
                   case "INSTALLMENT":
                     wagg.installmentTotal += finalW;
-                    wagg.upfrontTotal +=
-                      Number(transaction.amountPaid || 0) +
-                      Number(transaction.downPayment || 0);
+                    const upfront2 = Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0);
+                    wagg.upfrontTotal += upfront2;
+                    const upfrontType2 = transaction.upfrontPaymentType || 'CASH';
+                    if (upfrontType2 === 'CASH') {
+                      wagg.upfrontCash += upfront2;
+                    } else if (upfrontType2 === 'CARD') {
+                      wagg.upfrontCard += upfront2;
+                    }
                     break;
                   default:
                     break;
@@ -546,7 +616,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             });
           }
 
-          // Cashier summaries (only for SALE; prefer soldBy when role is CASHIER)
+          // Cashier summaries (faqat SALE transaction lar uchun)
           if (transaction.type === "SALE") {
             const cashierUser =
               transaction.soldBy?.role === "CASHIER"
@@ -554,12 +624,26 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 : transaction.user?.role === "CASHIER"
                 ? transaction.user
                 : null;
-            const isCashier = !!cashierUser;
-            if (isCashier) {
+            
+            if (cashierUser) {
               const cashierId = String(cashierUser.id);
               
-              // Don't skip if user already processed - allow multiple sales from same user
-              // processedUsers.add(cashierId); // Remove this line
+              // Agar bu user allaqachon warehouse sifatida qayta ishlangan bo'lsa, uni o'tkazib yubor
+              if (processedWarehouseUsers.has(cashierId)) {
+                console.log(`Skipping cashier user ${cashierId} - already processed as warehouse`);
+                return;
+              }
+              
+              // Agar bu user allaqachon cashier sifatida qayta ishlangan bo'lsa, uni o'tkazib yubor
+              if (processedCashierUsers.has(cashierId)) {
+                console.log(`Skipping cashier user ${cashierId} - already processed as cashier`);
+                return;
+              }
+              
+              // User ni cashier sifatida belgilash
+              processedCashierUsers.add(cashierId);
+              processedUserIds.add(`cashier_${cashierId}`);
+              
               if (!cashierMap.has(cashierId)) {
                 cashierMap.set(cashierId, {
                   id: cashierId,
@@ -574,6 +658,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   creditTotal: 0,
                   installmentTotal: 0,
                   upfrontTotal: 0,
+                  upfrontCash: 0,
+                  upfrontCard: 0,
                   soldQuantity: 0,
                   soldAmount: 0,
                   creditMonths: [],
@@ -601,10 +687,24 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 case "CREDIT":
                   agg.creditTotal += final;
                   agg.upfrontTotal += upfront;
+                  // Track upfront payment by type
+                  const upfrontType = transaction.upfrontPaymentType || 'CASH';
+                  if (upfrontType === 'CASH') {
+                    agg.upfrontCash += upfront;
+                  } else if (upfrontType === 'CARD') {
+                    agg.upfrontCard += upfront;
+                  }
                   break;
                 case "INSTALLMENT":
                   agg.installmentTotal += final;
                   agg.upfrontTotal += upfront;
+                  // Track upfront payment by type
+                  const upfrontType2 = transaction.upfrontPaymentType || 'CASH';
+                  if (upfrontType2 === 'CASH') {
+                    agg.upfrontCash += upfront;
+                  } else if (upfrontType2 === 'CARD') {
+                    agg.upfrontCard += upfront;
+                  }
                   break;
                 default:
                   break;
@@ -948,9 +1048,52 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
 
       // Build cashier summaries array
       const cashierArray = Array.from(cashierMap.values());
-      setCashierSummaries(cashierArray);
       const warehouseArray = Array.from(warehouseMap.values());
-      setWarehouseSummaries(warehouseArray);
+      
+      // Final deduplication: ensure no user appears in both arrays
+      const cashierIds = new Set(cashierArray.map(c => c.id));
+      const finalWarehouseArray = warehouseArray.filter(w => !cashierIds.has(w.id));
+      
+      // Additional deduplication within each array by ID and ensure uniqueness
+      const uniqueCashierArray = cashierArray.filter((c, index, self) => 
+        index === self.findIndex(item => item.id === c.id)
+      );
+      
+      const uniqueWarehouseArray = finalWarehouseArray.filter((w, index, self) => 
+        index === self.findIndex(item => item.id === w.id)
+      );
+      
+      // Extra safety check: ensure no duplicates between arrays
+      const finalCashierArray = uniqueCashierArray.filter(c => 
+        !uniqueWarehouseArray.some(w => w.id === c.id)
+      );
+      
+      const finalWarehouseArray2 = uniqueWarehouseArray.filter(w => 
+        !finalCashierArray.some(c => c.id === w.id)
+      );
+      
+      // Log final results for debugging
+      console.log('Final processing results:', {
+        cashiers: finalCashierArray.map(c => ({ id: c.id, name: c.name })),
+        warehouse: finalWarehouseArray2.map(w => ({ id: w.id, name: w.name })),
+        totalCashiers: finalCashierArray.length,
+        totalWarehouse: finalWarehouseArray2.length,
+        processedUsers: processedUserIds ? Array.from(processedUserIds) : [],
+        duplicatesRemoved: {
+          cashiers: cashierArray.length - finalCashierArray.length,
+          warehouse: warehouseArray.length - finalWarehouseArray2.length
+        }
+      });
+      
+      // Debug: show what was processed
+      console.log('🔍 Debug - Processed Users:', {
+        cashierUsers: Array.from(processedCashierUsers),
+        warehouseUsers: Array.from(processedWarehouseUsers),
+        allProcessed: Array.from(processedUserIds)
+      });
+      
+      setCashierSummaries(finalCashierArray);
+      setWarehouseSummaries(finalWarehouseArray2);
       setDailySales(Array.from(dailyMap.values()));
       setSalesTotals({ totalQuantity, totalAmount });
 
@@ -993,6 +1136,33 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       setLoading(false);
     }
   }, [filters.startDate, filters.endDate, selectedBranchId, navigate]);
+
+  // Manual refresh function - state ni to'liq tozalaydi
+  const refreshData = useCallback(() => {
+    console.log('Manual refresh - clearing all state...');
+    setProductSales([]);
+    setCashierSummaries([]);
+    setWarehouseSummaries([]);
+    setDailySales([]);
+    setSalesTotals({ totalQuantity: 0, totalAmount: 0 });
+    setDefectivePlus(0);
+    setDefectiveMinus(0);
+    setTransactions([]);
+    setSelectedTransaction(null);
+    setSelectedCashier(null);
+    setSelectedWarehouse(null);
+    setSelectedTransactionItems(null);
+    setSelectedCustomer(null);
+    setShowDetails(false);
+    setShowCashierModal(false);
+    setShowWarehouseModal(false);
+    setShowCustomerModal(false);
+    
+    // Keyin yangi ma'lumotlarni olish
+    setTimeout(() => {
+      fetchTransactions();
+    }, 100);
+  }, [fetchTransactions]);
 
   const fetchTransactionDetails = async (id) => {
     try {
@@ -1072,11 +1242,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               {/* Product ID search removed as requested */}
               <button
                 onClick={() => {
-                  fetchTransactions();
+                  refreshData(); // Manual refresh function ni ishlatish
                 }}
                 className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm sm:text-base disabled:opacity-50"
                 disabled={loading}
-                title="Маълумотларни янгилаш"
+                title="Маълумотларни янгилаш (state ni tozalaydi)"
               >
                 <RefreshCw
                   size={16}
@@ -1243,8 +1413,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {cashierSummaries.map((c) => (
-                    <tr key={c.id} className="hover:bg-blue-50/40">
+                  {cashierSummaries.map((c, index) => (
+                    <tr key={`cashier-${c.id}-${index}`} className="hover:bg-blue-50/40">
                       <td className="px-4 py-3 text-center">{c.name}</td>
                       <td className="px-4 py-3 text-center">
                         {formatAmount(c.cashTotal)}
@@ -1259,7 +1429,14 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         {formatAmount(c.installmentTotal)}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {formatAmount(c.upfrontTotal)}
+                        <div className="text-sm">
+                          <div className="font-semibold">{formatAmount(c.upfrontTotal)}</div>
+                          <div className="text-xs text-gray-600">
+                            <span className="text-green-600">Naqd: {formatAmount(c.upfrontCash || 0)}</span>
+                            <br />
+                            <span className="text-blue-600">Karta: {formatAmount(c.upfrontCard || 0)}</span>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="text-xs">
@@ -1335,8 +1512,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {warehouseSummaries.map((w) => (
-                    <tr key={w.id} className="hover:bg-green-50/40">
+                  {warehouseSummaries.map((w, index) => (
+                    <tr key={`warehouse-${w.id}-${index}`} className="hover:bg-green-50/40">
                       <td className="px-4 py-3 text-center">{w.name}</td>
                       <td className="px-4 py-3 text-center">
                         {formatAmount(w.cashTotal)}
@@ -1351,7 +1528,14 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         {formatAmount(w.installmentTotal)}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {formatAmount(w.upfrontTotal)}
+                        <div className="text-sm">
+                          <div className="font-semibold">{formatAmount(w.upfrontTotal)}</div>
+                          <div className="text-xs text-gray-600">
+                            <span className="text-green-600">Naqd: {formatAmount(w.upfrontCash || 0)}</span>
+                            <br />
+                            <span className="text-blue-600">Karta: {formatAmount(w.upfrontCard || 0)}</span>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="text-xs">
@@ -1494,6 +1678,20 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="font-semibold">
                       {formatAmount(selectedCashier.upfrontTotal)}
                     </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <div className="text-xs">Naqd</div>
+                        <div className="font-semibold">
+                          {formatAmount(selectedCashier.upfrontCash || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Karta</div>
+                        <div className="font-semibold">
+                          {formatAmount(selectedCashier.upfrontCard || 0)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div className="p-3 rounded border bg-purple-50">
                     <div className="text-sm">Кредитдан тўланган</div>
@@ -1536,6 +1734,15 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     </div>
                   </div>
                   <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Касса тузатишлар</div>
+                    <div className="font-semibold">
+                      + {formatAmount(selectedCashier.defectivePlus || 0)}
+                    </div>
+                    <div className="font-semibold text-red-600">
+                      - {formatAmount(selectedCashier.defectiveMinus || 0)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">
                       Топширадиган пул
                     </div>
@@ -1548,7 +1755,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                                 (r.channel || "CASH").toUpperCase() === "CASH"
                             )
                             .reduce((s, r) => s + Number(r.amount || 0), 0) +
-                          selectedCashier.upfrontTotal
+                          selectedCashier.upfrontTotal +
+                          (Number(selectedCashier.defectivePlus || 0) - Number(selectedCashier.defectiveMinus || 0))
                       )}
                     </div>
                   </div>
@@ -1582,7 +1790,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                           </thead>
                           <tbody className="divide-y divide-gray-200">
                             {selectedCashier.repayments.map((r, idx) => (
-                              <tr key={idx} className="hover:bg-gray-50">
+                              <tr key={`cashier-repayment-${r.scheduleId || r.transactionId || r.paidAt || idx}-${idx}`} className="hover:bg-gray-50">
                                 <td className="px-3 py-2">{r.month}</td>
                                 <td className="px-3 py-2">
                                   {formatDate(r.paidAt)}
@@ -1729,6 +1937,20 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="font-semibold">
                       {formatAmount(selectedWarehouse.upfrontTotal)}
                     </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <div className="text-xs">Naqd</div>
+                        <div className="font-semibold">
+                          {formatAmount(selectedWarehouse.upfrontCash || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Karta</div>
+                        <div className="font-semibold">
+                          {formatAmount(selectedWarehouse.upfrontCard || 0)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div className="p-3 rounded border bg-purple-50">
                     <div className="text-sm">Кредитдан тўланган</div>
@@ -1771,6 +1993,15 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     </div>
                   </div>
                   <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Касса тузатишлар</div>
+                    <div className="font-semibold">
+                      + {formatAmount(selectedWarehouse.defectivePlus || 0)}
+                    </div>
+                    <div className="font-semibold text-red-600">
+                      - {formatAmount(selectedWarehouse.defectiveMinus || 0)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">
                       Топширадиган пул
                     </div>
@@ -1783,7 +2014,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                                 (r.channel || "CASH").toUpperCase() === "CASH"
                             )
                             .reduce((s, r) => s + Number(r.amount || 0), 0) +
-                          selectedWarehouse.upfrontTotal
+                          selectedWarehouse.upfrontTotal +
+                          (Number(selectedWarehouse.defectivePlus || 0) - Number(selectedWarehouse.defectiveMinus || 0))
                       )}
                     </div>
                   </div>
@@ -1816,7 +2048,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                           </thead>
                           <tbody className="divide-y divide-gray-200">
                             {selectedWarehouse.repayments.map((r, idx) => (
-                              <tr key={idx} className="hover:bg-gray-50">
+                              <tr key={`warehouse-repayment-${r.scheduleId || r.transactionId || r.paidAt || idx}-${idx}`} className="hover:bg-gray-50">
                                 <td className="px-3 py-2">{r.month}</td>
                                 <td className="px-3 py-2">
                                   {formatDate(r.paidAt)}
@@ -1986,7 +2218,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                                 return inRange;
                               })
                               .map((r, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50">
+                                <tr key={`transaction-repayment-${r.scheduleId || r.transactionId || r.paidAt || idx}-${idx}`} className="hover:bg-gray-50">
                                   <td className="px-3 py-2">{r.month}</td>
                                   <td className="px-3 py-2">
                                     {formatDate(r.paidAt)}
@@ -2013,7 +2245,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     </thead>
                     <tbody className="divide-y divide-gray-200">
                       {(selectedTransactionItems.items || []).map((it, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
+                        <tr key={`transaction-item-${it.productId || it.id || it.name || i}-${i}`} className="hover:bg-gray-50">
                           <td className="px-3 py-2">
                             {it.product?.name || it.name || "-"}
                           </td>

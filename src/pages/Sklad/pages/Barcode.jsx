@@ -7,18 +7,34 @@ const Barcode = ({
   width = 2,
   height = 100,
   displayValue = true,
+  productName,
+  price,
   ...rest
 }) => {
   if (!value) return null;
   return (
-    <ReactBarcode
-      value={String(value)}
-      format={format}
-      width={width}
-      height={height}
-      displayValue={displayValue}
-      {...rest}
-    />
+    <div className="text-center">
+      {productName && (
+        <div className="text-sm font-semibold text-gray-900 mb-1">
+          {productName}
+        </div>
+      )}
+      {price && (
+        <div className="text-sm font-bold text-gray-800 mb-2">
+          {price}
+        </div>
+      )}
+      <div className="flex justify-center">
+        <ReactBarcode
+          value={String(value)}
+          format={format}
+          width={width}
+          height={height}
+          displayValue={displayValue}
+          {...rest}
+        />
+      </div>
+    </div>
   );
 };
 

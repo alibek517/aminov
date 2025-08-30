@@ -1,5 +1,6 @@
 import React, { forwardRef, useState } from 'react';
 import { X, Printer } from 'lucide-react';
+import { formatAmountSom } from '../../../utils/currencyFormat';
 
 const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
   const [isProcessing, setIsProcessing] = useState(false);
@@ -18,13 +19,6 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
     );
   }
 
-  // Format amount in som only
-  const formatAmountSom = (amount) => {
-    const num = Number(amount) || 0;
-    return new Intl.NumberFormat('uz-UZ').format(num) + " so'm";
-  };
-
-  // Calculate total from items (support price or marketPrice; values are already in som)
   const calculateTotal = () => {
     if (!transaction.items || !Array.isArray(transaction.items)) return 0;
     return transaction.items.reduce((sum, item) => {

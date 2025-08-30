@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { formatCurrency } from '../../../utils/currencyFormat';
 
 const Мижозлар = () => {
   const [customers, setCustomers] = useState([]);
@@ -25,26 +26,82 @@ const Мижозлар = () => {
   const API_URL = 'https://suddocs.uz';
   const [exchangeRate, setExchangeRate] = useState(12650);
 
-  // Helpers to compute accurate paid/remaining amounts across different transaction shapes
+      // Helpers to compute accurate paid/remaining amounts across different transaction shapes
   const calculateTransactionRemaining = (t) => {
-    const finalTotal = Number(t?.finalTotal || 0);
+    // For transactions with down payment, interest should NOT be applied to the down payment
+    const baseAmount = Number(t?.total || 0); // Use base amount without interest
+    const downPayment = Number(t?.downPayment || 0);
+    
     if (t && typeof t.remainingBalance === 'number' && Number.isFinite(t.remainingBalance)) {
       return Math.max(0, Number(t.remainingBalance));
     }
+    
     if (Array.isArray(t?.paymentSchedules) && t.paymentSchedules.length > 0) {
       const schedulesPaid = t.paymentSchedules.reduce((sum, sc) => sum + Number(sc?.paidAmount || 0), 0);
-      const downPayment = Number(t?.downPayment || 0);
-      const totalPaid = schedulesPaid + downPayment;
-      return Math.max(0, finalTotal - totalPaid);
+      
+      // Calculate remaining based on base amount (without interest on down payment)
+      // Interest should only be applied to the remaining balance after down payment
+      const remainingBase = Math.max(0, baseAmount - downPayment);
+      const remainingAfterSchedules = Math.max(0, remainingBase - schedulesPaid);
+      
+      // If this is a credit transaction, we need to calculate the interest correctly
+      if (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') {
+        // Interest is only on the remaining balance (not on down payment)
+        // Try to get interest rate from multiple sources
+        let interestRate = 0;
+        if (t.interestRate) {
+          interestRate = Number(t.interestRate) / 100;
+        } else if (t.items && t.items.length > 0) {
+          // Try to get from items - creditPercent is stored as decimal (0.10 for 10%)
+          const itemWithRate = t.items.find(item => item.creditPercent != null);
+          if (itemWithRate) {
+            interestRate = Number(itemWithRate.creditPercent);
+          }
+        }
+        
+        // Interest is applied only to the remaining base amount (after down payment)
+        const interestAmount = remainingAfterSchedules * interestRate;
+        return remainingAfterSchedules + interestAmount;
+      }
+      
+      return remainingAfterSchedules;
     }
-    const paidFallback = Number(t?.amountPaid || 0) + Number(t?.downPayment || 0);
-    return Math.max(0, finalTotal - paidFallback);
+    
+    const paidFallback = Number(t?.amountPaid || 0);
+    const remainingBase = Math.max(0, baseAmount - downPayment - paidFallback);
+    
+    // If this is a credit transaction, calculate interest correctly
+    if (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') {
+      // Try to get interest rate from multiple sources
+      let interestRate = 0;
+      if (t.interestRate) {
+        interestRate = Number(t.interestRate) / 100;
+      } else if (t.items && t.items.length > 0) {
+        // Try to get from items - creditPercent is stored as decimal (0.10 for 10%)
+        const itemWithRate = t.items.find(item => item.creditPercent != null);
+          if (itemWithRate) {
+            interestRate = Number(itemWithRate.creditPercent);
+          }
+        }
+      
+      // Interest is applied only to the remaining base amount (after down payment)
+      const interestAmount = remainingBase * interestRate;
+      return remainingBase + interestAmount;
+    }
+    
+    return remainingBase;
   };
 
   const calculateTransactionPaid = (t) => {
-    const finalTotal = Number(t?.finalTotal || 0);
-    const remaining = calculateTransactionRemaining(t);
-    return Math.max(0, finalTotal - remaining);
+    const downPayment = Number(t?.downPayment || 0);
+    
+    if (Array.isArray(t?.paymentSchedules) && t.paymentSchedules.length > 0) {
+      const schedulesPaid = t.paymentSchedules.reduce((sum, sc) => sum + Number(sc?.paidAmount || 0), 0);
+      return downPayment + schedulesPaid;
+    }
+    
+    const paidFallback = Number(t?.amountPaid || 0);
+    return downPayment + paidFallback;
   };
 
   useEffect(() => {
@@ -115,7 +172,18 @@ const Мижозлар = () => {
     try {
       setLoading(true);
       const response = await axiosWithAuth.get(`/transactions?customerId=${customerId}&limit=100`);
-      const transactions = response.data.transactions || [];
+      let transactions = response.data.transactions || [];
+      // Enrich from local storage meta (termUnit/days/interestRate) if available
+      try {
+        const metaRaw = localStorage.getItem('tx_term_units');
+        const metaMap = metaRaw ? JSON.parse(metaRaw) : {};
+        if (metaMap && typeof metaMap === 'object') {
+          transactions = transactions.map((tx) => {
+            const meta = metaMap[String(tx.id)];
+            return meta ? { ...tx, ...meta } : tx;
+          });
+        }
+      } catch {}
       // store raw USD values; conversion is done on render via exchangeRate
       const allTransactions = [];
       for (const transaction of transactions) {
@@ -188,6 +256,22 @@ const Мижозлар = () => {
           console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
           await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, paymentScheduleUpdate);
         }
+      } else {
+        // Daily installment (no schedule): store a local repayment log for dashboards/reports
+        try {
+          const logsRaw = localStorage.getItem('tx_daily_repayments');
+          const logs = logsRaw ? JSON.parse(logsRaw) : [];
+          logs.push({
+            transactionId: selectedSchedule.transaction.id,
+            amount: Number(paymentAmount),
+            paidAt: new Date().toISOString(),
+            channel: paymentChannel,
+            paidByUserId: Number(localStorage.getItem('userId')) || null,
+            customerId: selectedSchedule.transaction.customer?.id || null,
+            branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
+          });
+          localStorage.setItem('tx_daily_repayments', JSON.stringify(logs));
+        } catch {}
       }
 
       const transactionUpdate = {
@@ -224,12 +308,7 @@ const Мижозлар = () => {
     }
   };
 
-  const formatCurrency = (amount) => {
-    const uzs = Number(amount);
-    return uzs != null && Number.isFinite(uzs)
-      ? new Intl.NumberFormat('uz-UZ').format(uzs) + " сўм"
-      : "0 сўм";
-  };
+
 
   const formatDate = (date) => {
     return date ? new Date(date).toLocaleDateString('uz-UZ') : "Номаълум";
@@ -297,22 +376,22 @@ const Мижозлар = () => {
                               const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
                               if (creditTransactions.length === 0) return null;
 
-                              const totalCredit = creditTransactions.reduce((sum, t) => sum + Number(t?.finalTotal || 0), 0);
+                              const totalBaseCredit = creditTransactions.reduce((sum, t) => sum + Number(t?.total || 0), 0);
                               const totalRemaining = creditTransactions.reduce((sum, t) => sum + calculateTransactionRemaining(t), 0);
-                              const totalPaid = Math.max(0, totalCredit - totalRemaining);
+                              const totalPaid = Math.max(0, totalBaseCredit - totalRemaining);
 
                               if (totalRemaining <= 0) return null;
 
                               if (totalPaid > 0) {
                                 return (
                                   <div className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
-                                    {formatCurrency(totalPaid)} / {formatCurrency(totalCredit)}
+                                    {formatCurrency(totalPaid)} / {formatCurrency(totalBaseCredit)}
                                   </div>
                                 );
                               }
                               return (
                                 <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                                  {formatCurrency(totalCredit)}
+                                  {formatCurrency(totalBaseCredit)}
                                 </div>
                               );
                             })()}
@@ -359,6 +438,22 @@ const Мижозлар = () => {
                                     </div>
                                   );
                                 }
+                              }
+                              return null;
+                            })()}
+                            
+                            {/* Down Payment Summary */}
+                            {(() => {
+                              const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                              if (creditTransactions.length === 0) return null;
+
+                              const totalDownPayment = creditTransactions.reduce((sum, t) => sum + Number(t?.downPayment || 0), 0);
+                              if (totalDownPayment > 0) {
+                                return (
+                                  <div className="mt-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                                    💰 Олдиндан: {formatCurrency(totalDownPayment)}
+                                  </div>
+                                );
                               }
                               return null;
                             })()}
@@ -418,24 +513,53 @@ const Мижозлар = () => {
                         const toggle = () => setExpandedTransactions(prev => ({ ...prev, [t.id]: !prev[t.id] }));
                         const productNames = (t.items || []).map(it => it.product?.name || it.name || '').join(', ');
                         const months = (t.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || (Array.isArray(t.paymentSchedules) ? t.paymentSchedules.length : 0);
-                        const percent = (t.items || []).map(it => (typeof it.creditPercent === 'number' ? Number(it.creditPercent) : null)).find(v => v != null);
+                                                 const percent = (t.items || []).map(it => (typeof it.creditPercent === 'number' ? Number(it.creditPercent) : null)).find(v => v != null);
+                         // Also try to get interest rate from transaction level
+                         const transactionInterestRate = t.interestRate || (percent ? percent * 100 : null);
+                         
+                         
                         const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
-                        return (
-                          <div key={t.id} className="border rounded-lg bg-white">
-                            <button onClick={toggle} className="w-full text-left p-4 flex items-start justify-between">
-                              <div>
-                                <div className="font-medium text-lg">{productNames || `#${t.id}`}</div>
-                                <div className="text-sm text-gray-600">{typeLabel(t.paymentType)} {months ? `— ${months} ой` : ''}{percent != null ? `, ${(percent*100).toFixed(0)}%` : ''}</div>
+                                                 const totalAmount = Number(t.finalTotal || 0);
+                         const paidAmountCompact = calculateTransactionPaid(t);
+                         const remainingCompact = calculateTransactionRemaining(t);
+                         return (
+                           <div key={t.id} className="border rounded-lg bg-white">
+                             <button onClick={toggle} className="w-full text-left p-4 flex items-start justify-between">
+                               <div>
+                                 <div className="font-medium text-lg">{productNames || `#${t.id}`}</div>
+                                 <div className="text-sm text-gray-600">{typeLabel(t.paymentType)} {t.termUnit === 'DAYS' ? (t.days ? `— ${t.days} кун` : '') : (months ? `— ${months} ой` : '')}{percent != null ? `, ${(percent*100).toFixed(0)}%` : ''}
+                                   {paidAmountCompact > 0 && remainingCompact > 0 && (
+                                     <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 align-middle">Қисман тўланган</span>
+                                   )}
+                                 </div>
+                                                                 {t.termUnit === 'DAYS' && (
+                                   <div className="text-xs text-gray-500 mt-1">
+                                     Асосий сумма: {formatCurrency(t.total || 0)} | Тўланган: {formatCurrency(paidAmountCompact)} | Қолган: {formatCurrency(calculateTransactionRemaining(t))}
+                                   </div>
+                                 )}
+                                {t.downPayment && t.downPayment > 0 && (
+                                  <div className="text-xs text-blue-600 mt-1">
+                                    💰 Олдиндан олинган: {formatCurrency(t.downPayment)}
+                                  </div>
+                                )}
                                 <div className="text-xs text-gray-500">Сана: {formatDate(t.createdAt)}</div>
                               </div>
-                              <div className="text-right">
-                                <div className="text-lg font-bold">{formatCurrency(t.finalTotal)}</div>
-                                <div className="text-xs text-gray-600">Тўланган: {formatCurrency(calculateTransactionPaid(t))}</div>
-                                <div className="text-xs text-gray-600">Қолган: {formatCurrency(calculateTransactionRemaining(t))}</div>
-                                {calculateTransactionRemaining(t) <= 0 && (
-                                  <div className="mt-1 inline-block bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Тўлиқ тўланган</div>
-                                )}
-                              </div>
+                                                             <div className="text-right">
+                                 <div className="text-lg font-bold">{formatCurrency(t.total || 0)}</div>
+                                 <div className="text-xs text-gray-600">Тўланган: {formatCurrency(calculateTransactionPaid(t))}</div>
+                                 <div className="text-xs text-gray-600">Қолган: {formatCurrency(calculateTransactionRemaining(t))}</div>
+                                 
+                                 {/* Show interest amount if applicable */}
+                                 {(t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') && (
+                                   <div className="text-xs text-blue-600">
+                                     Фоиз: {formatCurrency(calculateTransactionRemaining(t) - Math.max(0, (t.total || 0) - (t.downPayment || 0) - (t.amountPaid || 0)))}
+                                   </div>
+                                 )}
+
+                                 {calculateTransactionRemaining(t) <= 0 && (
+                                   <div className="mt-1 inline-block bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Тўлиқ тўланган</div>
+                                 )}
+                               </div>
                             </button>
                             {isOpen && (
                               <div className="px-4 pb-4">
@@ -449,7 +573,7 @@ const Мижозлар = () => {
                                       <table className="w-full text-sm border">
                                         <thead className="bg-gray-50">
                                           <tr>
-                                            <th className="px-2 py-1 text-left">Ой</th>
+                                            <th className="px-2 py-1 text-left">Ой/Кун</th>
                                             <th className="px-2 py-1 text-left">Тўлов</th>
                                             <th className="px-2 py-1 text-left">Тўланган</th>
                                             <th className="px-2 py-1 text-left">Қолган</th>
@@ -534,6 +658,48 @@ const Мижозлар = () => {
                                     ))}
                                   </div>
                                 </div>
+
+                                                                 {(() => {
+                                   if (!(t.paymentType === 'INSTALLMENT')) return null;
+                                   const total = Number(t.total || t.finalTotal || 0);
+                                   const paid = calculateTransactionPaid(t);
+                                   const remaining = calculateTransactionRemaining(t);
+                                   if (remaining <= 0) return null;
+                                   return (
+                                     <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-2">
+                                       <div className="flex items-center justify-between gap-2">
+                                         <div className="text-sm text-blue-800">Қолган: <span className="font-semibold">{formatCurrency(remaining)}</span></div>
+                                         <div className="flex items-center gap-2">
+                                           <input
+                                             type="number"
+                                             min="1"
+                                             value={paymentAmount}
+                                             onChange={(e)=>setPaymentAmount(e.target.value)}
+                                             placeholder="Сумма"
+                                             className="w-28 p-1.5 border border-blue-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                           />
+                                           <button
+                                             onClick={() => {
+                                               const amt = Number(paymentAmount);
+                                               setSelectedSchedule({
+                                                 transaction: t,
+                                                 isPaymentSchedule: false,
+                                                 payment: total,
+                                                 paidAmount: paid,
+                                                 remainingBalance: remaining,
+                                               });
+                                               setPaymentAmount(!isNaN(amt) && amt>0 ? String(amt) : String(remaining));
+                                               setShowPaymentModal(true);
+                                             }}
+                                             className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded"
+                                           >
+                                             Тўлаш
+                                           </button>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   );
+                                 })()}
                               </div>
                             )}
                           </div>
@@ -585,19 +751,35 @@ const Мижозлар = () => {
                       <strong>Қолган:</strong> {formatCurrency(selectedSchedule.payment - selectedSchedule.paidAmount)}
                     </p>
                   </>
-                ) : (
-                  <>
-                    <p className="text-lg font-bold text-gray-900">
-                      <strong>Умумий сумма:</strong> {formatCurrency(selectedSchedule.payment)}
-                    </p>
-                    <p className="text-gray-600 mb-2">
-                      <strong>Тўланган:</strong> {formatCurrency(selectedSchedule.paidAmount)}
-                    </p>
-                    <p className="text-gray-600 mb-2">
-                      <strong>Қолган:</strong> {formatCurrency(selectedSchedule.remainingBalance)}
-                    </p>
-                  </>
-                )}
+                                 ) : (
+                   <>
+                     <p className="text-lg font-bold text-gray-900">
+                       <strong>Асосий сумма:</strong> {formatCurrency(selectedSchedule.transaction.total || 0)}
+                     </p>
+                     <p className="text-gray-600 mb-2">
+                       <strong>Олдиндан олинган:</strong> {formatCurrency(selectedSchedule.transaction.downPayment || 0)}
+                     </p>
+                     <p className="text-gray-600 mb-2">
+                       <strong>Тўланган:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                     </p>
+                     <p className="text-gray-600 mb-2">
+                       <strong>Қолган (фоиз билан):</strong> {formatCurrency(selectedSchedule.remainingBalance)}
+                     </p>
+                     {/* Show interest amount */}
+                     {(() => {
+                       const baseRemaining = Math.max(0, (selectedSchedule.transaction.total || 0) - (selectedSchedule.transaction.downPayment || 0) - selectedSchedule.paidAmount);
+                       const interestAmount = selectedSchedule.remainingBalance - baseRemaining;
+                       if (interestAmount > 0) {
+                         return (
+                           <p className="text-blue-600 mb-2">
+                             <strong>Фоиз:</strong> {formatCurrency(interestAmount)}
+                           </p>
+                         );
+                       }
+                       return null;
+                     })()}
+                   </>
+                 )}
                 {selectedSchedule.transaction.downPayment && selectedSchedule.transaction.downPayment > 0 && (
                   <p className="text-gray-600 mb-2">
                     <strong>Бошланғич тўлов:</strong> {formatCurrency(selectedSchedule.transaction.downPayment)}
@@ -635,7 +817,7 @@ const Мижозлар = () => {
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Тўлов Миқдори</label>
-                <input type="number" value={paymentAmount} onChange={(e)=>setPaymentAmount(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" min="0.01" max={selectedSchedule.isPaymentSchedule ? (selectedSchedule.payment - selectedSchedule.paidAmount) : selectedSchedule.remainingBalance} step="0.01" />
+                <input type="number" value={paymentAmount} onChange={(e)=>setPaymentAmount(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" min="0.01" max={selectedSchedule.isPaymentSchedule ? (selectedSchedule.payment - selectedSchedule.paidAmount) : selectedSchedule.remainingBalance} step="0" />
               </div>
 
               <div className="flex justify-end space-x-3">

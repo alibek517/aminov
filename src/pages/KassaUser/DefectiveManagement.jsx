@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { formatAmount, formatCurrency } from '../../utils/currencyFormat';
 
 const DefectiveManagement = () => {
   const navigate = useNavigate();
@@ -25,20 +26,23 @@ const DefectiveManagement = () => {
   const [reason, setReason] = useState('');
   const [cashDirection, setCashDirection] = useState(''); // PLUS | MINUS (required)
   const [cashAmount, setCashAmount] = useState(''); // required > 0
-  const [exchangeWithProductId, setExchangeWithProductId] = useState(''); // required when EXCHANGE
+  const [exchangeWithProductId, setExchangeWithProductId] = useState('');
   const [exchangeQty, setExchangeQty] = useState('');
   const [exchangeQuery, setExchangeQuery] = useState('');
   const [exchangeMarketingId, setExchangeMarketingId] = useState('');
   const [exchangeMarketingQuery, setExchangeMarketingQuery] = useState('');
   const [users, setUsers] = useState([]);
+  const [exchangeRate, setExchangeRate] = useState(0);
   const [selectedDate, setSelectedDate] = useState(() => {
     const today = new Date();
     return today.toISOString().split('T')[0]; // Format: YYYY-MM-DD
   });
 
-  // Exchange price preview (base ± cash)
+  const getEffectiveRate = () => {
+    return Number(exchangeRate) || 0;
+  };
+
   const exchangeBasePrice = useMemo(() => {
-    // Base on the current sold item's price
     return Number(modalData?.sellingPrice ?? modalData?.price ?? 0) || 0;
   }, [modalData]);
 
@@ -70,10 +74,11 @@ const DefectiveManagement = () => {
     fetchBranchProducts();
     fetchDefectiveLogs();
     fetchUsers();
+    fetchExchangeRate();
   }, []);
 
   const authHeaders = () => ({
-          Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
   });
 
@@ -84,29 +89,29 @@ const DefectiveManagement = () => {
       const data = await res.json().catch(() => ({}));
       const arr = data?.transactions || data || [];
       // Flatten items with transaction info
-        const sold = [];
+      const sold = [];
       for (const tx of Array.isArray(arr) ? arr : []) {
         // Do not skip transactions with status "RETURN" so that partially
         // exchanged/returned transactions still show remaining items
-        
+
         if (!Array.isArray(tx.items)) continue;
         for (const it of tx.items) {
           const pid = it.productId || it.product?.id;
           if (!pid) continue;
-                sold.push({
-                  transactionId: tx.id,
-                  createdAt: tx.createdAt,
-                  customer: tx.customer || null,
-                  price: it.price,
-                  sellingPrice: it.sellingPrice || it.price, // Actual selling price
-                  originalPrice: it.originalPrice || it.price, // Original product price
-                  quantity: it.quantity,
-                  productId: pid,
-                  product: it.product || null,
-                });
+          sold.push({
+            transactionId: tx.id,
+            createdAt: tx.createdAt,
+            customer: tx.customer || null,
+            price: it.price,
+            sellingPrice: it.sellingPrice || it.price, // Actual selling price
+            originalPrice: it.originalPrice || it.price, // Original product price
+            quantity: it.quantity,
+            productId: pid,
+            product: it.product || null,
+          });
         }
       }
-        setSoldProducts(sold);
+      setSoldProducts(sold);
     } catch (e) {
       // ignore
     }
@@ -118,7 +123,7 @@ const DefectiveManagement = () => {
       if (!res.ok) return;
       const data = await res.json().catch(() => []);
       const list = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
-      
+
       // Keep all logs for totals and filtered ones for item availability calc if needed
       setAllLogs(list);
       setLogs(list.filter(l => ['RETURN', 'EXCHANGE'].includes(String(l.actionType).toUpperCase())));
@@ -171,12 +176,15 @@ const DefectiveManagement = () => {
     }
   };
 
-  const createSaleForExchange = async (productId, qty, sellerIdOverride) => {
+  const createSaleForExchange = async (productId, qty, sellerIdOverride, exchangePrice) => {
     try {
       const replacement = await fetchProductById(productId);
       if (!replacement) return false;
-      const unitPrice = Number(replacement.marketPrice ?? replacement.price ?? 0) || 0;
+      
+      // Use the computed exchange price instead of product's original price
+      const unitPrice = Number(exchangePrice) || Number(replacement.marketPrice ?? replacement.price ?? 0) || 0;
       const total = unitPrice * Number(qty);
+      
       const payload = {
         type: 'SALE',
         status: 'COMPLETED',
@@ -186,7 +194,7 @@ const DefectiveManagement = () => {
         userId: Number(localStorage.getItem('userId')) || undefined,
         paymentType: 'CASH',
         fromBranchId: Number(branchId),
-        soldByUserId: Number(sellerIdOverride || localStorage.getItem('userId')) || undefined,
+        soldByUserId: Number(sellerIdOverride) || undefined,
         items: [
           {
             productId: Number(productId),
@@ -221,6 +229,32 @@ const DefectiveManagement = () => {
     }
   };
 
+  const fetchExchangeRate = async () => {
+    try {
+      // Try current-rate endpoint first
+      const rateResp = await fetch(`${API_URL}/currency-exchange-rates/current-rate?fromCurrency=USD&toCurrency=UZS`, { headers: authHeaders() });
+      if (rateResp.ok) {
+        const rateJson = await rateResp.json();
+        const rate = Number(rateJson?.rate) || 0;
+        if (rate > 0) {
+          setExchangeRate(rate);
+          return;
+        }
+      }
+      
+      // Fallback to list endpoint
+      const listResp = await fetch(`${API_URL}/currency-exchange-rates`, { headers: authHeaders() });
+      if (listResp.ok) {
+        const arr = await listResp.json();
+        const active = (Array.isArray(arr) ? arr : []).find(r => r.isActive && r.fromCurrency === 'USD' && r.toCurrency === 'UZS');
+        const rate = Number(active?.rate ?? arr?.[0]?.rate) || 0;
+        if (rate > 0) setExchangeRate(rate);
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
   const fetchUsers = async () => {
     try {
       const res = await fetch(`${API_URL}/users`, { headers: authHeaders() });
@@ -242,19 +276,19 @@ const DefectiveManagement = () => {
 
   const individualSales = useMemo(() => {
     const sales = [];
-    
+
     // Filter sold products by selected date
     const selectedDateObj = new Date(selectedDate);
     const startOfDay = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate());
     const endOfDay = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate(), 23, 59, 59);
-    
+
     for (const row of soldProducts) {
       // Check if transaction date matches selected date
       const transactionDate = new Date(row.createdAt);
       if (transactionDate < startOfDay || transactionDate > endOfDay) {
         continue; // Skip transactions not on selected date
       }
-      
+
       // Check if this product has been partially/fully returned or exchanged (reduce availability)
       const productReturns = allLogs.filter(log => {
         const isSameProduct = Number(log.productId) === Number(row.productId);
@@ -267,7 +301,7 @@ const DefectiveManagement = () => {
         const isReturnOrExchange = type === 'RETURN' || type === 'EXCHANGE';
         return isSameProduct && isSameTx && isSameDay && isReturnOrExchange;
       });
-      
+
       const totalReturnedQty = productReturns.reduce((sum, log) => {
         const type = String(log.actionType).toUpperCase();
         if (type === 'RETURN') {
@@ -281,12 +315,12 @@ const DefectiveManagement = () => {
         return sum;
       }, 0);
       const availableForReturn = Math.max(0, Number(row.quantity) - totalReturnedQty);
-      
+
       // Hide products that are fully returned
       if (availableForReturn <= 0) {
         continue;
       }
-      
+
       // Create individual sale entry
       sales.push({
         productId: row.productId,
@@ -301,12 +335,12 @@ const DefectiveManagement = () => {
         originalPrice: row.originalPrice,
         transactionId: row.transactionId,
         createdAt: row.createdAt,
-        saleTime: new Date(row.createdAt).toLocaleTimeString('uz-UZ', { 
-          hour: '2-digit', 
+        saleTime: new Date(row.createdAt).toLocaleTimeString('uz-UZ', {
+          hour: '2-digit',
           minute: '2-digit',
           timeZone: 'Asia/Tashkent'
         }),
-        saleDate: new Date(row.createdAt).toLocaleDateString('uz-UZ', { 
+        saleDate: new Date(row.createdAt).toLocaleDateString('uz-UZ', {
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
@@ -314,14 +348,14 @@ const DefectiveManagement = () => {
         })
       });
     }
-    
+
     // Add exchanged products (products given in exchange)
-    const exchangedProducts = allLogs.filter(log => 
-      log.actionType === 'EXCHANGE' && 
+    const exchangedProducts = allLogs.filter(log =>
+      log.actionType === 'EXCHANGE' &&
       log.exchangeWithProductId &&
       log.replacementQuantity > 0
     );
-    
+
     for (const exchange of exchangedProducts) {
       const exchangeDate = new Date(exchange.createdAt);
       if (exchangeDate >= startOfDay && exchangeDate <= endOfDay) {
@@ -342,12 +376,12 @@ const DefectiveManagement = () => {
             transactionId: `EXCHANGE-${exchange.id}`,
             createdAt: exchange.createdAt,
             isExchanged: true, // Mark as exchanged product
-            exchangeTime: new Date(exchange.createdAt).toLocaleTimeString('uz-UZ', { 
-              hour: '2-digit', 
+            exchangeTime: new Date(exchange.createdAt).toLocaleTimeString('uz-UZ', {
+              hour: '2-digit',
               minute: '2-digit',
               timeZone: 'Asia/Tashkent'
             }),
-            exchangeDate: new Date(exchange.createdAt).toLocaleDateString('uz-UZ', { 
+            exchangeDate: new Date(exchange.createdAt).toLocaleDateString('uz-UZ', {
               year: 'numeric',
               month: '2-digit',
               day: '2-digit',
@@ -357,13 +391,13 @@ const DefectiveManagement = () => {
         }
       }
     }
-    
+
     // Sort by creation time (newest first)
     sales.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
+
     // Filter by search term
     let filteredSales = sales;
-    
+
     if (soldSearch.trim()) {
       filteredSales = filteredSales.filter(sale =>
         (sale.name || '').toLowerCase().includes(soldSearch.trim().toLowerCase()) ||
@@ -371,28 +405,34 @@ const DefectiveManagement = () => {
         (sale.barcode || '').toLowerCase().includes(soldSearch.trim().toLowerCase())
       );
     }
-    
+
     // Filter by time (optional)
     if (timeFilter.trim()) {
       const targetHour = Number(timeFilter);
       if (!isNaN(targetHour) && targetHour >= 0 && targetHour <= 23) {
         filteredSales = filteredSales.filter(sale => {
-          const saleHour = new Date(sale.createdAt).getHours();
-          // Show sales within ±30 minutes range (e.g., 3:00 shows 2:30-3:30)
-          const lowerBound = (targetHour - 1 + 24) % 24; // Handle midnight case
-          const upperBound = (targetHour + 1) % 24;
+          const saleDate = new Date(sale.createdAt);
+          const saleHour = saleDate.getHours();
+          const saleMinutes = saleDate.getMinutes();
           
-          if (lowerBound <= upperBound) {
-            // Normal case: 2 <= hour <= 4
-            return saleHour >= lowerBound && saleHour <= upperBound;
-          } else {
-            // Midnight case: 23 <= hour <= 1
-            return saleHour >= lowerBound || saleHour <= upperBound;
+          // Show sales within ±30 minutes range (e.g., 3:00 shows 2:30-3:30)
+          const targetTimeInMinutes = targetHour * 60; // Convert target hour to minutes
+          const saleTimeInMinutes = saleHour * 60 + saleMinutes; // Convert sale time to minutes
+          
+          // Calculate the time difference in minutes
+          let timeDiff = Math.abs(saleTimeInMinutes - targetTimeInMinutes);
+          
+          // Handle midnight case (e.g., 23:30 vs 00:30)
+          if (timeDiff > 12 * 60) { // If difference is more than 12 hours
+            timeDiff = 24 * 60 - timeDiff; // Adjust for midnight crossing
           }
+          
+          // Return true if within ±30 minutes (30 minutes = 0.5 hours)
+          return timeDiff <= 30;
         });
       }
     }
-    
+
     return filteredSales;
   }, [soldProducts, soldSearch, timeFilter, selectedDate, allLogs, products]);
 
@@ -400,20 +440,20 @@ const DefectiveManagement = () => {
     return individualSales.filter(sale => {
       // Skip products with zero quantity
       if ((Number(sale.quantity) || 0) <= 0) return false;
-      
+
       // Skip products that are fully returned
       if (sale.availableForReturn <= 0) return false;
-      
+
       // Skip exchanged products that have been fully returned
       if (sale.isExchanged) {
-        const productReturns = allLogs.filter(log => 
-          log.productId === sale.productId && 
+        const productReturns = allLogs.filter(log =>
+          log.productId === sale.productId &&
           String(log.actionType).toUpperCase() === 'RETURN'
         );
         const totalReturnedQty = productReturns.reduce((sum, log) => sum + (Number(log.quantity) || 0), 0);
         if (totalReturnedQty >= Number(sale.quantity)) return false;
       }
-      
+
       return true;
     });
   }, [individualSales, allLogs]);
@@ -422,16 +462,16 @@ const DefectiveManagement = () => {
   const cashAdjustTotals = useMemo(() => {
     let plus = 0;
     let minus = 0;
-    
+
     if (!currentUserId) {
       return { plus, minus };
     }
-    
+
     // Filter by selected date
     const selectedDateObj = new Date(selectedDate);
     const startOfDay = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate());
     const endOfDay = new Date(selectedDateObj.getFullYear(), selectedDateObj.getMonth(), selectedDateObj.getDate(), 23, 59, 59);
-    
+
     for (const log of Array.isArray(allLogs) ? allLogs : []) {
       // Only count logs created by the current user and on selected date
       if (Number(log.userId) === currentUserId) {
@@ -442,7 +482,7 @@ const DefectiveManagement = () => {
         }
       }
     }
-    
+
     return { plus, minus };
   }, [allLogs, currentUserId, selectedDate]);
 
@@ -463,11 +503,11 @@ const DefectiveManagement = () => {
 
   const maxQtyForProduct = useMemo(() => {
     if (!modalData) return 0;
-    
+
     if (modalData.isExchanged) {
       // For exchanged products, use current stock quantity minus returned quantity
-      const productReturns = allLogs.filter(log => 
-        log.productId === modalData.productId && 
+      const productReturns = allLogs.filter(log =>
+        log.productId === modalData.productId &&
         String(log.actionType).toUpperCase() === 'RETURN'
       );
       const totalReturnedQty = productReturns.reduce((sum, log) => sum + (Number(log.quantity) || 0), 0);
@@ -486,22 +526,31 @@ const DefectiveManagement = () => {
   }, [exchangeWithProductId, products]);
 
   const submitAction = async () => {
-    if (!modalData) return;
-    if (!actionType) { setNotification({ message: 'Амалиётни танланг (Қайтариш/Алмаштириш)', type: 'error' }); return; }
-    if (actionType === 'RETURN') {
-      if (cashDirection !== 'MINUS') setCashDirection('MINUS');
-    } else if (actionType !== 'EXCHANGE' && !cashDirection) {
-      setNotification({ message: 'Касса йўналишини танланг (+/−)', type: 'error' }); return;
+    if (!modalData) {
+      setNotification({ message: 'Маҳсулот маълумотлари топилмади', type: 'error' });
+      return;
+    }
+    if (!actionType) {
+      setNotification({ message: 'Амалиётни танланг (Қайтариш/Алмаштириш)', type: 'error' });
+      return;
+    }
+    if (actionType === 'RETURN' && cashDirection !== 'MINUS') {
+      setCashDirection('MINUS'); // Force MINUS for RETURN
+    } else if (actionType === 'EXCHANGE' && !cashDirection) {
+      setNotification({ message: 'Касса йўналишини танланг (+/−)', type: 'error' });
+      return;
     }
     const amt = Number(cashAmount);
-    // Make cash amount optional; if not provided, backend can compute or we treat as 0
     const safeCashAmount = isNaN(amt) ? 0 : Math.max(0, amt);
+    if (actionType === 'EXCHANGE' && cashDirection === 'PLUS' && safeCashAmount <= 0) {
+      setNotification({ message: 'Кассага қўшиш учун сумма 0 дан катта бўлиши керак', type: 'error' });
+      return;
+    }
     const qty = Number(quantity);
     if (!qty || qty <= 0 || qty > maxQtyForProduct) {
       setNotification({ message: `Миқдор 1..${maxQtyForProduct} орасида бўлиши керак`, type: 'error' });
       return;
     }
-    // Extra guard: ensure for RETURN we never subtract more than this row's sold quantity
     if (actionType === 'RETURN') {
       const currentRow = soldProducts.find(
         (i) => i.transactionId === modalData.transactionId && i.productId === modalData.productId
@@ -516,30 +565,48 @@ const DefectiveManagement = () => {
         return;
       }
     }
-    if (!reason.trim()) { setNotification({ message: 'Сабаб мажбурий', type: 'error' }); return; }
-    if (actionType === 'EXCHANGE' && !exchangeWithProductId) {
-      setNotification({ message: 'Алмаштириш учун маҳсулотни танланг', type: 'error' });
+    if (!reason.trim()) {
+      setNotification({ message: 'Сабаб мажбурий', type: 'error' });
       return;
     }
     if (actionType === 'EXCHANGE') {
-      if (!cashDirection) { setNotification({ message: 'Касса йўналишини танланг (+/−)', type: 'error' }); return; }
-      const eq = Number(exchangeQty);
-      if (!eq || eq <= 0) { setNotification({ message: 'Yangi mahsulot miqdorini киритинг', type: 'error' }); return; }
-      if (replacementMaxQty > 0 && eq > replacementMaxQty) {
-        setNotification({ message: `Yangi mahsulot миқдори максимал: ${replacementMaxQty}`, type: 'error' }); return;
+      if (!exchangeWithProductId) {
+        setNotification({ message: 'Алмаштириш учун маҳсулотни танланг', type: 'error' });
+        return;
       }
-      // Marketing (seller) must be chosen
+      if (exchangeBasePrice <= 0) {
+        setNotification({ message: 'Алмаштириш учун маҳсулот нархи мавжуд эмас', type: 'error' });
+        return;
+      }
+      const eq = Number(exchangeQty);
+      if (!eq || eq <= 0) {
+        setNotification({ message: 'Янги маҳсулот миқдорини киритинг', type: 'error' });
+        return;
+      }
+      if (replacementMaxQty > 0 && eq > replacementMaxQty) {
+        setNotification({ message: `Янги маҳсулот миқдори максимал: ${replacementMaxQty}`, type: 'error' });
+        return;
+      }
       const sellerIdNum = Number(exchangeMarketingId);
-      if (!sellerIdNum || sellerIdNum <= 0) { setNotification({ message: 'Маркетинг ходимини киритинг (ID)', type: 'error' }); return; }
+      if (!sellerIdNum || sellerIdNum <= 0) {
+        setNotification({ message: 'Маркетинг ходимини киритинг (ID)', type: 'error' });
+        return;
+      }
+      if (!computedExchangePrice && computedExchangePrice !== 0) {
+        setNotification({ message: 'Алмаштириш нархи ҳисобланмади', type: 'error' });
+        return;
+      }
     }
-
+  
     setLoading(true);
     try {
-      // Prefer unified endpoint; fall back to legacy split endpoints if not found
-      // Compute replacement unit price for EXCHANGE from base price +/- cash adjustment
       let computedReplacementUnitPrice = undefined;
       if (actionType === 'EXCHANGE' && exchangeWithProductId) {
         computedReplacementUnitPrice = Number(computedExchangePrice) || 0;
+        if (computedReplacementUnitPrice < 0) {
+          setNotification({ message: 'Алмаштириш нархи манфий бўлиши мумкин эмас', type: 'error' });
+          return;
+        }
       }
       const unifiedEndpoint = `${API_URL}/defective-logs`;
       const body = {
@@ -549,24 +616,33 @@ const DefectiveManagement = () => {
         description: reason,
         branchId: Number(selectedBranchIdLS || branchId),
         isFromSale: true,
-        transactionId: modalData.transactionId, 
-        // For EXCHANGE we do not adjust cashbox; only record price used for the sale
-        cashAdjustmentDirection: actionType === 'EXCHANGE' ? undefined : cashDirection,
-        cashAmount: actionType === 'EXCHANGE' ? 0 : safeCashAmount,
+        transactionId: modalData.transactionId,
+        cashAdjustmentDirection: cashDirection,
+        cashAmount: safeCashAmount,
         handledByUserId: Number(localStorage.getItem('userId')) || undefined,
-        ...(actionType === 'EXCHANGE' ? { 
-          exchangeWithProductId: Number(exchangeWithProductId), 
+        ...(actionType === 'EXCHANGE' ? {
+          exchangeWithProductId: Number(exchangeWithProductId),
           replacementQuantity: Number(exchangeQty),
           replacementUnitPrice: computedReplacementUnitPrice,
           replacementSoldByUserId: Number(exchangeMarketingId) || undefined,
         } : {}),
       };
-      let res = await fetch(unifiedEndpoint, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      console.log('Submitting payload:', JSON.stringify(body, null, 2));
+      let res = await fetch(unifiedEndpoint, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify(body),
+      });
       if (res.status === 404) {
         const legacy = actionType === 'RETURN'
           ? `${API_URL}/defective-logs/return`
           : `${API_URL}/defective-logs/exchange`;
-        res = await fetch(legacy, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+        console.log(`Falling back to legacy endpoint: ${legacy}`);
+        res = await fetch(legacy, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify(body),
+        });
       }
       if (!res.ok) {
         let errMsg = 'Сервер хатоси';
@@ -578,22 +654,14 @@ const DefectiveManagement = () => {
             errMsg = await res.text();
           } catch (_) {}
         }
-        throw new Error(errMsg);
+        throw new Error(`API Error: ${errMsg} (Status: ${res.status})`);
       }
-      
-      // Note: transaction status PATCH is not supported on backend; skip updating status
-       
-      // Backend automatically handles inventory updates, so we don't need to do it locally
-      // This prevents double-counting issues where products get added twice
-      console.log(`${actionType} operation completed - backend handles inventory updates`);
-
-      // UI adjustments through logs so availability recalculates correctly
+  
+      console.log(`${actionType} operation completed successfully`);
+  
       const qtyDelta = Number(qty) || 0;
       const nowIso = new Date().toISOString();
       if (actionType === 'RETURN') {
-        // Fallback inventory add for returned product (in case backend didn't adjust immediately)
-        await updateProductQuantity(modalData.productId, qtyDelta);
-        // Add a local log so the item disappears if fully returned
         setAllLogs(prev => [
           ...prev,
           {
@@ -605,21 +673,21 @@ const DefectiveManagement = () => {
             createdAt: nowIso,
             userId: currentUserId,
             transactionId: modalData.transactionId,
+            cashAmount: cashDirection === 'MINUS' ? -safeCashAmount : safeCashAmount,
           },
         ]);
-        // Decrease the sold item locally by the chosen quantity
-        setSoldProducts(prev => prev
-          .map(item => {
-            if (item.transactionId === modalData.transactionId && item.productId === modalData.productId) {
-              const newQty = Math.max(0, Number(item.quantity) - qtyDelta);
-              return newQty > 0 ? { ...item, quantity: newQty } : null;
-            }
-            return item;
-          })
-          .filter(Boolean)
+        setSoldProducts(prev =>
+          prev
+            .map(item => {
+              if (item.transactionId === modalData.transactionId && item.productId === modalData.productId) {
+                const newQty = Math.max(0, Number(item.quantity) - qtyDelta);
+                return newQty > 0 ? { ...item, quantity: newQty } : null;
+              }
+              return item;
+            })
+            .filter(Boolean)
         );
       } else if (actionType === 'EXCHANGE') {
-        // Add a local log marking the original item as exchanged by qtyDelta
         setAllLogs(prev => [
           ...prev,
           {
@@ -629,36 +697,47 @@ const DefectiveManagement = () => {
             quantity: qtyDelta,
             exchangeWithProductId: Number(exchangeWithProductId),
             replacementQuantity: Number(exchangeQty),
-            replacementUnitPrice: Number(computedExchangePrice) || 0,
+            replacementUnitPrice: computedReplacementUnitPrice,
             description: reason,
             createdAt: nowIso,
             userId: currentUserId,
             transactionId: modalData.transactionId,
+            cashAmount: cashDirection === 'MINUS' ? -safeCashAmount : safeCashAmount,
           },
         ]);
-        // Decrease the sold item locally by the chosen quantity
-        setSoldProducts(prev => prev
-          .map(item => {
-            if (item.transactionId === modalData.transactionId && item.productId === modalData.productId) {
-              const newQty = Math.max(0, Number(item.quantity) - qtyDelta);
-              return newQty > 0 ? { ...item, quantity: newQty } : null;
-            }
-            return item;
-          })
-          .filter(Boolean)
+        setSoldProducts(prev =>
+          prev
+            .map(item => {
+              if (item.transactionId === modalData.transactionId && item.productId === modalData.productId) {
+                const newQty = Math.max(0, Number(item.quantity) - qtyDelta);
+                return newQty > 0 ? { ...item, quantity: newQty } : null;
+              }
+              return item;
+            })
+            .filter(Boolean)
         );
-
-        // Backend will add replacement; refresh products and sold list
-        await fetchSoldTransactions();
-        await fetchBranchProducts();
+        
+        // Create sale record for the marketing person
+        if (exchangeWithProductId && exchangeQty && exchangeMarketingId) {
+          try {
+            // Pass the computed exchange price to ensure correct pricing
+            const finalExchangePrice = computedExchangePrice || exchangeBasePrice;
+            await createSaleForExchange(exchangeWithProductId, exchangeQty, exchangeMarketingId, finalExchangePrice);
+            console.log('Sale record created for marketing person with price:', finalExchangePrice);
+          } catch (error) {
+            console.error('Failed to create sale record for marketing person:', error);
+          }
+        }
+        
+        await Promise.all([fetchSoldTransactions(), fetchBranchProducts()]);
       }
-      
+  
       setNotification({ message: 'Амал муваффақиятли бажарилди', type: 'success' });
       setShowModal(false);
-      // Avoid sold refetch here so removed item does not reappear
-      await Promise.all([fetchDefectiveLogs()]);
+      await fetchDefectiveLogs();
     } catch (e) {
-      setNotification({ message: e.message || 'Хатолик юз берди', type: 'error' });
+      console.error('API Error:', e.message, e);
+      setNotification({ message: `Хатолик: ${e.message || 'Сервер хатоси'}`, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -689,7 +768,7 @@ const DefectiveManagement = () => {
         </div>
       )}
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="mb-3">
           <label className="block text-sm text-gray-700 mb-1">Сана танланг</label>
           <input
@@ -702,7 +781,7 @@ const DefectiveManagement = () => {
             }}
             className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300 mb-3"
           />
-          
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-gray-700 mb-1">Сотилган махсулот қидириш</label>
@@ -719,6 +798,7 @@ const DefectiveManagement = () => {
                 type="number"
                 min="0"
                 max="23"
+                step="0"
                 value={timeFilter}
                 onChange={(e) => setTimeFilter(e.target.value)}
                 placeholder="Соат (0-23)"
@@ -727,15 +807,15 @@ const DefectiveManagement = () => {
               <div className="text-xs text-gray-500 mt-1">
                 {timeFilter && !isNaN(Number(timeFilter)) && Number(timeFilter) >= 0 && Number(timeFilter) <= 23 ? (
                   <span className="text-blue-600 font-medium">
-                    🔍 Кўрсатилади: {(Number(timeFilter) - 1 + 24) % 24}:00 - {(Number(timeFilter) + 1) % 24}:00
+                    🔍 Кўрсатилади: {Number(timeFilter)}:00 ± 30 дақиқа
                   </span>
                 ) : (
-                  'Масалан: 3 = 2:00-4:00 соатларидаги сотишлар'
+                  'Масалан: 3 = 2:30-3:30 соатларидаги сотишлар'
                 )}
               </div>
             </div>
           </div>
-          
+
           {/* Clear Filters Button */}
           {(soldSearch || timeFilter) && (
             <div className="mt-3">
@@ -758,7 +838,7 @@ const DefectiveManagement = () => {
             <span className="font-medium">Натижа:</span> {visibleIndividualSales.length} та махсулот топилди
             {timeFilter && !isNaN(Number(timeFilter)) && (
               <span className="ml-2">
-                | Вақт: {Number(timeFilter)}:00 ± 1 соат
+                | Вақт: {Number(timeFilter)}:00 ± 30 дақиқа
               </span>
             )}
           </div>
@@ -766,7 +846,7 @@ const DefectiveManagement = () => {
             {(() => {
               const soldCount = visibleIndividualSales.filter(sale => !sale.isExchanged).length;
               const exchangedCount = visibleIndividualSales.filter(sale => sale.isExchanged).length;
-              
+
               return (
                 <>
                   <span className="text-green-600">💰 Сотилган: {soldCount} та</span>
@@ -786,12 +866,12 @@ const DefectiveManagement = () => {
               <div
                 key={`${sale.transactionId}-${sale.productId}-${index}`}
                 className="flex items-center justify-between p-3 border rounded hover:bg-gray-50 cursor-pointer"
-                onClick={() => openModal({ 
-                  productId: sale.productId, 
-                  name: sale.name, 
-                  model: sale.model, 
-                  barcode: sale.barcode, 
-                  price: sale.price, 
+                onClick={() => openModal({
+                  productId: sale.productId,
+                  name: sale.name,
+                  model: sale.model,
+                  barcode: sale.barcode,
+                  price: sale.price,
                   sellingPrice: sale.sellingPrice,
                   originalPrice: sale.originalPrice,
                   quantity: sale.quantity,
@@ -817,7 +897,7 @@ const DefectiveManagement = () => {
                     )}
                   </div>
                   <div className="text-xs text-blue-600 mt-1">
-                    Нарх: {Number(sale.sellingPrice || sale.price).toLocaleString('uz-UZ')} so'm
+                    Нарх: {formatCurrency(sale.sellingPrice || sale.price)}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
                     ID: #{sale.transactionId}
@@ -836,7 +916,7 @@ const DefectiveManagement = () => {
             ))
           )}
         </div>
-            </div>
+      </div>
 
       {showModal && modalData && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -864,35 +944,35 @@ const DefectiveManagement = () => {
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="bg-blue-50 p-4 rounded-lg">
-                    <div className="font-medium text-gray-700 mb-2">Нарх: {Number(modalData.sellingPrice || modalData.price).toLocaleString('uz-UZ')} so'm</div>
+                    <div className="font-medium text-gray-700 mb-2">Нарх: {formatCurrency(modalData.sellingPrice || modalData.price)}</div>
                     {modalData.sellingPrice && modalData.price && modalData.sellingPrice !== modalData.price && (
                       <div className={`text-sm ${Number(modalData.sellingPrice) > Number(modalData.price) ? 'text-green-600' : 'text-red-600'}`}>
                         {Number(modalData.sellingPrice) > Number(modalData.price) ? '+' : ''}
-                        {((Number(modalData.sellingPrice) - Number(modalData.price)) / Number(modalData.price) * 100).toFixed(1)}% 
-                        ({Number(modalData.sellingPrice - modalData.price).toLocaleString('uz-UZ')} so'm)
+                        {((Number(modalData.sellingPrice) - Number(modalData.price)) / Number(modalData.price) * 100).toFixed(1)}%
+                        ({formatCurrency(modalData.sellingPrice - modalData.price)})
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="bg-gray-50 p-4 rounded-lg text-sm">
                     <div className="text-gray-600 mb-1">ID: #{modalData.transactionId}</div>
                     <div className="text-gray-600">Сана: {new Date(modalData.createdAt).toLocaleDateString('uz-UZ')}</div>
                   </div>
                 </div>
-                
+
                 {/* Right column - Form fields */}
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm text-gray-700 mb-2 font-medium">Амалиётни танланг</label>
                     <div className="flex items-center gap-6">
                       <label className="inline-flex items-center gap-2 text-sm">
-                        <input type="radio" name="act" value="RETURN" checked={actionType === 'RETURN'} onChange={() => setActionType('RETURN')} className="mr-2" /> 
+                        <input type="radio" name="act" value="RETURN" checked={actionType === 'RETURN'} onChange={() => setActionType('RETURN')} className="mr-2" />
                         <span className="font-medium">Қайтариш</span>
                       </label>
                       <label className="inline-flex items-center gap-2 text-sm">
-                        <input type="radio" name="act" value="EXCHANGE" checked={actionType === 'EXCHANGE'} onChange={() => setActionType('EXCHANGE')} className="mr-2" /> 
+                        <input type="radio" name="act" value="EXCHANGE" checked={actionType === 'EXCHANGE'} onChange={() => setActionType('EXCHANGE')} className="mr-2" />
                         <span className="font-medium">Алмаштириш</span>
                       </label>
                     </div>
@@ -904,6 +984,7 @@ const DefectiveManagement = () => {
                       type="number"
                       min={1}
                       max={maxQtyForProduct}
+                      step="0"
                       value={quantity}
                       onChange={(e) => setQuantity(e.target.value)}
                       className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
@@ -925,33 +1006,41 @@ const DefectiveManagement = () => {
                   <div>
                     <label className="block text-sm text-gray-700 mb-2 font-medium">Касса</label>
                     <div className="flex items-center gap-6">
+                    <label className="inline-flex items-center gap-2 text-sm">
+  <input
+    type="radio"
+    name="cash"
+    value="PLUS"
+    checked={cashDirection === 'PLUS'}
+    onChange={() => setCashDirection('PLUS')}
+    className="mr-2"
+  />
+  <span className="font-medium">+ кассага </span>
+</label>
                       <label className="inline-flex items-center gap-2 text-sm">
-                        <input type="radio" name="cash" value="PLUS" checked={cashDirection === 'PLUS'} onChange={() => setCashDirection('PLUS')} className="mr-2" /> 
-                        <span className="font-medium">+ кассага</span>
-                      </label>
-                      <label className="inline-flex items-center gap-2 text-sm">
-                        <input type="radio" name="cash" value="MINUS" checked={cashDirection === 'MINUS'} onChange={() => setCashDirection('MINUS')} className="mr-2" /> 
+                        <input type="radio" name="cash" value="MINUS" checked={cashDirection === 'MINUS'} onChange={() => setCashDirection('MINUS')} className="mr-2" />
                         <span className="font-medium">− кассадан</span>
                       </label>
                     </div>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm text-gray-700 mb-2 font-medium">Сумма (so'm)</label>
                     <input
                       type="number"
                       min={0}
+                      step="0"
                       value={cashAmount}
                       onChange={(e) => setCashAmount(e.target.value)}
                       className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
                       placeholder="0"
                     />
                   </div>
-                  
+
                   {actionType === 'EXCHANGE' && (
                     <div className="space-y-3 bg-blue-50 p-4 rounded-lg border border-blue-200">
                       <div className="text-sm font-medium text-blue-800 mb-3">🔄 Алмаштириш маълумотлари</div>
-                      
+
                       <div>
                         <label className="block text-sm text-gray-700 mb-2 font-medium">Алмаштириш учун маҳсулот</label>
                         <input
@@ -961,7 +1050,6 @@ const DefectiveManagement = () => {
                             const v = e.target.value;
                             setExchangeQuery(v);
                             let pid = null;
-                            // Try parse #ID at the end
                             const hashIdx = v.lastIndexOf('#');
                             if (hashIdx !== -1) {
                               const idStr = v.substring(hashIdx + 1).trim();
@@ -993,15 +1081,23 @@ const DefectiveManagement = () => {
                             <option key={p.id} value={`${p.name || ''} | ${p.model || ''} | ${p.barcode || ''} | #${p.id}`} />
                           ))}
                         </datalist>
-                        <div className="text-xs text-gray-500 mt-1">Танланган: {exchangeWithProductId ? `#${exchangeWithProductId}` : '-'}</div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Танланган: {exchangeWithProductId
+                            ? (() => {
+                              const selectedProduct = products.find(p => Number(p.id) === Number(exchangeWithProductId));
+                              return selectedProduct ? formatCurrency((selectedProduct.marketPrice || selectedProduct.price || 0) * getEffectiveRate()) : '-';
+                            })()
+                            : '-'}
+                        </div>
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm text-gray-700 mb-2 font-medium">Yangi маҳсулот миқдори</label>
                         <input
                           type="number"
                           min={1}
                           max={Math.max(0, replacementMaxQty)}
+                          step="0"
                           value={exchangeQty}
                           onChange={(e) => setExchangeQty(e.target.value)}
                           className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
@@ -1040,28 +1136,30 @@ const DefectiveManagement = () => {
                         })()}</div>
                       </div>
 
-                      {/* Exchange price preview */}
+                                            {/* Exchange price preview */}
                       <div className="text-xs bg-white border rounded p-2">
-                        <div className="font-medium text-gray-700 mb-1">Нарх ҳисоб-китоби</div>
-                        <div>
-                        {/* База: {Number(modalData.sellingPrice || modalData.price).toLocaleString('uz-UZ')} so'm */}
-
-                          База: {Number(exchangeBasePrice).toLocaleString('uz-UZ')} so'm
-                          {cashDirection ? (
-                            <> {cashDirection === 'PLUS' ? ' + ' : ' − '} {Number(cashAmount || 0).toLocaleString('uz-UZ')} so'm =
-                              <span className="ml-1 font-semibold text-blue-700">{Number(computedExchangePrice).toLocaleString('uz-UZ')} so'm</span>
-                            </>
-                          ) : null}
-                        </div>
+                                                  <div className="font-medium text-gray-700 mb-1">Нарх ҳисоб-китоби</div>
+                          <div>
+                            База: {formatCurrency((modalData.sellingPrice || modalData.price) )}
+                            {cashDirection ? (
+                              <> {cashDirection === 'PLUS' ? ' + ' : ' − ' } {formatCurrency((cashAmount || 0))} =
+                                <span className="ml-1 font-semibold text-blue-700">{formatCurrency(((modalData.sellingPrice || modalData.price) + (cashDirection === 'PLUS' ? (cashAmount || 0) : -(cashAmount || 0))))}</span>
+                              </>
+                            ) : null}
+                            {exchangeMarketingId && (
+                              <div className="text-xs text-gray-600 mt-1">
+                                Маркетинг: {(() => {
+                                  const u = users.find(x => String(x.id) === String(exchangeMarketingId));
+                                  return u ? `${u.firstName || ''} ${u.lastName || ''}`.trim() || '-' : '-';
+                                })()}
+                                <br />
+                                <span className="text-blue-600">⚠️ Янги маҳсулот бу сотувчига тағасирланади</span>
+                              </div>
+                            )}
+                          </div>
                       </div>
                     </div>
                   )}
-
-                  <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg p-3 text-xs">
-                    <div className="font-medium mb-2">💡 Эслатма:</div>
-                    <div className="mb-1">🔄 <strong>Қайтариш:</strong> {quantity} дона сотилгандан айрилади, дўконга қўшилади</div>
-                    <div>🔄 <strong>Алмаштириш:</strong> {quantity} дона дўконга қўшилади, {exchangeQty || quantity} дона дўкондан айрилади</div>
-                  </div>
 
                   <div className="flex justify-end gap-3 pt-4">
                     <button

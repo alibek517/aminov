@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, Calendar, User, TrendingUp } from 'lucide-react';
+import { formatCurrency, formatCurrencyUSD } from '../../utils/currencyFormat';
 
 const Notification = ({ message, type, onClose }) => (
   <div
@@ -267,13 +268,7 @@ function Sotuvchilar() {
     }
   }, [selectedUserId, startDate, endDate, navigate, token, branchId, exchangeRate, branches]);
 
-  // Formatting functions
-  const formatCurrency = (amount, currency = 'UZS') => {
-    if (currency === 'USD') {
-      return `$${amount >= 0 ? new Intl.NumberFormat('en-US', { minimumFractionDigits: 2 }).format(amount) : 'Noma\'lum'}`;
-    }
-    return amount >= 0 ? new Intl.NumberFormat('uz-UZ').format(amount) + ' so\'m' : 'Noma\'lum';
-  };
+
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('uz-Cyrl-UZ');
@@ -317,7 +312,7 @@ function Sotuvchilar() {
         <h1 className="text-2xl font-bold text-gray-900">Сотувчилар маоши</h1>
         <p className="text-gray-600 mt-1">Сотувчилар маоши бўйича маълумотлар</p>
         <div className="mt-2 text-sm text-gray-500">
-          <span className="font-medium">Joriy kurs:</span> 1 USD = {formatCurrency(exchangeRate, 'UZS')}
+          <span className="font-medium">Joriy kurs:</span> 1 USD = {formatCurrency(exchangeRate)}
         </div>
       </div>
 
@@ -404,7 +399,7 @@ function Sotuvchilar() {
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-600">Jami sotuv (UZS):</span>
                           <span className="text-sm font-semibold text-blue-600">
-                            {formatCurrency(summary.totalSalesInSom, 'UZS')}
+                            {formatCurrency(summary.totalSalesInSom)}
                           </span>
                         </div>
                         
@@ -475,9 +470,6 @@ function Sotuvchilar() {
                         Умумий (UZS)
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Умумий (USD)
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         To'lov turi
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -506,9 +498,6 @@ function Sotuvchilar() {
                           <td className="px-6 py-4 text-gray-700">{sale.customerName}</td>
                           <td className="px-6 py-4 text-gray-700 font-medium">
                             {formatCurrency(sale.totalInSom, 'UZS')}
-                          </td>
-                          <td className="px-6 py-4 text-gray-700 font-medium">
-                            {formatCurrency(sale.total, 'USD')}
                           </td>
                           <td className="px-6 py-4">
                             <span

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import Receipt from './Receipt/Receipt';
+import { formatAmount, formatCurrency } from '../../utils/currencyFormat';
 
 const SalesManagement = () => {
   const [products, setProducts] = useState([]);
@@ -22,6 +23,7 @@ const SalesManagement = () => {
   const [passportSeries, setPassportSeries] = useState('');
   const [downPayment, setDownPayment] = useState('');
   const [customerPaid, setCustomerPaid] = useState('0');
+  const [upfrontPaymentType, setUpfrontPaymentType] = useState('CASH'); // CASH | CARD
   const [months, setMonths] = useState('');
   const [interestRate, setInterestRate] = useState('');
   const [termUnit, setTermUnit] = useState('DAYS'); // MONTHS | DAYS
@@ -38,7 +40,7 @@ const SalesManagement = () => {
   const [deliveryAddress, setDeliveryAddress] = useState(''); // Yangi state qo'shish
   const [priceInputValues, setPriceInputValues] = useState({}); // Store display values for price inputs
   const [exchangeRate, setExchangeRate] = useState(12500); // Default exchange rate USD to UZS
-  
+
   // Multiple customers feature
   const [showMultipleCustomersModal, setShowMultipleCustomersModal] = useState(false);
   const [customerCount, setCustomerCount] = useState(1);
@@ -52,11 +54,7 @@ const SalesManagement = () => {
 
   const API_URL = 'https://suddocs.uz';
 
-  // Format amount in som only
-  const formatAmount = (amount) => {
-    const num = Number(amount) || 0;
-    return new Intl.NumberFormat('uz-UZ').format(num) + ' so\'m';
-  };
+
 
 
 
@@ -76,7 +74,7 @@ const SalesManagement = () => {
       const displayPrice = priceInputValues[`${item.id}_${index}`] || item.price;
       return sum + Number(item.quantity) * Number(displayPrice);
     }, 0);
-    
+
     const paid = Number(customerPaid) || 0;                    // Mijoz to'lagan pul
     const remainingPrincipal = Math.max(0, baseTotal - paid);  // Asosiy puldan to'lagan pulni ayirish
     const interestAmount = remainingPrincipal * rate;          // Qolgan pulga foiz qo'yish
@@ -348,6 +346,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     setCustomerPaid('0');
     setMonths('');
     setInterestRate('');
+    setUpfrontPaymentType('CASH');
     setErrors({});
     setPriceInputValues({}); // Clear price input values
 
@@ -378,6 +377,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     setInterestRate('');
     setDownPayment('');
     setCustomerPaid('0');
+    setUpfrontPaymentType('CASH');
     setErrors({});
     setNotification(null);
   };
@@ -429,94 +429,96 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
 
   const validateFields = () => {
     const newErrors = {};
-    
+
     // Always required fields
-    if (selectedItems.length === 0) newErrors.items = 'Kamida bitta mahsulot tanlanishi shart';
-    
+    if (selectedItems.length === 0) newErrors.items = "Kamida bitta mahsulot tanlanishi shart";
+
     // Validate each selected item
     selectedItems.forEach((item, index) => {
       if (!item.quantity || isNaN(item.quantity) || Number(item.quantity) <= 0 || !Number.isInteger(Number(item.quantity))) {
-        newErrors[`quantity_${index}`] = 'Miqdor 0 dan katta butun son bo\'lishi kerak';
+        newErrors[`quantity_${index}`] = "Miqdor 0 dan katta butun son bo'lishi kerak";
       } else if (Number(item.quantity) > item.maxQuantity) {
         newErrors[`quantity_${index}`] = `Maksimal miqdor: ${item.maxQuantity} dona`;
       }
       if (!item.price || isNaN(item.price) || Number(item.price) <= 0) {
-        newErrors[`price_${index}`] = 'Narx 0 dan katta bo\'lishi kerak';
+        newErrors[`price_${index}`] = "Narx 0 dan katta bo'lishi kerak";
       }
     });
-    
-    // Always required: seller only
-    if (!selectedUserId) newErrors.seller = 'Sotuvchi tanlanishi shart';
-    if (!paymentType) newErrors.paymentType = 'To\'lov turi tanlanishi shart';
+
+    // Always required: seller and payment type
+    if (!selectedUserId) newErrors.seller = "Sotuvchi tanlanishi shart";
+    if (!paymentType) newErrors.paymentType = "To'lov turi tanlanishi shart";
 
     // Customer fields validation - only required for delivery OR credit/installment
     const requiresCustomerInfo = deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType);
-    
+
     if (requiresCustomerInfo) {
-      if (!firstName.trim()) newErrors.firstName = 'Ism kiritilishi shart';
-      if (!lastName.trim()) newErrors.lastName = 'Familiya kiritilishi shart';
-      if (!phone.trim() || !/^\+998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}$/.test(phone)) newErrors.phone = 'Telefon raqami: +998 XX XXX XX XX';
+      if (!firstName.trim()) newErrors.firstName = "Ism kiritilishi shart";
+      if (!lastName.trim()) newErrors.lastName = "Familiya kiritilishi shart";
+      if (!phone.trim() || !/^\+998\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}$/.test(phone))
+        newErrors.phone = "Telefon raqami: +998 XX XXX XX XX";
     }
 
     // Delivery address - only required for delivery
     if (deliveryType === 'DELIVERY') {
-      if (!deliveryAddress.trim()) newErrors.deliveryAddress = 'Manzil kiritilishi shart';
+      if (!deliveryAddress.trim()) newErrors.deliveryAddress = "Manzil kiritilishi shart";
     }
 
     // Credit/Installment specific validation
-    if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
+    if (['CREDIT', 'INSTALLMENT'].includes(paymentType)) {
+      if (!['CASH', 'CARD'].includes(upfrontPaymentType)) {
+        newErrors.upfrontPaymentType = "Олдиндан тўлов тури танланмаган (Нақд ёки Карта)";
+      }
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       if (!isDays) {
-        if (!passportSeries.trim()) newErrors.passportSeries = 'Passport seriyasi kiritilishi shart';
-        if (!jshshir.trim() || !/^\d{14,16}$/.test(jshshir)) newErrors.jshshir = 'JSHSHIR 14-16 raqamdan iborat bo\'lishi kerak';
-        if (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months)) || Number(months) > 24) {
-          newErrors.months = 'Oylar soni 1 dan 24 gacha butun son bo\'lishi kerak';
+        if (!passportSeries.trim()) newErrors.passportSeries = "Passport seriyasi kiritilishi shart";
+        if (!jshshir.trim() || !/^\d{14,16}$/.test(jshshir))
+          newErrors.jshshir = "JSHSHIR 14-16 raqamdan iborat bo'lishi kerak";
+        if (!months || isNaN(months) || Number(months) <= 0 || !Number.isInteger(Number(months))) {
+          newErrors.months = "Oylar soni 1 dan katta butun son bo'lishi kerak";
         }
         if (!interestRate || isNaN(interestRate) || Number(interestRate) < 0) {
-          newErrors.interestRate = 'Foiz 0 dan katta yoki teng bo\'lishi kerak';
+          newErrors.interestRate = "Foiz 0 dan katta yoki teng bo'lishi kerak";
         }
       } else {
         if (!daysCount || isNaN(daysCount) || Number(daysCount) <= 0 || !Number.isInteger(Number(daysCount)) || Number(daysCount) > 365) {
-          newErrors.daysCount = 'Kunlar soni 1..365 oraliqda bo\'lishi kerak';
+          newErrors.daysCount = "Kunlar soni 1..365 oraliqda bo'lishi kerak";
         }
-        // For daily installment, passport/JSHSHIR and interest not required
       }
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateFields()) {
-      // Show specific validation errors
-      const errorMessages = Object.values(errors).filter(msg => msg);
+      const errorMessages = Object.values(errors).filter((msg) => msg);
       const errorText = errorMessages.length > 0 ? errorMessages.join(', ') : "Barcha maydonlarni to'g'ri to'ldiring";
       setNotification({ message: errorText, type: 'error' });
       return;
     }
-    // Only prepare receipt data locally; DO NOT send to backend here
+
     setSubmitting(true);
     setNotification(null);
     try {
       const userId = Number(localStorage.getItem('userId'));
-      // Calculate base total using display prices (priceInputValues)
       const baseTotal = selectedItems.reduce((sum, item, index) => {
         const displayPrice = priceInputValues[`${item.id}_${index}`] || item.price;
         return sum + Number(item.quantity) * Number(displayPrice);
       }, 0);
-      
+
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       const m = isDays ? Number(daysCount) : Number(months);
       const rate = Number(interestRate) / 100 || 0;
       const finalTotal = baseTotal * (1 + rate);
-      const paidInSom = Number(customerPaid) || 0;
-      const paid = paidInSom;
+      const paid = Number(customerPaid) || 0;
       const remaining = paid < finalTotal ? finalTotal - paid : 0;
       const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
 
-            setReceiptData({
+      console.log('Setting receiptData with upfrontPaymentType:', upfrontPaymentType);
+
+      setReceiptData({
         id: Date.now(),
         createdAt: new Date().toISOString(),
         customer: {
@@ -528,20 +530,22 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
           jshshir: jshshir || undefined,
           address: deliveryAddress || undefined,
         },
-        seller: users.find(u => u.id === Number(selectedUserId)),
-        branch: branches.find(b => b.id === Number(localStorage.getItem('branchId'))),
+        seller: users.find((u) => u.id === Number(selectedUserId)),
+        branch: branches.find((b) => b.id === Number(localStorage.getItem('branchId'))),
         items: selectedItems.map((item, index) => ({
           ...item,
           price: Number(priceInputValues[`${item.id}_${index}`] || item.price),
-          sellingPrice: Number(priceInputValues[`${item.id}_${index}`] || item.price), // Actual selling price
-          originalPrice: Number(item.price), // Original product price
+          sellingPrice: Number(priceInputValues[`${item.id}_${index}`] || item.price),
+          originalPrice: Number(item.price),
           quantity: Number(item.quantity),
           total: Number(item.quantity) * Number(priceInputValues[`${item.id}_${index}`] || item.price),
-          ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' ? {
-            creditMonth: m,
-            creditPercent: rate,
-            monthlyPayment: Number(monthlyPayment),
-          } : {}),
+          ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT'
+            ? {
+              creditMonth: m,
+              creditPercent: rate,
+              monthlyPayment: Number(monthlyPayment),
+            }
+            : {}),
         })),
         paymentType,
         deliveryType: deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
@@ -555,10 +559,18 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         monthlyPayment: Number(monthlyPayment),
         totalInSom: Number(baseTotal),
         finalTotalInSom: Number(finalTotal),
+        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(paymentType) ? upfrontPaymentType : paymentType, // Use paymentType for CASH/CARD, upfrontPaymentType for CREDIT/INSTALLMENT
       });
-      // Close the selected items modal on submit
+
+      console.log('Receipt data set:', {
+        paymentType,
+        upfrontPaymentType,
+        termUnit,
+        daysCount,
+        months,
+      });
+
       setShowSelectedItemsModal(false);
-      // Reset inputs/options to defaults (cart remains for receipt preview)
       setSelectedUserId('');
       setPaymentType('CASH');
       setDeliveryType('PICKUP');
@@ -571,9 +583,13 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
       setMonths('');
       setInterestRate('');
       setDeliveryAddress('');
+      setUpfrontPaymentType('CASH');
       setErrors({});
       setPriceInputValues({});
       setShowReceiptModal(true);
+    } catch (err) {
+      console.error('handleSubmit error:', err);
+      setNotification({ message: err.message || "Sotishda xatolik yuz berdi", type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -698,7 +714,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       <td className="p-3 text-gray-700">{product.name}</td>
                       <td className="p-3 text-gray-700">{product.model}</td>
                       <td className="p-3 text-gray-700">{product.barcode}</td>
-                      <td className="p-3 text-gray-700">{formatAmount((product.marketPrice != null ? product.marketPrice : product.price)* exchangeRate)}</td>
+                      <td className="p-3 text-gray-700">{formatAmount((product.marketPrice != null ? product.marketPrice : product.price) * exchangeRate)}</td>
                       <td className="p-3 text-gray-700">{formatQuantity(product.quantity)}</td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
@@ -823,7 +839,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               }}
                               className={`w-40 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
                               min="0"
-                              step="1000"
+                              step="0"
                               placeholder="Нарх (сом)"
                             />
                             {errors[`price_${index}`] && (
@@ -838,7 +854,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`quantity_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
                               min="1"
                               max={item.maxQuantity}
-                              step="1"
+                              step="0"
                               placeholder="0"
                             />
                             {errors[`quantity_${index}`] && (
@@ -849,7 +865,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                             {(() => {
                               const displayPrice = priceInputValues[`${item.id}_${index}`] || Number(item.price);
                               const quantity = Number(item.quantity);
-                              
+
                               if (displayPrice.toString().length > 15) {
                                 if (quantity === 1) {
                                   return `${displayPrice} сом`;
@@ -954,7 +970,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         <select
                           value={paymentType}
                           onChange={(e) => setPaymentType(e.target.value)}
-                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.paymentType ? 'border-red-500' : 'border-gray-300'}`}
+                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.paymentType ? 'border-red-500' : 'border-gray-300'
+                            }`}
                         >
                           <option value="">Танланг</option>
                           <option value="CASH">Нақд</option>
@@ -962,9 +979,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           <option value="CREDIT">Кредит</option>
                           <option value="INSTALLMENT">Бўлиб Тўлаш</option>
                         </select>
-                        {errors.paymentType && (
-                          <span className="text-red-500 text-xs">{errors.paymentType}</span>
-                        )}
+                        {errors.paymentType && <span className="text-red-500 text-xs">{errors.paymentType}</span>}
                       </div>
                       {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
                         <>
@@ -982,114 +997,120 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                             </div>
                           )}
                           {paymentType === 'INSTALLMENT' && termUnit === 'DAYS' ? (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Кунлар сони</label>
+                              <input
+                                type="number"
+                                value={daysCount}
+                                onChange={(e) => setDaysCount(e.target.value)}
+                                className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.daysCount ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                min="1"
+                                max="365"
+                                step="1"
+                                placeholder="0"
+                              />
+                              {errors.daysCount && <span className="text-red-500 text-xs">{errors.daysCount}</span>}
+                            </div>
+                          ) : (
                             <>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Кунлар сони</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Паспорт серияси</label>
                                 <input
-                                  type="number"
-                                  value={daysCount}
-                                  onChange={(e) => setDaysCount(e.target.value)}
-                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.daysCount ? 'border-red-500' : 'border-gray-300'}`}
-                                  min="1"
-                                  max="365"
-                                  step="1"
-                                  placeholder="0"
+                                  type="text"
+                                  value={passportSeries}
+                                  onChange={(e) => setPassportSeries(e.target.value)}
+                                  placeholder="AA 1234567"
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'
+                                    }`}
                                 />
-                                {errors.daysCount && (
-                                  <span className="text-red-500 text-xs">{errors.daysCount}</span>
-                                )}
+                                {errors.passportSeries && <span className="text-red-500 text-xs">{errors.passportSeries}</span>}
                               </div>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">JSHSHIR</label>
+                                <input
+                                  type="text"
+                                  value={jshshir}
+                                  onChange={(e) => setJshshir(e.target.value)}
+                                  placeholder="1234567890123456"
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                  maxLength={16}
+                                />
+                                {errors.jshshir && <span className="text-red-500 text-xs">{errors.jshshir}</span>}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Ойлар сони</label>
                                 <input
                                   type="number"
-                                  value={customerPaid}
-                                  onChange={(e) => setCustomerPaid(e.target.value)}
-                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
-                                  step="500"
-                                  min="0"
-                                  placeholder="0"
+                                  value={months}
+                                  onChange={(e) => setMonths(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.months ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                  min="1"
+                                  step="1"
                                 />
-                                {errors.customerPaid && (
-                                  <span className="text-red-500 text-xs">{errors.customerPaid}</span>
-                                )}
+                                {errors.months && <span className="text-red-емы text-xs">{errors.months}</span>}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Фоиз (%)</label>
+                                <input
+                                  type="number"
+                                  value={interestRate}
+                                  onChange={(e) => setInterestRate(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                  step="0.01"
+                                  min="0"
+                                />
+                                {errors.interestRate && <span className="text-red-500 text-xs">{errors.interestRate}</span>}
                               </div>
                             </>
-                          ) : (
-                          <>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Паспорт серияси</label>
-                            <input
-                              type="text"
-                              value={passportSeries}
-                              onChange={(e) => setPassportSeries(e.target.value)}
-                              placeholder="AA 1234567"
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'}`}
-                            />  
-                            {errors.passportSeries && (
-                              <span className="text-red-500 text-xs">{errors.passportSeries}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">JSHSHIR</label>
-                            <input
-                              type="text"
-                              value={jshshir}
-                              onChange={(e) => setJshshir(e.target.value)}
-                              placeholder="1234567890123456"
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'}`}
-                              maxLength={16}
-                            />
-                            {errors.jshshir && (
-                              <span className="text-red-500 text-xs">{errors.jshshir}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Ойлар сони</label>
-                            <input
-                              type="number"
-                              value={months}
-                              onChange={(e) => setMonths(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.months ? 'border-red-500' : 'border-gray-300'}`}
-                              min="1"
-                              max="24"
-                              step="1"
-                            />
-                            {errors.months && (
-                              <span className="text-red-500 text-xs">{errors.months}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Фоиз (%)</label>
-                            <input
-                              type="number"
-                              value={interestRate}
-                              onChange={(e) => setInterestRate(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'}`}
-                              step="0.01"
-                              min="0"
-                            />
-                            {errors.interestRate && (
-                              <span className="text-red-500 text-xs">{errors.interestRate}</span>
-                            )}
-                          </div>
+                          )}
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
                             <input
                               type="number"
-                              value={customerPaid} // downPayment o'rniga customerPaid
+                              value={customerPaid}
                               onChange={(e) => setCustomerPaid(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
-                              step="500"
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'
+                                }`}
+                              step="1"
                               min="0"
                               placeholder="0"
                             />
-                            {errors.customerPaid && (
-                              <span className="text-red-500 text-xs">{errors.customerPaid}</span>
+                            {errors.customerPaid && <span className="text-red-500 text-xs">{errors.customerPaid}</span>}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Олдиндан тўлов тури</label>
+                            <div className="flex gap-4">
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  name="upfrontPaymentType"
+                                  value="CASH"
+                                  checked={upfrontPaymentType === 'CASH'}
+                                  onChange={(e) => setUpfrontPaymentType(e.target.value)}
+                                  className="mr-2 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Нақд</span>
+                              </label>
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  name="upfrontPaymentType"
+                                  value="CARD"
+                                  checked={upfrontPaymentType === 'CARD'}
+                                  onChange={(e) => setUpfrontPaymentType(e.target.value)}
+                                  className="mr-2 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Карта</span>
+                              </label>
+                            </div>
+                            {errors.upfrontPaymentType && (
+                              <span className="text-red-500 text-xs">{errors.upfrontPaymentType}</span>
                             )}
                           </div>
-                          </>
-                          )}
                         </>
                       )}
                     </div>
@@ -1103,13 +1124,13 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       <div className="text-gray-600 text-xs mb-1">Асосий сумма:</div>
                       <div className="font-medium text-blue-600 break-words text-sm">{(() => {
                         let total = 0;
-                        
+
                         selectedItems.forEach((item, index) => {
                           const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.round(Number(item.price));
                           const quantity = Number(item.quantity);
                           total += quantity * Number(displayPrice);
                         });
-                        
+
                         return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
                       })()}</div>
                     </div>
@@ -1121,7 +1142,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         </div>
                         <div className="bg-white p-3 rounded border">
                           <div className="text-gray-600 text-xs mb-1">Тўланган:</div>
-                          <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0) )} сом</div>
+                          <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0))} сом</div>
                         </div>
                         <div className="bg-white p-3 rounded border">
                           <div className="text-gray-600 text-xs mb-1">Қолган:</div>
@@ -1191,13 +1212,13 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               onChange={(e) => {
                                 const inputValue = e.target.value;
                                 const itemKey = `${item.id}_${index}`;
-                                
+
                                 // Update display value immediately
                                 setPriceInputValues(prev => ({
                                   ...prev,
                                   [itemKey]: inputValue
                                 }));
-                                
+
                                 // Update actual price in som directly
                                 if (inputValue === '' || (!isNaN(inputValue) && Number(inputValue) >= 0)) {
                                   const newPriceInSom = inputValue === '' ? 0 : inputValue;
@@ -1206,7 +1227,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               }}
                               className={`w-40 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
                               min="0"
-                              step="1000"
+                              step="0"
                               placeholder="Нарх (сом)"
                             />
                             {errors[`price_${index}`] && (
@@ -1221,7 +1242,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                               className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`quantity_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
                               min="1"
                               max={item.maxQuantity}
-                              step="1"
+                              step="0"
                               placeholder="0"
                             />
                             {errors[`quantity_${index}`] && (
@@ -1232,7 +1253,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                             {(() => {
                               const displayPrice = priceInputValues[`${item.id}_${index}`] || Number(item.price);
                               const quantity = Number(item.quantity);
-                              
+
                               // For very large numbers, show clean format without multiplication
                               if (displayPrice.toString().length > 15) {
                                 // For quantity = 1, just show the price
@@ -1358,7 +1379,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         <select
                           value={paymentType}
                           onChange={(e) => setPaymentType(e.target.value)}
-                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.paymentType ? 'border-red-500' : 'border-gray-300'}`}
+                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.paymentType ? 'border-red-500' : 'border-gray-300'
+                            }`}
                         >
                           <option value="">Танланг</option>
                           <option value="CASH">Нақд</option>
@@ -1366,9 +1388,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           <option value="CREDIT">Кредит</option>
                           <option value="INSTALLMENT">Бўлиб Тўлаш</option>
                         </select>
-                        {errors.paymentType && (
-                          <span className="text-red-500 text-xs">{errors.paymentType}</span>
-                        )}
+                        {errors.paymentType && <span className="text-red-500 text-xs">{errors.paymentType}</span>}
                       </div>
                       {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
                         <>
@@ -1386,114 +1406,120 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                             </div>
                           )}
                           {paymentType === 'INSTALLMENT' && termUnit === 'DAYS' ? (
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Кунлар сони</label>
+                              <input
+                                type="number"
+                                value={daysCount}
+                                onChange={(e) => setDaysCount(e.target.value)}
+                                className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.daysCount ? 'border-red-500' : 'border-gray-300'
+                                  }`}
+                                min="1"
+                                max="365"
+                                step="1"
+                                placeholder="0"
+                              />
+                              {errors.daysCount && <span className="text-red-500 text-xs">{errors.daysCount}</span>}
+                            </div>
+                          ) : (
                             <>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Кунлар сони</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Паспорт серияси</label>
                                 <input
-                                  type="number"
-                                  value={daysCount}
-                                  onChange={(e) => setDaysCount(e.target.value)}
-                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.daysCount ? 'border-red-500' : 'border-gray-300'}`}
-                                  min="1"
-                                  max="365"
-                                  step="1"
-                                  placeholder="0"
+                                  type="text"
+                                  value={passportSeries}
+                                  onChange={(e) => setPassportSeries(e.target.value)}
+                                  placeholder="AA 1234567"
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'
+                                    }`}
                                 />
-                                {errors.daysCount && (
-                                  <span className="text-red-500 text-xs">{errors.daysCount}</span>
-                                )}
+                                {errors.passportSeries && <span className="text-red-500 text-xs">{errors.passportSeries}</span>}
                               </div>
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">JSHSHIR</label>
+                                <input
+                                  type="text"
+                                  value={jshshir}
+                                  onChange={(e) => setJshshir(e.target.value)}
+                                  placeholder="1234567890123456"
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                  maxLength={16}
+                                />
+                                {errors.jshshir && <span className="text-red-500 text-xs">{errors.jshshir}</span>}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Ойлар сони</label>
                                 <input
                                   type="number"
-                                  value={customerPaid}
-                                  onChange={(e) => setCustomerPaid(e.target.value)}
-                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
-                                  step="500"
-                                  min="0"
-                                  placeholder="0"
+                                  value={months}
+                                  onChange={(e) => setMonths(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.months ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                  min="1"
+                                  step="1"
                                 />
-                                {errors.customerPaid && (
-                                  <span className="text-red-500 text-xs">{errors.customerPaid}</span>
-                                )}
+                                {errors.months && <span className="text-red-емы text-xs">{errors.months}</span>}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Фоиз (%)</label>
+                                <input
+                                  type="number"
+                                  value={interestRate}
+                                  onChange={(e) => setInterestRate(e.target.value)}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                  step="0.01"
+                                  min="0"
+                                />
+                                {errors.interestRate && <span className="text-red-500 text-xs">{errors.interestRate}</span>}
                               </div>
                             </>
-                          ) : (
-                          <>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Паспорт серияси</label>
-                            <input
-                              type="text"
-                              value={passportSeries}
-                              onChange={(e) => setPassportSeries(e.target.value)}
-                              placeholder="AA 1234567"
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'}`}
-                            />
-                            {errors.passportSeries && (
-                              <span className="text-red-500 text-xs">{errors.passportSeries}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">JSHSHIR</label>
-                            <input
-                              type="text"
-                              value={jshshir}
-                              onChange={(e) => setJshshir(e.target.value)}
-                              placeholder="1234567890123456"
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'}`}
-                              maxLength={16}
-                            />
-                            {errors.jshshir && (
-                              <span className="text-red-500 text-xs">{errors.jshshir}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Ойлар сони</label>
-                            <input
-                              type="number"
-                              value={months}
-                              onChange={(e) => setMonths(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.months ? 'border-red-500' : 'border-gray-300'}`}
-                              min="1"
-                              max="24"
-                              step="1"
-                            />
-                            {errors.months && (
-                              <span className="text-red-500 text-xs">{errors.months}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Фоиз (%)</label>
-                            <input
-                              type="number"
-                              value={interestRate}
-                              onChange={(e) => setInterestRate(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'}`}
-                              step="0.01"
-                              min="0"
-                            />
-                            {errors.interestRate && (
-                              <span className="text-red-500 text-xs">{errors.interestRate}</span>
-                            )}
-                          </div>
+                          )}
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Мижоз тўлаган (сом)</label>
                             <input
                               type="number"
-                              value={customerPaid} // downPayment o'rniga customerPaid
+                              value={customerPaid}
                               onChange={(e) => setCustomerPaid(e.target.value)}
-                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'}`}
-                              step="500"
+                              className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.customerPaid ? 'border-red-500' : 'border-gray-300'
+                                }`}
+                              step="1"
                               min="0"
                               placeholder="0"
                             />
-                            {errors.customerPaid && (
-                              <span className="text-red-500 text-xs">{errors.customerPaid}</span>
+                            {errors.customerPaid && <span className="text-red-500 text-xs">{errors.customerPaid}</span>}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Олдиндан тўлов тури</label>
+                            <div className="flex gap-4">
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  name="upfrontPaymentType"
+                                  value="CASH"
+                                  checked={upfrontPaymentType === 'CASH'}
+                                  onChange={(e) => setUpfrontPaymentType(e.target.value)}
+                                  className="mr-2 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Нақд</span>
+                              </label>
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  name="upfrontPaymentType"
+                                  value="CARD"
+                                  checked={upfrontPaymentType === 'CARD'}
+                                  onChange={(e) => setUpfrontPaymentType(e.target.value)}
+                                  className="mr-2 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Карта</span>
+                              </label>
+                            </div>
+                            {errors.upfrontPaymentType && (
+                              <span className="text-red-500 text-xs">{errors.upfrontPaymentType}</span>
                             )}
                           </div>
-                          </>
-                          )}
                         </>
                       )}
                     </div>
@@ -1507,13 +1533,13 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       <div className="text-gray-600 text-xs mb-1">Асосий сумма:</div>
                       <div className="font-medium text-blue-600 break-words text-sm">{(() => {
                         let total = 0;
-                        
+
                         selectedItems.forEach((item, index) => {
                           const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.round(Number(item.price));
                           const quantity = Number(item.quantity);
                           total += quantity * Number(displayPrice);
                         });
-                        
+
                         return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
                       })()}</div>
                     </div>
@@ -1525,7 +1551,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         </div>
                         <div className="bg-white p-3 rounded border">
                           <div className="text-gray-600 text-xs mb-1">Тўланган:</div>
-                          <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0) )} сом</div>
+                          <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0))} сом</div>
                         </div>
                         <div className="bg-white p-3 rounded border">
                           <div className="text-gray-600 text-xs mb-1">Қолган:</div>
@@ -1562,45 +1588,80 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                   onClose={closeReceiptModal}
                   onPrint={async () => {
                     try {
-                      // Build payload from prepared receiptData to preserve CREDIT/INSTALLMENT info
                       const rd = receiptData;
-                      const computedBaseTotal = rd.items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.sellingPrice ?? it.price), 0);
+                      const computedBaseTotal = rd.items.reduce(
+                        (sum, it) => sum + Number(it.quantity) * Number(it.sellingPrice ?? it.price),
+                        0
+                      );
+
+                      if (!rd.paymentType) throw new Error("Тўлов тури танланмаган");
+                      if (!rd.items || rd.items.length === 0) throw new Error("Маҳсулотлар танланмаган");
+                      const userId = Number(localStorage.getItem('userId'));
+                      if (!userId || isNaN(userId)) throw new Error("Фойдаланувчи ID топилмади");
+                      const fromBranchId = rd.branch?.id
+                        ? Number(rd.branch.id)
+                        : selectedBranch
+                          ? Number(selectedBranch)
+                          : Number(selectedBranchId);
+                      if (!fromBranchId || isNaN(fromBranchId)) throw new Error("Филиал ID топилмади");
+                      const soldByUserId = rd.seller?.id ? Number(rd.seller.id) : Number(selectedUserId);
+                      if (!soldByUserId || isNaN(soldByUserId)) throw new Error("Сотувчи ID топилмади");
+
                       const payload = {
                         type: 'SALE',
                         status: 'PENDING',
-                        total: Number(rd.totalInSom ?? computedBaseTotal),
-                        finalTotal: Number(rd.finalTotalInSom ?? rd.totalInSom ?? computedBaseTotal),
-                        amountPaid: Number(rd.paid || 0),
-                        userId: Number(localStorage.getItem('userId')),
-                        remainingBalance: Number(rd.remaining || 0),
+                        total: Number(rd.totalInSom ?? computedBaseTotal) || 0,
+                        finalTotal: Number(rd.finalTotalInSom ?? rd.totalInSom ?? computedBaseTotal) || 0,
+                        amountPaid: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+                          ? 0
+                          : Number(rd.paid || 0),
+                        downPayment: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+                          ? Number(rd.paid || 0)
+                          : 0,
+                        userId: userId,
+                        remainingBalance: Number(rd.remaining || 0) || 0,
                         paymentType: rd.paymentType,
+                        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+                          ? rd.upfrontPaymentType
+                          : rd.paymentType,
                         deliveryMethod: rd.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
-                        deliveryAddress: (rd.deliveryType === 'DELIVERY' || rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT') ? (rd.deliveryAddress || rd.customer?.address || undefined) : undefined,
+                        deliveryAddress:
+                          rd.deliveryType === 'DELIVERY' || rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
+                            ? rd.deliveryAddress || rd.customer?.address || ''
+                            : '',
                         customer: {
-                          fullName: (rd.customer?.fullName || `${rd.customer?.firstName || ''} ${rd.customer?.lastName || ''}`).trim(),
-                          phone: (rd.customer?.phone || '').replace(/\s+/g, ''),
-                          passportSeries: rd.customer?.passportSeries || undefined,
-                          jshshir: rd.customer?.jshshir || undefined,
-                          address: rd.customer?.address || rd.deliveryAddress || undefined,
+                          fullName: (rd.customer?.fullName || `${rd.customer?.firstName || ''} ${rd.customer?.lastName || ''}`).trim() || 'Номаълум',
+                          phone: (rd.customer?.phone || '').replace(/\s+/g, '') || '',
+                          passportSeries: rd.customer?.passportSeries || '',
+                          jshshir: rd.customer?.jshshir || '',
+                          address: rd.customer?.address || rd.deliveryAddress || '',
                         },
-                        fromBranchId: rd.branch?.id ? Number(rd.branch.id) : (selectedBranch ? Number(selectedBranch) : Number(selectedBranchId)),
-                        soldByUserId: rd.seller?.id ? Number(rd.seller.id) : Number(selectedUserId),
-                        // Note: daily metadata removed to avoid backend 500; stored only client-side
+                        fromBranchId: fromBranchId,
+                        soldByUserId: soldByUserId,
                         items: rd.items.map((item) => ({
-                          productId: item.id,
-                          productName: item.name,
-                          quantity: Number(item.quantity),
-                          price: Number(item.sellingPrice ?? item.price),
-                          sellingPrice: Number(item.sellingPrice ?? item.price),
-                          originalPrice: Number(item.originalPrice ?? item.price),
-                          total: Number(item.quantity) * Number(item.sellingPrice ?? item.price),
-                          ...(rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT' ? {
-                            creditMonth: Number(rd.months || 0),
-                            creditPercent: Number((rd.interestRate || 0) / 100),
-                            monthlyPayment: Number(rd.monthlyPayment || 0),
-                          } : {}),
+                          productId: item.id || 0,
+                          productName: item.name || 'Номаълум маҳсулот',
+                          quantity: Number(item.quantity) || 0,
+                          price: Number(item.sellingPrice ?? item.price) || 0,
+                          sellingPrice: Number(item.sellingPrice ?? item.price) || 0,
+                          originalPrice: Number(item.originalPrice ?? item.price) || 0,
+                          total: Number(item.quantity || 0) * Number(item.sellingPrice ?? item.price) || 0,
+                          ...(rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
+                            ? {
+                              creditMonth: Number(rd.months || rd.days || 0) || 0,
+                              creditPercent: Number(rd.interestRate || 0) / 100 || 0,
+                              monthlyPayment: Number(rd.monthlyPayment || 0) || 0,
+                            }
+                            : {}),
                         })),
                       };
+
+                      console.log('Sending payload to API:', JSON.stringify(payload, null, 2));
+                      console.log('Payload upfrontPaymentType:', payload.upfrontPaymentType);
+
+                      if (!['CASH', 'CARD'].includes(payload.upfrontPaymentType) && ['CREDIT', 'INSTALLMENT'].includes(payload.paymentType)) {
+                        throw new Error("Нотўғри олдиндан тўлов тури");
+                      }
 
                       const response = await axiosWithAuth({
                         method: 'post',
@@ -1608,12 +1669,12 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         data: payload,
                       });
 
-                      // Update receipt data with real server info
-                      setReceiptData(prev => ({
+                      console.log('API response:', response.data);
+
+                      setReceiptData((prev) => ({
                         ...prev,
                         id: response.data.id,
                         createdAt: response.data.createdAt,
-                        // Persist client-side term meta keyed by transaction id for reporting views
                         ...(rd.termUnit === 'DAYS' ? { termUnit: 'DAYS', days: rd.days } : {}),
                       }));
 
@@ -1625,219 +1686,225 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           newMeta[String(response.data.id)] = { termUnit: 'DAYS', days: rd.days, interestRate: rd.interestRate };
                           localStorage.setItem('tx_term_units', JSON.stringify(newMeta));
                         }
-                      } catch {}
+                      } catch { }
 
+                      const printWindow = window.open('', '_blank');
+                      const receiptContent = `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                <title>Aminov Savdo Tizimi</title>
+                <style>
+                  @page { 
+                    margin: 0; 
+                    size: 80mm auto; 
+                  }
+                  body { 
+                    font-family: 'Courier New', monospace; 
+                    margin: 0; 
+                    padding: 2%; 
+                    width: 96%; 
+                    font-size: 12px; 
+                    line-height: 1.2;
+                    color: #000;
+                  }
+                  .header { 
+                    text-align: center; 
+                    margin-bottom: 5%; 
+                    border-bottom: 1px dashed #000;
+                    padding-bottom: 3%;
+                  }
+                  .header h2 { 
+                    margin: 0; 
+                    font-size: 16px; 
+                    font-weight: bold;
+                    color: #000;
+                  }
+                  .header p { 
+                    margin: 2% 0 0 0; 
+                    font-size: 11px;
+                    color: #000;
+                  }
+                  .info { 
+                    margin-bottom: 4%; 
+                  }
+                  .products { 
+                    margin: 4% 0; 
+                    border-top: 1px dashed #000;
+                    padding-top: 3%;
+                  }
+                  .products h4 { 
+                    margin: 0 0 3% 0; 
+                    font-size: 12px; 
+                    font-weight: bold;
+                    text-align: center;
+                    color: #000;
+                  }
+                  .product-row { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    margin: 1% 0; 
+                    font-size: 10px;
+                    border-bottom: 1px dotted #ccc;
+                    padding-bottom: 1%;
+                    color: #000;
+                  }
+                  .total { 
+                    border-top: 1px dashed #000; 
+                    padding-top: 3%; 
+                    margin-top: 4%; 
+                  }
+                  .total-row { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    margin: 2% 0; 
+                    font-weight: bold; 
+                    font-size: 12px;
+                    color: #000;
+                  }
+                  .footer { 
+                    text-align: center; 
+                    margin-top: 5%; 
+                    padding-top: 3%;
+                    border-top: 1px dashed #000;
+                    font-size: 10px;
+                    color: #000;
+                  }
+                  @media print { 
+                    body { margin: 0; padding: 1%; width: 98%; color: #000; }
+                  }
+                  @media print and (max-width: 56mm) {
+                    body { font-size: 10px; padding: 1%; width: 98%; color: #000; }
+                    .header h2 { font-size: 14px; color: #000; }
+                    .total-row { font-size: 11px; color: #000; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <h2>Aminov Savdo Tizimi</h2>
+                  <p class="total-row">${formatDate(new Date())}</p>
+                </div>
+                <div class="info">
+                  <div class="total-row">
+                    <span>ID:</span>
+                    <span>#${receiptData.id}</span>
+                  </div>
+                  <div class="total-row">
+                    <span>Mijoz:</span>
+                    <span>${receiptData.customer.fullName || `${receiptData.customer.firstName} ${receiptData.customer.lastName}`}</span>
+                  </div>
+                  <div class="total-row">
+                    <span>Tel:</span>
+                    <span>${receiptData.customer.phone}</span>
+                  </div>
+                  ${receiptData.customer.passportSeries ? `
+                    <div class="total-row">
+                      <span>Passport:</span>
+                      <span>${receiptData.customer.passportSeries}</span>
+                    </div>
+                  ` : ''}
+                  ${receiptData.customer.jshshir ? `
+                    <div class="total-row">
+                      <span>JSHSHIR:</span>
+                      <span>${receiptData.customer.jshshir}</span>
+                    </div>
+                  ` : ''}
+                  <div class="total-row">
+                    <span>Filial:</span>
+                    <span>${receiptData.branch?.name}</span>
+                  </div>
+                  <div class="total-row">
+                    <span>To'lov:</span>
+                    <span>${receiptData.paymentType === 'CASH' ? 'Naqd' :
+                          receiptData.paymentType === 'CARD' ? 'Karta' :
+                            receiptData.paymentType === 'CREDIT' ? 'Kredit' :
+                              receiptData.paymentType === 'INSTALLMENT' ? "Bo'lib to'lash" : receiptData.paymentType}</span>
+                  </div>
+                  ${['CREDIT', 'INSTALLMENT'].includes(receiptData.paymentType) ? `
+                    <div class="total-row">
+                      <span>Oldindan to'lov:</span>
+                      <span>${receiptData.upfrontPaymentType === 'CASH' ? 'Naqd' : 'Karta'}</span>
+                    </div>
+                  ` : ''}
+                  <div class="total-row">
+                    <span>Yetkazib berish:</span>
+                    <span>${receiptData.deliveryType === 'PICKUP' ? 'Olib ketish' :
+                          receiptData.deliveryType === 'DELIVERY' ? 'Yetkazib berish' :
+                            receiptData.deliveryType}</span>
+                  </div>
+                  ${receiptData.deliveryType === 'DELIVERY' && receiptData.deliveryAddress ? `
+                    <div class="total-row">
+                      <span>Manzil:</span>
+                      <span>${receiptData.deliveryAddress}</span>
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="products">
+                  <h4>MAHSULOTLAR</h4>
+                  ${receiptData.items.map((item) => `
+                    <div class="total-row">
+                      <span>${item.name} x${item.quantity}</span>
+                      <span>${new Intl.NumberFormat('uz-UZ').format(Number(item.quantity) * Number(item.price))} so'm</span>
+                    </div>
+                  `).join('')}
+                </div>
+                <div class="total">
+                  <div class="total-row">
+                    <span>JAMI:</span>
+                    <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.totalInSom || (receiptData.items.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price)), 0)))} so'm</span>
+                  </div>
+                  ${['CREDIT', 'INSTALLMENT'].includes(receiptData.paymentType) ? `
+                    <div class="total-row">
+                      <span>Foiz bilan:</span>
+                      <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.finalTotalInSom)} so'm</span>
+                    </div>
+                    <div class="total-row">
+                      <span>To'langan:</span>
+                      <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.paid)} so'm</span>
+                    </div>
+                    <div class="total-row">
+                      <span>Qolgan:</span>
+                      <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.remaining)} so'm</span>
+                    </div>
+                    <div class="total-row">
+                      <span>Oylik:</span>
+                      <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.monthlyPayment)} so'm</span>
+                    </div>
+                  ` : ''}
+                </div>
+                <div class="footer">
+                  <p>Tashrifingiz uchun rahmat!</p>
+                </div>
+              </body>
+              </html>
+            `;
+                      printWindow.document.write(receiptContent);
+                      printWindow.document.close();
+                      printWindow.focus();
+                      try {
+                        printWindow.print();
+                      } finally {
+                        setTimeout(() => {
+                          printWindow.close();
+                          closeReceiptModal();
+                          setSelectedItems([]);
+                          loadData();
+                          setNotification({ message: 'Sotuv yakunlandi va chop etildi', type: 'success' });
+                        }, 1000);
+                      }
                     } catch (err) {
-                      const message = err.response?.data?.message || err.message || 'Tranzaksiya yaratishda xatolik';
+                      console.error('onPrint error:', err);
+                      console.error('Error response:', err.response?.data);
+                      let message = err.message || "Tranzaksiya yaratishda xatolik";
+                      if (err.response?.status === 500) {
+                        message = "Серверда ички хатолик юз берди. Илтимос, қайта уриниб кўринг.";
+                      } else if (err.response?.data?.message) {
+                        message = err.response.data.message;
+                      }
                       setNotification({ message, type: 'error' });
-                      console.error('Submit/Print error:', err);
-                      return; // Do not proceed to print on error
-                    }
-
-                    const printWindow = window.open('', '_blank');
-                    const receiptContent = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <meta charset="UTF-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-              <title>Aminov Savdo Tizimi</title>
-              <meta charset="utf-8">
-              <style>
-                @page { 
-                  margin: 0; 
-                  size: 80mm auto; 
-                }
-                body { 
-                  font-family: 'Courier New', monospace; 
-                  margin: 0; 
-                  padding: 2%; 
-                  width: 96%; 
-                  font-size: 12px; 
-                  line-height: 1.2;
-                  color: #000; /* Make all text black by default */
-                }
-                .header { 
-                  text-align: center; 
-                  margin-bottom: 5%; 
-                  border-bottom: 1px dashed #000;
-                  padding-bottom: 3%;
-                }
-                .header h2 { 
-                  margin: 0; 
-                  font-size: 16px; 
-                  font-weight: bold;
-                  color: #000; /* Ensure header text is black */
-                }
-                .header p { 
-                  margin: 2% 0 0 0; 
-                  font-size: 11px;
-                  color: #000; /* Ensure header paragraph text is black */
-                }
-                .info { 
-                  margin-bottom: 4%; 
-                }
-              
-                .products { 
-                  margin: 4% 0; 
-                  border-top: 1px dashed #000;
-                  padding-top: 3%;
-                }
-                .products h4 { 
-                  margin: 0 0 3% 0; 
-                  font-size: 12px; 
-                  font-weight: bold;
-                  text-align: center;
-                  color: #000; /* Ensure products header is black */
-                }
-                .product-row { 
-                  display: flex; 
-                  justify-content: space-between; 
-                  margin: 1% 0; 
-                  font-size: 10px;
-                  border-bottom: 1px dotted #ccc;
-                  padding-bottom: 1%;
-                  color: #000; /* Ensure product row text is black */
-                }
-                .total { 
-                  border-top: 1px dashed #000; 
-                  padding-top: 3%; 
-                  margin-top: 4%; 
-                }
-                .total-row { 
-                  display: flex; 
-                  justify-content: space-between; 
-                  margin: 2% 0; 
-                  font-weight: bold; 
-                  font-size: 12px;
-                  color: #000; /* Ensure total row text is black */
-                }
-                .footer { 
-                  text-align: center; 
-                  margin-top: 5%; 
-                  padding-top: 3%;
-                  border-top: 1px dashed #000;
-                  font-size: 10px;
-                  color: #000; /* Ensure footer text is black */
-                }
-                @media print { 
-                  body { margin: 0; padding: 1%; width: 98%; color: #000; } /* Ensure print mode text is black */
-                }
-                @media print and (max-width: 56mm) {
-                  body { font-size: 10px; padding: 1%; width: 98%; color: #000; } /* Ensure small print mode text is black */
-                  .header h2 { font-size: 14px; color: #000; }
-                 
-                  .total-row { font-size: 11px; color: #000; }
-                }
-              </style>
-            </head>
-            <body>
-              <div class="header">
-                <h2>Aminov Savdo Tizimi</h2>
-                <p class="total-row">${formatDate(new Date())}</p>
-              </div>
-              
-              <div class="info">
-                <div class="total-row">
-                  <span>ID:</span>
-                  <span>#${receiptData.id}</span>
-                </div>
-                <div class="total-row">
-                  <span>Mijoz:</span>
-                  <span>${receiptData.customer.fullName || `${receiptData.customer.firstName} ${receiptData.customer.lastName}`}</span>
-                </div>
-                <div class="total-row">
-                  <span>Tel:</span>
-                  <span>${receiptData.customer.phone}</span>
-                </div>
-                ${receiptData.customer.passportSeries ? `
-                <div class="total-row">
-                  <span>Passport:</span>
-                  <span>${receiptData.customer.passportSeries}</span>
-                </div>
-                ` : ''}
-                ${receiptData.customer.jshshir ? `
-                <div class="total-row">
-                  <span>JSHSHIR:</span>
-                  <span>${receiptData.customer.jshshir}</span>
-                </div>
-                ` : ''}
-                <div class="total-row">
-                  <span>Filial:</span>
-                  <span>${receiptData.branch?.name}</span>
-                </div>
-                <div class="total-row">
-                  <span>To'lov:</span>
-                  <span>${receiptData.paymentType === 'CASH' ? 'Naqd' :
-                        receiptData.paymentType === 'CARD' ? 'Karta' :
-                          receiptData.paymentType === 'CREDIT' ? 'Kredit' :
-                            receiptData.paymentType === 'INSTALLMENT' ? "Bo'lib to'lash" : receiptData.paymentType}</span>
-                </div>
-                <div class="total-row">
-                  <span>Yetkazib berish:</span>
-                  <span>${receiptData.deliveryType === 'PICKUP' ? 'Olib ketish' :
-                        receiptData.deliveryType === 'DELIVERY' ? 'Yetkazib berish' :
-                          receiptData.deliveryType}</span>
-                </div>
-                ${receiptData.deliveryType === 'DELIVERY' && receiptData.deliveryAddress ? `
-                <div class="total-row">
-                  <span>Manzil:</span>
-                  <span>${receiptData.deliveryAddress}</span>
-                </div>
-                ` : ''}
-              </div>
-              <div class="products">
-                <h4>MAHSULOTLAR</h4>
-                ${receiptData.items.map((item) => `
-                  <div class="total-row">
-                    <span>${item.name} x${item.quantity}</span>
-                    <span>${new Intl.NumberFormat('uz-UZ').format(Number(item.quantity) * Number(item.price))} so'm</span>
-                  </div>
-                `).join('')}
-              </div>
-
-              <div class="total">
-                <div class="total-row">
-                  <span>JAMI:</span>
-                  <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.totalInSom || (receiptData.items.reduce((sum, item) => sum + (Number(item.quantity) * Number(item.price)), 0)))} so'm</span>
-                </div>
-                ${['CREDIT', 'INSTALLMENT'].includes(receiptData.paymentType) ? `
-                  <div class="total-row">
-                    <span>To'langan:</span>
-                    <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.paid)} so'm</span>
-                  </div>
-                  <div class="total-row">
-                    <span>Qolgan:</span>
-                    <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.remaining)} so'm</span>
-                  </div>
-                  <div class="total-row">
-                    <span>Oylik:</span>
-                    <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.monthlyPayment)} so'm</span>
-                  </div>
-                ` : ''}
-              </div>
-              
-              <div class="total-row">
-                <p>Tashrifingiz uchun rahmat!</p>
-              </div>
-               <div class="total">
-               </div>
-            </body>
-            </html>
-          `;
-                    printWindow.document.write(receiptContent);
-                    printWindow.document.close();
-                    printWindow.focus();
-                    try {
-                      printWindow.print();
-                    } finally {
-                      setTimeout(() => {
-                        printWindow.close();
-                        closeReceiptModal();
-                        setSelectedItems([]);
-                        loadData();
-                        setNotification({ message: 'Sotuv yakunlandi va chop etildi', type: 'success' });
-                      }, 1000);
                     }
                   }}
                 />

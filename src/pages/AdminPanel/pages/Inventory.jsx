@@ -19,6 +19,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { formatAmount, formatAmountSom, formatAmountUSD } from '../../../utils/currencyFormat';
 
 const PRODUCT_STATUSES = [
   { value: 'IN_WAREHOUSE', label: 'Омборда' },
@@ -101,23 +102,9 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
   const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState(null);
 
   const API_BASE_URL = 'https://suddocs.uz';
-  const formatAmount = (value) => {
-    const num = Math.floor(Number(value) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  };
   const getEffectiveRate = () => {
     const stateRate = Number(exchangeRate) || 0;
     return stateRate > 0 ? stateRate : 0;
-  };
-  const formatAmountSom = (price) => {
-    const rate = getEffectiveRate();
-    if (price == null || isNaN(Number(price)) || rate <= 0) return "-";
-    const priceInSom = Number(price) * rate;
-    return new Intl.NumberFormat('uz-UZ').format(priceInSom) + " so'm";
-  };
-  const formatUSD = (value) => {
-    const num = Number(value) || 0;
-    return `$${num.toFixed(2)}`;
   };
   const computeSoldAmount = (product) => {
     const sellPrice = Number(product.marketPrice ?? product.price ?? 0);
@@ -531,7 +518,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     const nameLine = `${productName}${productModel}`.trim();
     const usdPrice = selectedBarcodeProduct.marketPrice ?? selectedBarcodeProduct.price ?? 0;
     const somPrice = (() => {
-      const rate = Number(exchangeRate) || 0;
+      const rate = getEffectiveRate();
       const som = usdPrice * rate;
       return Number.isFinite(som) && rate > 0
         ? som.toLocaleString('uz-UZ') + " so'm"
@@ -672,6 +659,11 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
           <p className="text-gray-600 mt-1">Маҳсулотлар ва захираларни бошқаринг</p>
         </div>
         <div className="flex gap-4">
+          {getEffectiveRate() > 0 && (
+            <div className="text-sm text-gray-600 bg-gray-100 px-4 py-3 rounded-lg">
+              💱 Курс: 1 USD = {getEffectiveRate().toLocaleString('uz-UZ')} so'm
+            </div>
+          )}
           <button
             onClick={handleRefresh}
             className="flex items-center px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 transform hover:scale-105"
@@ -784,9 +776,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Нарх (so'm)</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (USD)</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (so'm)</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Кредит
-                </th>
+               
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Брак
                 </th>
@@ -830,13 +820,11 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       {product.model || 'Номаълум'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{formatUSD(product.price)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{formatAmountSom(product.price)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatUSD(product.marketPrice) : '-'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatAmountSom(product.marketPrice) : '-'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {formatAmount(product.creditPayment || 0)}
-                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{formatAmountUSD(product.price)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{formatAmountSom(product.price * getEffectiveRate())}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatAmountUSD(product.marketPrice) : '-'}</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatAmountSom(product.marketPrice * getEffectiveRate()) : '-'}</td>
+                  
                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                     {(() => {
                       const defectiveCount = Number(product.defectiveQuantity || 0);
@@ -1003,7 +991,10 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                           Нарх (Олинган) (USD)
                         </label>
                         <p className="text-lg font-semibold text-gray-900">
-                          {formatAmount(currentProduct.price)}
+                          {formatAmountUSD(currentProduct.price)}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {formatAmountSom(currentProduct.price * getEffectiveRate())}
                         </p>
                       </div>
                       <div>
@@ -1012,16 +1003,24 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                         </label>
                         <p className="text-lg font-semibold text-gray-900">
                           {currentProduct.marketPrice
-                            ? formatAmount(currentProduct.marketPrice)
+                            ? formatAmountUSD(currentProduct.marketPrice)
                             : 'Белгиланмаган'}
                         </p>
+                        {currentProduct.marketPrice && (
+                          <p className="text-sm text-gray-600">
+                            {formatAmountSom(currentProduct.marketPrice * getEffectiveRate())}
+                          </p>
+                        )}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-500 mb-1">
                           Олдиндан олинган
                         </label>
                         <p className="text-lg font-semibold text-gray-900">
-                          {formatAmount(currentProduct.advancePayment || 0)}
+                          {formatAmountUSD(currentProduct.advancePayment || 0)}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {formatAmountSom((currentProduct.advancePayment || 0) * getEffectiveRate())}
                         </p>
                       </div>
                       <div>
@@ -1029,7 +1028,10 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                           Кредитдан тўланган
                         </label>
                         <p className="text-lg font-semibold text-gray-900">
-                          {formatAmount(currentProduct.creditPayment || 0)}
+                          {formatAmountUSD(currentProduct.creditPayment || 0)}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {formatAmountSom((currentProduct.creditPayment || 0) * getEffectiveRate())}
                         </p>
                       </div>
                       <div>
@@ -1174,6 +1176,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       <input
                         min="0"
                         type="number"
+                        step="0"
                         value={formData.price}
                         onChange={(e) =>
                           setFormData((prev) => ({ ...prev, price: Number(e.target.value) }))
@@ -1189,6 +1192,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       <input
                         min="0"
                         type="number"
+                        step="0"
                         value={formData.marketPrice || ''}
                         onChange={(e) =>
                           setFormData((prev) => ({
@@ -1196,7 +1200,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                             marketPrice: e.target.value ? Number(e.target.value) : null,
                           }))
                         }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-500 focus:border-transparent"
                         placeholder="Сотув нархини киритинг (ихтиёрий)"
                       />
                     </div>
@@ -1210,6 +1214,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                       <input
                         type="number"
                         min="0"
+                        step="0"
                         value={formData.quantity}
                         onChange={(e) =>
                           setFormData((prev) => ({ ...prev, quantity: Number(e.target.value) }))
@@ -1278,6 +1283,16 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
               <div className="mt-4 border rounded p-3 text-center">
                 <div className="text-sm font-semibold mb-1">{barcodeShopName}</div>
                 <div className="text-sm">{selectedBarcodeProduct.name} {selectedBarcodeProduct.model || ''}</div>
+                <div className="text-sm text-gray-600 mt-1">
+                  {(() => {
+                    const usdPrice = selectedBarcodeProduct.marketPrice ?? selectedBarcodeProduct.price ?? 0;
+                    const rate = getEffectiveRate();
+                    if (rate > 0 && usdPrice > 0) {
+                      return `${usdPrice} USD = ${(usdPrice * rate).toLocaleString('uz-UZ')} so'm`;
+                    }
+                    return '';
+                  })()}
+                </div>
                 <div className="mt-2 flex justify-center">
                   <ReactBarcode value={String(selectedBarcodeProduct.barcode)} format="CODE128" width={2} height={60} displayValue={true} fontSize={12} textMargin={2} margin={0} />
                 </div>

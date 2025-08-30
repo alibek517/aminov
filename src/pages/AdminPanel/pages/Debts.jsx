@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw, Search, Eye, CheckCircle, X, Loader2, CreditCard } from 'lucide-react';
+import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
 const Debts = ({ selectedBranchId: propSelectedBranchId }) => {
   const BASE_URL = 'https://suddocs.uz';

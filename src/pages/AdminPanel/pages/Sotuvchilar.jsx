@@ -474,9 +474,6 @@ function Sotuvchilar() {
                         Умумий (UZS)
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Умумий (USD)
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Тўлов тури
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -505,9 +502,6 @@ function Sotuvchilar() {
                           <td className="px-6 py-4 text-gray-700">{sale.customerName}</td>
                           <td className="px-6 py-4 text-gray-700 font-medium">
                             {formatCurrency(sale.totalInSom, 'UZS')}
-                          </td>
-                          <td className="px-6 py-4 text-gray-700 font-medium">
-                            {formatCurrency(sale.total, 'USD')}
                           </td>
                           <td className="px-6 py-4">
                             <span

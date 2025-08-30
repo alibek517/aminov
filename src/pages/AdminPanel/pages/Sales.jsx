@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, RefreshCw } from 'lucide-react';
+import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
 const Sales = ({ selectedBranchId: propSelectedBranchId }) => {
   const navigate = useNavigate();
