@@ -497,7 +497,7 @@ function Sotuvchilar() {
                         <tr key={sale.id} className="hover:bg-gray-50 transition-colors duration-150">
                           <td className="px-6 py-4 text-gray-900">#{sale.id}</td>
                           <td className="px-6 py-4 text-gray-700">
-                            {users.find((u) => u.id === sale.userId)?.firstName || 'Noma\'lum'}{' '}
+                            {users.find((u) => u.id === sale.userId)?.firstName || 'Sklad'}{' '}
                             {users.find((u) => u.id === sale.userId)?.lastName || ''}
                           </td>
                           <td className="px-6 py-4 text-gray-700">

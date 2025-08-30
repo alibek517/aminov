@@ -189,7 +189,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       const cashierMap = new Map();
       const warehouseMap = new Map();
       const aggregateInMainLoop = false;
-      const processedUsers = new Set(); // Track which users have been processed
+      // Removed processedUsers Set since we want to allow multiple operations per user
 
       if (Array.isArray(transactions)) {
         transactions.forEach((transaction, index) => {
@@ -207,10 +207,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             const wid = warehouseUser.id;
             const warehouseUserId = String(wid);
             
-            // Skip if user already processed in any role
-            if (processedUsers.has(warehouseUserId)) {
-              return;
-            }
+            // Don't skip if user already processed - allow multiple operations from same user
+            // processedUsers.add(warehouseUserId); // Remove this line
             
             // Check if this user also has CASHIER role - if so, prioritize cashier
             const hasCashierRole = 
@@ -221,9 +219,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               // Skip warehouse aggregation if user has cashier role (priority to cashier)
               return;
             }
-            
-            // Mark user as processed
-            processedUsers.add(warehouseUserId);
             if (!warehouseMap.has(wid)) {
               warehouseMap.set(wid, {
                 id: wid,
@@ -563,13 +558,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             if (isCashier) {
               const cashierId = String(cashierUser.id);
               
-              // Skip if user already processed in any role
-              if (processedUsers.has(cashierId)) {
-                return;
-              }
-              
-              // Mark user as processed
-              processedUsers.add(cashierId);
+              // Don't skip if user already processed - allow multiple sales from same user
+              // processedUsers.add(cashierId); // Remove this line
               if (!cashierMap.has(cashierId)) {
                 cashierMap.set(cashierId, {
                   id: cashierId,
@@ -786,13 +776,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             if (!personIdRaw) continue;
             const personId = String(personIdRaw);
             if (role === "WAREHOUSE") {
-              // Skip if user already processed in any role
-              if (processedUsers.has(personId)) {
-                continue;
-              }
-              
-              // Mark user as processed
-              processedUsers.add(personId);
+              // Don't skip if user already processed - allow multiple repayments from same user
+              // processedUsers.add(personId); // Remove this line
               
               if (!warehouseMap.has(personId)) {
                 warehouseMap.set(personId, {
@@ -838,13 +823,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 soldBy: t.soldBy || null,
               });
             } else if (role === "CASHIER") {
-              // Skip if user already processed in any role
-              if (processedUsers.has(personId)) {
-                continue;
-              }
-              
-              // Mark user as processed
-              processedUsers.add(personId);
+              // Don't skip if user already processed - allow multiple repayments from same user
+              // processedUsers.add(personId); // Remove this line
               
               if (!cashierMap.has(personId)) {
                 cashierMap.set(personId, {

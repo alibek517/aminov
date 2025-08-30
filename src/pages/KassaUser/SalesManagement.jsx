@@ -683,6 +683,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                 <tr className="bg-gray-100 text-gray-600">
                   <th className="p-3 text-left font-medium">ID</th>
                   <th className="p-3 text-left font-medium">Номи</th>
+                  <th className="p-3 text-left font-medium">Модель</th>
                   <th className="p-3 text-left font-medium">Штрих-код</th>
                   <th className="p-3 text-left font-medium">Нарх (UZS)</th>
                   <th className="p-3 text-left font-medium">Миқдор</th>
@@ -695,6 +696,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     <tr key={product.id} className="border-b border-gray-200 hover:bg-gray-50">
                       <td className="p-3 text-gray-700">#{product.id}</td>
                       <td className="p-3 text-gray-700">{product.name}</td>
+                      <td className="p-3 text-gray-700">{product.model}</td>
                       <td className="p-3 text-gray-700">{product.barcode}</td>
                       <td className="p-3 text-gray-700">{formatAmount((product.marketPrice != null ? product.marketPrice : product.price)* exchangeRate)}</td>
                       <td className="p-3 text-gray-700">{formatQuantity(product.quantity)}</td>
