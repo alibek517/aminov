@@ -204,7 +204,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
             product.product_title ??
             product.item_title ??
             `Product ${product.id}`,
-          // keep backend USD values separately and compute som on render
           price: Number(product.price) || 0,
           quantity: Number(product.quantity) || 0,
           marketPrice: Number(product.marketPrice || product.price) || 0,
@@ -320,7 +319,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         maxQuantity: product.quantity,
       },
     ]);
-    setNotification({ message: "Mahsulot savatga qo'shildi", type: 'success' });
+    setNotification();
   };
 
   const updateItem = (index, field, value) => {
@@ -466,7 +465,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
             items: selectedItems.map((item) => ({
               productId: item.id,
               quantity: Number(item.quantity),
-              // send so'm to backend
               price: Number(item.marketPrice) * Number(exchangeRate),
             })),
           },
@@ -500,7 +498,10 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           },
           seller: currentUser,
           branch: branches.find((b) => b.id === Number(selectedBranchId)),
-          items: selectedItems,
+          items: selectedItems.map(item => ({
+            ...item,
+            priceInSom: Number(item.marketPrice) * Number(exchangeRate), // Add priceInSom for receipt
+          })),
           paymentType,
           deliveryType: paymentType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
           deliveryAddress: downPayment,
@@ -518,7 +519,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         setReceiptData(receiptDataForPrint);
         setReceiptPrinted(false);
         setShowReceiptModal(true);
-        setShowCartModal(false); // Savat modalini yopish
+        setShowCartModal(false);
         setNotification({
           message: 'Chekni chop etish majburiy! Chekni chop etgandan so\'ng sotish yuboriladi.',
           type: 'warning',
@@ -553,21 +554,21 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       },
       branch: { name: receiptData.branch?.name || "Noma'lum" },
       paymentType: receiptData.paymentType || "Noma'lum",
-      total: receiptData.total || 0,
-      finalTotal: receiptData.finalTotal || receiptData.total || 0,
-      totalInSom: receiptData.total,
-      finalTotalInSom: receiptData.finalTotal,
+      total: receiptData.totalInSom,
+      finalTotal: receiptData.finalTotalInSom,
+      totalInSom: receiptData.totalInSom,
+      finalTotalInSom: receiptData.finalTotalInSom,
       exchangeRate: receiptData.exchangeRate || 12500,
       paid: receiptData.paid || 0,
-      remaining: (receiptData.finalTotal || receiptData.total || 0) - (receiptData.paid || 0),
+      remaining: receiptData.remaining || 0,
       interestRate: receiptData.interestRate || 0,
       months: receiptData.months || 0,
       monthlyPayment: receiptData.monthlyPayment || 0,
       items: receiptData.items.map((item) => ({
         name: item.name,
         quantity: Number(item.quantity),
-        price: Number(item.marketPrice),
-        priceInSom: Number(item.marketPrice),
+        price: Number(item.marketPrice), // USD price for reference
+        priceInSom: Number(item.priceInSom), // Price in so'm
       })),
       seller: {
         firstName: currentUser?.firstName || "Noma'lum",
@@ -721,7 +722,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           const remaining = paid < finalTotal ? finalTotal - paid : 0;
           const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
 
-          // values already in so'm (baseTotal/finalTotal/remaining computed with exchangeRate)
           const somTotal = baseTotal;
           const somFinalTotal = finalTotal;
           const somPaid = paid;
@@ -808,7 +808,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
   const completeSale = async () => {
     if (!receiptPrinted || !pendingTransaction) {
       setNotification({
-        message: 'Sotishni yakunlash uchun chekni chop etish kerak!',
         type: 'error',
       });
       return;
@@ -981,7 +980,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
             >
               {loading ? 'Юкланмоқда...' : 'Янгилаш'}
             </button>
-
           </div>
 
           <div className="overflow-x-auto bg-white rounded-lg shadow">
@@ -1402,8 +1400,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
             </div>
           )}
 
-
-
           {showReceiptModal && receiptData && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-lg shadow-xl w-[90%] max-w-md mx-auto">
@@ -1425,13 +1421,13 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                     ...buildTransactionFromReceiptData(),
                     items: receiptData.items.map((item) => ({
                       ...item,
-                      price: Number(item.marketPrice) * Number(exchangeRate),
-                      priceInSom: Number(item.marketPrice) * Number(exchangeRate),
+                      price: Number(item.priceInSom), // Use price in so'm for display
+                      priceInSom: Number(item.priceInSom),
                     })),
-                    total: receiptData.total,
-                    finalTotal: receiptData.finalTotal,
-                    totalInSom: receiptData.total,
-                    finalTotalInSom: receiptData.finalTotal,
+                    total: receiptData.totalInSom,
+                    finalTotal: receiptData.finalTotalInSom,
+                    totalInSom: receiptData.totalInSom,
+                    finalTotalInSom: receiptData.finalTotalInSom,
                     paid: receiptData.paid,
                     remaining: receiptData.remaining,
                     monthlyPayment: receiptData.monthlyPayment,
@@ -1454,11 +1450,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           )}
         </>
       )}
-
-      
     </div>
   );
-  
 };
 
 export default Chiqim;

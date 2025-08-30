@@ -188,6 +188,8 @@ const Kirim = () => {
                 <tr className="bg-gray-100 text-gray-700">
                   <th className="p-4 text-left font-semibold">ID</th>
                   <th className="p-4 text-left font-semibold">Nomi</th>
+                  <th className="p-4 text-left font-semibold">Model</th>
+                  <th className="p-4 text-left font-semibold">Barcode</th>
                   <th className="p-4 text-left font-semibold">Filial</th>
                   <th className="p-4 text-left font-semibold">Miqdor</th>
                   <th className="p-4 text-left font-semibold">Amallar</th>
@@ -199,6 +201,8 @@ const Kirim = () => {
                     <tr key={product.id} className="border-b border-gray-200 last:border-none">
                       <td className="p-4 text-gray-800">#{product.id}</td>
                       <td className="p-4 text-gray-800">{product.name}</td>
+                      <td className="p-4 text-gray-800">{product.model || 'N/A'}</td>
+                      <td className="p-4 text-gray-800">{product.barcode || 'N/A'}</td>
                       <td className="p-4 text-gray-800">{product.branch?.name || "Noma'lum"}</td>
                       <td className="p-4 text-gray-800">{formatQuantity(product.quantity)}</td>
                       <td className="p-4">
@@ -216,7 +220,7 @@ const Kirim = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="5" className="p-4 text-center text-gray-600">
+                    <td colSpan="7" className="p-4 text-center text-gray-600">
                       Mahsulotlar topilmadi
                     </td>
                   </tr>
@@ -240,6 +244,18 @@ const Kirim = () => {
                       <td className="py-2 text-gray-700">Mahsulot</td>
                       <td className="py-2 text-gray-800">
                         {products.find((p) => p.id === selectedProductId)?.name || "Noma'lum"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 text-gray-700">Model</td>
+                      <td className="py-2 text-gray-800">
+                        {products.find((p) => p.id === selectedProductId)?.model || "N/A"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="py-2 text-gray-700">Barcode</td>
+                      <td className="py-2 text-gray-800">
+                        {products.find((p) => p.id === selectedProductId)?.barcode || "N/A"}
                       </td>
                     </tr>
                     <tr>

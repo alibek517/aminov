@@ -19,13 +19,14 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [overallRepaymentCash, setOverallRepaymentCash] = useState(0);
   const [overallRepaymentCard, setOverallRepaymentCard] = useState(0);
   const [overallUpfrontTotal, setOverallUpfrontTotal] = useState(0);
+  const [creditIssuedTotal, setCreditIssuedTotal] = useState(0);
   const [salesCashTotal, setSalesCashTotal] = useState(0);
   const [salesCardTotal, setSalesCardTotal] = useState(0);
   const [selectedTransactionItems, setSelectedTransactionItems] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedBranchId, setSelectedBranchId] = useState(
-    propSelectedBranchId || localStorage.getItem('selectedBranchId') || ''
+    localStorage.getItem('branchId') || ''
   );
   const [exchangeRate, setExchangeRate] = useState(12650);
   const [warehouseViewModes, setWarehouseViewModes] = useState({});
@@ -161,7 +162,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   // Monitor localStorage changes
   useEffect(() => {
     const onStorage = (e) => {
-      if (e.key === 'selectedBranchId') {
+      if (e.key === 'branchId') {
         setSelectedBranchId(e.newValue || '');
       }
     };
@@ -171,9 +172,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
 
   // Update branch ID
   useEffect(() => {
-    if (propSelectedBranchId !== undefined) {
-      setSelectedBranchId(propSelectedBranchId);
-    }
+    // Always prefer localStorage branchId for this report
+    const lsBranchId = localStorage.getItem('branchId');
+    if (lsBranchId !== null) setSelectedBranchId(lsBranchId);
   }, [propSelectedBranchId]);
 
   // Fetch transactions
@@ -299,6 +300,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       let tmpSalesTotal = 0; // legacy sales total (SALE only)
       let tmpFinalColumnSum = 0; // sum of Якýний across all fetched transactions (UZS)
       let tmpSalesQty = 0;
+      let tmpCreditIssued = 0; // total credit issued (finalTotal - upfront)
       const warehouseMap = new Map();
 
       if (Array.isArray(normalizedTransactions)) {
@@ -317,6 +319,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             if (transaction.paymentType === 'CREDIT' || transaction.paymentType === 'INSTALLMENT') {
               // Count upfront received at sale time (amountPaid + downPayment) in so'm; exclude later repayments
               tmpUpfrontOverall += Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0);
+              // Credit issued equals yakuniy minus upfront collected at sale time
+              const issued = Number(transaction.finalTotal || 0) - (Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0));
+              if (issued > 0) tmpCreditIssued += issued;
             }
             tmpSalesTotal += Number(transaction.finalTotal || 0);
             if (Array.isArray(transaction.items)) {
@@ -582,6 +587,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       setSalesCashTotal(tmpSalesCash);
       setSalesCardTotal(tmpSalesCard);
       setOverallUpfrontTotal(tmpUpfrontOverall);
+      setCreditIssuedTotal(tmpCreditIssued);
 
       const initialViewModes = {};
       warehouseArray.forEach(w => {
@@ -640,14 +646,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       <div className="bg-white rounded-lg shadow-sm p-3 sm:p-4 mb-4">
         <h2 className="text-base font-semibold mb-2">Ҳисобот — Содда Кўриниш</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
-          <div className="p-2 rounded-lg border bg-white shadow-sm">
-            <div className="text-xs text-gray-600">Жами Сотилган Дона</div>
-            <div className="text-xl font-bold text-gray-900">{salesTotals.totalQuantity}</div>
-          </div>
-          <div className="p-2 rounded-lg border bg-green-50 shadow-sm">
-            <div className="text-xs text-green-700">Жами Тушум</div>
-            <div className="text-xl font-bold text-green-900">{formatAmount(salesTotals.totalAmount, false)}</div>
-          </div>
+
           <div className="p-2 rounded-lg border bg-white shadow-sm">
             <div className="text-xs text-gray-700">Нақд</div>
             <div className="text-xl font-bold text-gray-900">{formatAmount(salesCashTotal, false)}</div>
@@ -656,10 +655,25 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             <div className="text-xs text-gray-700">Карта</div>
             <div className="text-xl font-bold text-gray-900">{formatAmount(salesCardTotal, false)}</div>
           </div>
-          <div className="p-2 rounded-lg border bg-blue-50 shadow-sm">
-            <div className="text-xs text-blue-700">Омбор Ходимлари</div>
-            <div className="text-xl font-bold text-blue-900">{warehouseSummaries.length}</div>
+          <div className="p-2 rounded-lg border bg-white shadow-sm">
+            <div className="text-xs text-gray-700">Олдиндан тўлов</div>
+            <div className="text-xl font-bold text-gray-900">{formatAmount(overallUpfrontTotal, false)}</div>
           </div>
+          <div className="p-2 rounded-lg border bg-white shadow-sm">
+            <div className="text-xs text-gray-700">Кредитга Берилган</div>
+            <div className="text-xl font-bold text-gray-900">{formatAmount(creditIssuedTotal, false)}</div>
+          </div>
+          <div className="p-2 rounded-lg border bg-white shadow-sm">
+            <div className="text-xs text-gray-700">Кредитдан Тўловлар</div>
+            <div className="text-xl font-bold text-gray-900">{formatAmount(overallRepaymentTotal, false)}</div>
+            <div className="text-xs text-gray-500 mt-1">Нақд: {formatAmount(overallRepaymentCash, false)}</div>
+            <div className="text-xs text-gray-500">Карта: {formatAmount(overallRepaymentCard, false)}</div>
+          </div>
+          <div className="p-2 rounded-lg border bg-white shadow-sm">
+            <div className="text-xs text-gray-700">Кассадеги пул</div>
+            <div className="text-xl font-bold text-gray-900">{formatAmount(salesCashTotal + (overallUpfrontTotal || 0) + (overallRepaymentCash || 0), false)}</div>
+          </div>
+
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Barcode from './Barcode'; 
 import { Eye, Edit3, Trash2, ScanLine } from 'lucide-react';
 
-// Notification component remains unchanged
+// Notification komponenti o'zgarishsiz qoldiriladi
 const Notification = ({ message, type, onClose }) => (
   <div
     className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg border-l-4 ${
@@ -76,7 +76,6 @@ const TovarlarRoyxati = () => {
   const [uploadStatus, setUploadStatus] = useState('IN_WAREHOUSE');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [editName, setEditName] = useState('');
-  // Removed manual barcode editing in modals
   const [editModel, setEditModel] = useState('');
   const [editPrice, setEditPrice] = useState('');
   const [editStatus, setEditStatus] = useState('');
@@ -84,7 +83,6 @@ const TovarlarRoyxati = () => {
   const [editCategory, setEditCategory] = useState('');
   const [editQuantity, setEditQuantity] = useState('');
   const [createName, setCreateName] = useState('');
-  // Removed manual barcode in create modal
   const [createModel, setCreateModel] = useState('');
   const [createPrice, setCreatePrice] = useState('');
   const [createQuantity, setCreateQuantity] = useState('');
@@ -109,10 +107,10 @@ const TovarlarRoyxati = () => {
   const [selectedBarcode, setSelectedBarcode] = useState(null);
   const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState(null);
   const [shopName, setShopName] = useState('');
-  // Fixed print size: 3x4 inches
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
   const API_URL = 'https://suddocs.uz';
+
   const handlePrintBarcode = (product) => {
     setSelectedBarcode(product?.barcode || '');
     setSelectedBarcodeProduct(product || null);
@@ -125,20 +123,19 @@ const TovarlarRoyxati = () => {
 
   const handlePrintReceipt = () => {
     if (!selectedBarcode || !selectedBarcodeProduct) return;
-    // Close modal immediately so it doesn't appear in print
     const prevShopName = shopName;
     closeBarcodeModal();
     const productName = selectedBarcodeProduct.name || '';
     const productModel = selectedBarcodeProduct.model ? ` ${selectedBarcodeProduct.model}` : '';
     const nameLine = `${productName}${productModel}`.trim();
     const usdPrice = selectedBarcodeProduct.marketPrice ?? selectedBarcodeProduct.price ?? 0;
-    const somPrice = usdPrice >= 0 ? new Intl.NumberFormat('uz-UZ').format(usdPrice * exchangeRate) + " so'm" : '';
+    const somPrice = usdPrice >= 0 ? new Intl.NumberFormat('uz-UZ').format(usdPrice * exchangeRate) + " сўм" : '';
 
     const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Chek</title>
+  <title>Чек</title>
   <style>
     @page { margin: 0; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
@@ -197,25 +194,26 @@ const TovarlarRoyxati = () => {
     setSelectedBarcodeProduct(null);
     setShopName('');
   };
+
   const formatPrice = (price) =>
     price >= 0
       ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price)
-      : 'Unknown';
+      : 'Номаълум';
 
   const formatPriceSom = (price) => {
     if (price >= 0) {
       const priceInSom = price * exchangeRate;
-      return new Intl.NumberFormat('uz-UZ').format(priceInSom) + ' so\'m';
+      return new Intl.NumberFormat('uz-UZ').format(priceInSom) + ' сўм';
     }
-    return 'Noma\'lum';
+    return 'Номаълум';
   };
 
   const formatMarketPriceSom = (marketPrice) => {
     if (marketPrice >= 0) {
       const priceInSom = marketPrice * exchangeRate;
-      return new Intl.NumberFormat('uz-UZ').format(priceInSom) + ' so\'m';
+      return new Intl.NumberFormat('uz-UZ').format(priceInSom) + ' сўм';
     }
-    return 'Noma\'lum';
+    return 'Номаълум';
   };
 
   const fetchExchangeRate = async () => {
@@ -236,7 +234,7 @@ const TovarlarRoyxati = () => {
             
             if (oldRate !== 0 && oldRate !== firstExchangeRate.rate) {
               setNotification({ 
-                message: `Valyuta kursi yangilandi: 1 USD = ${firstExchangeRate.rate.toLocaleString('uz-UZ')} so'm`, 
+                message: `Валюта курси янгилани: 1 USD = ${firstExchangeRate.rate.toLocaleString('uz-UZ')} сўм`, 
                 type: 'success' 
               });
             }
@@ -271,7 +269,7 @@ const TovarlarRoyxati = () => {
               setLastExchangeRateUpdate(new Date());
               
               setNotification({ 
-                message: `Valyuta kursi avtomatik yangilandi: 1 USD = ${response.data.rate.toLocaleString('uz-UZ')} so'm`, 
+                message: `Валюта курси автомат янгилани: 1 USD = ${response.data.rate.toLocaleString('uz-UZ')} сўм`, 
                 type: 'success' 
               });
             }
@@ -304,7 +302,7 @@ const TovarlarRoyxati = () => {
               setLastExchangeRateUpdate(new Date());
               
               setNotification({ 
-                message: `Valyuta kursi real-time yangilandi: 1 USD = ${response.data.rate.toLocaleString('uz-UZ')} so'm`, 
+                message: `Валюта курси реал вақтда янгилани: 1 USD = ${response.data.rate.toLocaleString('uz-UZ')} сўм`, 
                 type: 'success' 
               });
               
@@ -344,7 +342,7 @@ const TovarlarRoyxati = () => {
               setLastExchangeRateUpdate(new Date());
               
               setNotification({ 
-                message: `Valyuta kursi darhol yangilandi: 1 USD = ${response.data.rate.toLocaleString('uz-UZ')} so'm`, 
+                message: `Валюта курси дарҳол янгилани: 1 USD = ${response.data.rate.toLocaleString('uz-UZ')} сўм`, 
                 type: 'success' 
               });
             }
@@ -353,7 +351,6 @@ const TovarlarRoyxati = () => {
       } catch (error) {
         console.log('Ultra-fast exchange rate check failed:', error);
       }
-      // Throttle to every 5 seconds to avoid UI stutter
       ultraFastTimeoutRef.current = setTimeout(performUltraFastCheck, 5000);
     };
     
@@ -374,7 +371,7 @@ const TovarlarRoyxati = () => {
               setLastExchangeRateUpdate(new Date());
               
               setNotification({ 
-                message: `Valyuta kursi real-time yangilandi: 1 USD = ${data.rate.toLocaleString('uz-UZ')} so'm`, 
+                message: `Валюта курси реал вақтда янгилани: 1 USD = ${data.rate.toLocaleString('uz-UZ')} сўм`, 
                 type: 'success' 
               });
             }
@@ -411,7 +408,7 @@ const TovarlarRoyxati = () => {
               setLastExchangeRateUpdate(new Date());
               
               setNotification({ 
-                message: `Valyuta kursi WebSocket orqali yangilandi: 1 USD = ${data.rate.toLocaleString('uz-UZ')} so'm`, 
+                message: `Валюта курси WebSocket орқали янгилани: 1 USD = ${data.rate.toLocaleString('uz-UZ')} сўм`, 
                 type: 'success' 
               });
             }
@@ -437,29 +434,29 @@ const TovarlarRoyxati = () => {
     }
   }, [exchangeRate]);
 
-  const formatQuantity = (qty) => (qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' dona' : 'Noma\'lum');
+  const formatQuantity = (qty) => (qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' дона' : 'Номаълум');
 
   const statusOptions = [
-    { value: 'IN_WAREHOUSE', label: 'Skladda', color: 'bg-blue-100 text-blue-800' },
-    { value: 'IN_STORE', label: 'Do\'konda', color: 'bg-green-100 text-green-800' },
-    { value: 'SOLD', label: 'Sotilgan', color: 'bg-purple-100 text-purple-800' },
-    { value: 'DEFECTIVE', label: 'Nuqsonli', color: 'bg-red-100 text-red-800' },
-    { value: 'RETURNED', label: 'Qaytarilgan', color: 'bg-yellow-100 text-yellow-800' },
-    { value: 'CARRIER', label: 'Tashuvchi', color: 'bg-indigo-100 text-indigo-800' },
-    { value: 'FIXED', label: 'Tuzatilgan', color: 'bg-emerald-100 text-emerald-800' },
+    { value: 'IN_WAREHOUSE', label: 'Омборда', color: 'bg-blue-100 text-blue-800' },
+    { value: 'IN_STORE', label: 'Дўконда', color: 'bg-green-100 text-green-800' },
+    { value: 'SOLD', label: 'Сотилган', color: 'bg-purple-100 text-purple-800' },
+    { value: 'DEFECTIVE', label: 'Нуқсонли', color: 'bg-red-100 text-red-800' },
+    { value: 'RETURNED', label: 'Қайтарилган', color: 'bg-yellow-100 text-yellow-800' },
+    { value: 'CARRIER', label: 'Ташувчи', color: 'bg-indigo-100 text-indigo-800' },
+    { value: 'FIXED', label: 'Тузатилган', color: 'bg-emerald-100 text-emerald-800' },
   ];
 
   const generateReceipt = (product, quantity, price) => {
     const date = new Date().toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
     const marketPrice = product.marketPrice || product.price;
     const receiptContent = `
-      Chek
+      Чек
       -----------------------
-      Tovar: ${product.name}
-      Soni: ${formatQuantity(quantity)}
-      Narx (USD): ${formatPrice(marketPrice)}
-      Narx (сом): ${formatMarketPriceSom(marketPrice)}
-      Sana: ${date}
+      Товар: ${product.name}
+      Сони: ${formatQuantity(quantity)}
+      Нарx (USD): ${formatPrice(marketPrice)}
+      Нарx (сўм): ${formatMarketPriceSom(marketPrice)}
+      Сана: ${date}
       -----------------------
     `;
     const blob = new Blob([receiptContent], { type: 'text/plain;charset=utf-8' });
@@ -476,7 +473,7 @@ const TovarlarRoyxati = () => {
   const axiosWithAuth = async (config) => {
     const token = localStorage.getItem('access_token');
     if (!token) {
-      setNotification({ message: 'Sessiya topilmadi, iltimos tizimga kiring', type: 'error' });
+      setNotification({ message: 'Сессия топилмади, илтимос тизимга киринг', type: 'error' });
       setTimeout(() => navigate('/login'), 2000);
       throw new Error('No token found');
     }
@@ -486,7 +483,7 @@ const TovarlarRoyxati = () => {
       return response;
     } catch (error) {
       if (error.response?.status === 401) {
-        setNotification({ message: 'Sessiya tugadi, iltimos qayta kiring', type: 'error' });
+        setNotification({ message: 'Сессия тугади, илтимос қайта киринг', type: 'error' });
         localStorage.clear();
         setTimeout(() => navigate('/login'), 2000);
         throw new Error('Session expired');
@@ -506,17 +503,27 @@ const TovarlarRoyxati = () => {
         setBranches(branchesData);
         setCategories(categoriesRes.data);
 
-        const omborBranch = branchesData.find((b) => b.name.toLowerCase() === 'ombor');
-        if (omborBranch) {
-          setSelectedBranchId(omborBranch.id.toString());
-          setEditBranch(omborBranch.id.toString());
-          setCreateBranch(omborBranch.id.toString());
-          setUploadBranch(omborBranch.id.toString());
+        // localStorage dan branchId ni o'qish
+        const storedBranchId = localStorage.getItem('branchId');
+        if (storedBranchId && branchesData.some(b => b.id.toString() === storedBranchId)) {
+          setSelectedBranchId(storedBranchId);
+          setEditBranch(storedBranchId);
+          setCreateBranch(storedBranchId);
+          setUploadBranch(storedBranchId);
         } else {
-          setNotification({ message: '"Ombor" filiali topilmadi', type: 'error' });
+          // Agar localStorage da branchId topilmasa yoki noto'g'ri bo'lsa, "Ombor" filialini tanlash
+          const omborBranch = branchesData.find((b) => b.name.toLowerCase() === 'омбор');
+          if (omborBranch) {
+            setSelectedBranchId(omborBranch.id.toString());
+            setEditBranch(omborBranch.id.toString());
+            setCreateBranch(omborBranch.id.toString());
+            setUploadBranch(omborBranch.id.toString());
+          } else {
+            setNotification({ message: '"Омбор" филиали топилмади', type: 'error' });
+          }
         }
       } catch (err) {
-        setNotification({ message: err.message || 'Filial va kategoriyalarni yuklashda xatolik', type: 'error' });
+        setNotification({ message: err.message || 'Филиал ва категорияларни юклашда хатолик', type: 'error' });
       }
     };
     fetchBranchesAndCategories();
@@ -547,7 +554,6 @@ const TovarlarRoyxati = () => {
     };
   }, [startExchangeRateMonitoring, startRealTimeMonitoring, startUltraFastMonitoring, startSSEMonitoring, startWebSocketMonitoring]);
 
-  // Debounce search term to prevent frequent requests
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 400);
     return () => clearTimeout(t);
@@ -573,7 +579,7 @@ const TovarlarRoyxati = () => {
     const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
 
     if (!isValidBranchId) {
-      setNotification({ message: 'Filialni tanlang', type: 'error' });
+      setNotification({ message: 'Филиални танланг', type: 'error' });
       setProducts([]);
       setSelectedProducts([]);
       setLoading(false);
@@ -595,7 +601,7 @@ const TovarlarRoyxati = () => {
       setProducts(productsRes.data);
       setSelectedProducts([]);
     } catch (err) {
-      setNotification({ message: err.message || 'Ma\'lumotlarni yuklashda xatolik', type: 'error' });
+      setNotification({ message: err.message || 'Маълумотларни юклашда хатолик', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -623,7 +629,7 @@ const TovarlarRoyxati = () => {
       setDefectiveProducts(defectiveRes.data);
       setSelectedDefectiveProducts([]);
     } catch (err) {
-      setNotification({ message: err.message || 'Nuqsonli mahsulotlarni yuklashda xatolik', type: 'error' });
+      setNotification({ message: err.message || 'Нуқсонли маҳсулотларни юклашда хатолик', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -649,7 +655,7 @@ const TovarlarRoyxati = () => {
       });
       setFixedProducts(fixedRes.data);
     } catch (err) {
-      setNotification({ message: err.message || 'Tuzatilgan mahsulotlarni yuklashda xatolik', type: 'error' });
+      setNotification({ message: err.message || 'Тузатилган маҳсулотларни юклашда хатолик', type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -663,7 +669,6 @@ const TovarlarRoyxati = () => {
     }
   }, [loadAllProducts, loadDefectiveProducts, loadFixedProducts, selectedBranchId]);
 
-  // Refresh only the main list when search changes
   useEffect(() => {
     if (selectedBranchId) {
       loadAllProducts();
@@ -678,7 +683,6 @@ const TovarlarRoyxati = () => {
   const openEditModal = (product) => {
     setSelectedProduct(product);
     setEditName(product.name);
-    // barcode editing disabled
     setEditModel(product.model || '');
     setEditPrice(product.price ? product.price.toString() : '0');
     setEditQuantity(product.quantity ? product.quantity.toString() : '0');
@@ -771,31 +775,29 @@ const TovarlarRoyxati = () => {
   const validateFields = (isCreate = false) => {
     const newErrors = {};
     const name = isCreate ? createName : editName;
-    // barcode entry removed
     const model = isCreate ? createModel : editModel;
     const price = isCreate ? createPrice : editPrice;
     const quantity = isCreate ? createQuantity : editQuantity;
     const branch = isCreate ? createBranch : editBranch;
     const category = isCreate ? createCategory : editCategory;
 
-    if (!name.trim()) newErrors.name = 'Nomi kiritilishi shart';
-    // barcode not required
-    if (!model.trim()) newErrors.model = 'Model kiritilishi shart';
+    if (!name.trim()) newErrors.name = 'Номи киритилиши шарт';
+    if (!model.trim()) newErrors.model = 'Модель киритилиши шарт';
     if (!price || isNaN(price) || Number(price) < 0)
-      newErrors.price = "Narx 0 dan katta yoki teng bo'lishi kerak";
+      newErrors.price = "Нарx 0 дан катта ёки тенг бўлиши керак";
     if (!quantity || isNaN(quantity) || Number(quantity) < 0)
-      newErrors.quantity = "Miqdor 0 dan katta yoki teng bo'lishi kerak";
-    if (!branch) newErrors.branch = 'Filial tanlanishi shart';
-    if (!category) newErrors.category = 'Kategoriya tanlanishi shart';
+      newErrors.quantity = "Миқдор 0 дан катта ёки тенг бўлиши керак";
+    if (!branch) newErrors.branch = 'Филиал танланиши шарт';
+    if (!category) newErrors.category = 'Категория танланиши шарт';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const validateUploadFields = () => {
     const newErrors = {};
-    if (!uploadBranch) newErrors.branch = 'Filial tanlanishi shart';
-    if (!uploadCategory) newErrors.category = 'Kategoriya tanlanishi shart';
-    if (!selectedFile) newErrors.file = 'Fayl tanlanishi shart';
+    if (!uploadBranch) newErrors.branch = 'Филиал танланиши шарт';
+    if (!uploadCategory) newErrors.category = 'Категория танланиши шарт';
+    if (!selectedFile) newErrors.file = 'Файл танланиши шарт';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -804,10 +806,10 @@ const TovarlarRoyxati = () => {
     const newErrors = {};
     const count = Number(defectiveCount);
     if (isNaN(count) || count <= 0 || count > selectedProduct.quantity) {
-      newErrors.defectiveCount = `Miqdor 1 dan ${selectedProduct.quantity} gacha bo'lishi kerak`;
+      newErrors.defectiveCount = `Миқдор 1 дан ${selectedProduct.quantity} гача бўлиши керак`;
     }
     if (!defectiveDescription.trim()) {
-      newErrors.defectiveDescription = 'Sabab kiritilishi shart';
+      newErrors.defectiveDescription = 'Сабаб киритилиши шарт';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -816,7 +818,7 @@ const TovarlarRoyxati = () => {
   const validateBulkDefectiveFields = () => {
     const newErrors = {};
     if (!bulkDefectiveDescription.trim()) {
-      newErrors.bulkDefectiveDescription = 'Sabab kiritilishi shart';
+      newErrors.bulkDefectiveDescription = 'Сабаб киритилиши шарт';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -825,7 +827,7 @@ const TovarlarRoyxati = () => {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!validateFields()) {
-      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
+      setNotification({ message: "Барча майдонларни тўғри тўлдиринг", type: 'error' });
       return;
     }
     setSubmitting(true);
@@ -836,7 +838,6 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products/${selectedProduct.id}`,
         data: {
           name: editName,
-          // barcode excluded
           model: editModel,
           price: Number(editPrice),
           quantity: Number(editQuantity),
@@ -845,7 +846,7 @@ const TovarlarRoyxati = () => {
           categoryId: Number(editCategory),
         },
       });
-      setNotification({ message: 'Mahsulot muvaffaqiyatli yangilandi', type: 'success' });
+      setNotification({ message: 'Маҳсулот муваффақиятли янгилани', type: 'success' });
       if (wasSold) {
         generateReceipt(selectedProduct, Number(editQuantity), Number(editPrice));
       }
@@ -855,7 +856,7 @@ const TovarlarRoyxati = () => {
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || 'Mahsulotni yangilashda xatolik',
+        message: err.response?.data?.message || 'Маҳсулотни янгилашда хатолик',
         type: 'error',
       });
     } finally {
@@ -866,7 +867,7 @@ const TovarlarRoyxati = () => {
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
     if (!validateFields(true)) {
-      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
+      setNotification({ message: "Барча майдонларни тўғри тўлдиринг", type: 'error' });
       return;
     }
     setSubmitting(true);
@@ -876,7 +877,6 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products`,
         data: {
           name: createName,
-          // barcode excluded
           model: createModel,
           price: Number(createPrice),
           quantity: Number(createQuantity),
@@ -886,14 +886,14 @@ const TovarlarRoyxati = () => {
           marketPrice: createMarketPrice ? Number(createMarketPrice) : undefined,
         },
       });
-      setNotification({ message: "Mahsulot muvaffaqiyatli qo'shildi", type: 'success' });
+      setNotification({ message: "Маҳсулот муваффақиятли қўшилди", type: 'success' });
       closeCreateModal();
       loadAllProducts();
       loadDefectiveProducts();
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || "Mahsulot qo'shishda xatolik",
+        message: err.response?.data?.message || "Маҳсулот қўшишда хатолик",
         type: 'error',
       });
     } finally {
@@ -903,7 +903,7 @@ const TovarlarRoyxati = () => {
 
   const handleDefectiveSubmit = async () => {
     if (!validateDefectiveFields()) {
-      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring", type: 'error' });
+      setNotification({ message: "Барча майдонларни тўғри тўлдиринг", type: 'error' });
       return;
     }
     setSubmitting(true);
@@ -914,7 +914,7 @@ const TovarlarRoyxati = () => {
         data: { defectiveCount: Number(defectiveCount), description: defectiveDescription },
       });
       setNotification({
-        message: 'Mahsulot muvaffaqiyatli defective qilib belgilandi',
+        message: 'Маҳсулот муваффақиятли нуқсонли қилиб белгиланди',
         type: 'success',
       });
       closeDefectiveModal();
@@ -923,7 +923,7 @@ const TovarlarRoyxati = () => {
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || 'Mahsulotni defective qilishda xatolik',
+        message: err.response?.data?.message || 'Маҳсулотни нуқсонли қилишда хатолик',
         type: 'error',
       });
     } finally {
@@ -933,7 +933,7 @@ const TovarlarRoyxati = () => {
 
   const handleBulkDefectiveSubmit = async () => {
     if (!validateBulkDefectiveFields()) {
-      setNotification({ message: "Sabab kiritilishi shart", type: 'error' });
+      setNotification({ message: "Сабаб киритилиши шарт", type: 'error' });
       return;
     }
     setSubmitting(true);
@@ -943,7 +943,7 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products/bulk-defective`,
         data: { ids: selectedProducts.map((id) => Number(id)), description: bulkDefectiveDescription },
       });
-      setNotification({ message: 'Tanlangan mahsulotlar defective qilib belgilandi', type: 'success' });
+      setNotification({ message: 'Танланган маҳсулотлар нуқсонли қилиб белгиланди', type: 'success' });
       closeBulkDefectiveModal();
       setSelectedProducts([]);
       loadAllProducts();
@@ -951,7 +951,7 @@ const TovarlarRoyxati = () => {
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || 'Bulk defective qilishda xatolik',
+        message: err.response?.data?.message || 'Булк нуқсонли қилишда хатолик',
         type: 'error',
       });
     } finally {
@@ -961,10 +961,10 @@ const TovarlarRoyxati = () => {
 
   const handleBulkRestore = async () => {
     if (selectedDefectiveProducts.length === 0) {
-      setNotification({ message: "Hech qanday mahsulot tanlanmadi", type: 'error' });
+      setNotification({ message: "Ҳеч қандай маҳсулот танланмади", type: 'error' });
       return;
     }
-    if (!window.confirm(`${selectedDefectiveProducts.length} ta defective mahsulotni tuzatishni xohlaysizmi?`)) return;
+    if (!window.confirm(`${selectedDefectiveProducts.length} та нуқсонли маҳсулотни тузатишни хоҳлайсизми?`)) return;
     setSubmitting(true);
     try {
       await axiosWithAuth({
@@ -972,14 +972,14 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products/bulk-restore-defective`,
         data: { ids: selectedDefectiveProducts.map((id) => Number(id)) },
       });
-      setNotification({ message: 'Tanlangan defective mahsulotlar tuzatildi', type: 'success' });
+      setNotification({ message: 'Танланган нуқсонли маҳсулотлар тузатилди', type: 'success' });
       setSelectedDefectiveProducts([]);
       loadAllProducts();
       loadDefectiveProducts();
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || 'Bulk tuzatishda xatolik',
+        message: err.response?.data?.message || 'Булк тузатишда хатолик',
         type: 'error',
       });
     } finally {
@@ -988,20 +988,20 @@ const TovarlarRoyxati = () => {
   };
 
   const handleDelete = async (product) => {
-    if (!window.confirm(`"${product.name}" mahsulotini o'chirishni xohlaysizmi?`)) return;
+    if (!window.confirm(`"${product.name}" маҳсулотини ўчиришни хоҳлайсизми?`)) return;
     setSubmitting(true);
     try {
       await axiosWithAuth({
         method: 'delete',
         url: `${API_URL}/products/${product.id}?hard=true`,
       });
-      setNotification({ message: "Mahsulot o'chirildi", type: 'success' });
+      setNotification({ message: "Маҳсулот ўчирилди", type: 'success' });
       loadAllProducts();
       loadDefectiveProducts();
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || "Mahsulotni o'chirishda xatolik",
+        message: err.response?.data?.message || "Маҳсулотни ўчиришда хатолик",
         type: 'error',
       });
     } finally {
@@ -1011,40 +1011,38 @@ const TovarlarRoyxati = () => {
 
   const handleBulkDelete = async () => {
     if (selectedProducts.length === 0) {
-      setNotification({ message: "Hech qanday mahsulot tanlanmadi", type: 'error' });
+      setNotification({ message: "Ҳеч қандай маҳсулот танланмади", type: 'error' });
       return;
     }
     const idsToDelete = selectedProducts
       .map((id) => Number(id))
       .filter((n) => Number.isFinite(n));
-    if (!window.confirm(`${idsToDelete.length} ta mahsulotni o'chirishni xohlaysizmi?`)) return;
+    if (!window.confirm(`${idsToDelete.length} та маҳсулотни ўчиришни хоҳлайсизми?`)) return;
     setSubmitting(true);
     try {
-      // Try bulk delete in a single request
       await axiosWithAuth({
         method: 'delete',
         url: `${API_URL}/products/bulk?hard=true`,
         data: { ids: idsToDelete },
         headers: { 'Content-Type': 'application/json' },
       });
-      setNotification({ message: `Yakunlandi. O'chirildi: ${idsToDelete.length}`, type: 'success' });
+      setNotification({ message: `Якунланди. Ўчирилди: ${idsToDelete.length}`, type: 'success' });
       setSelectedProducts((prev) => prev.filter((id) => !idsToDelete.includes(Number(id))));
       await loadAllProducts();
       await loadDefectiveProducts();
       await loadFixedProducts();
     } catch (err) {
-      // Fallback: API may not accept bulk; attempt per-id deletion to avoid failure
       try {
         await Promise.all(
           idsToDelete.map((id) => axiosWithAuth({ method: 'delete', url: `${API_URL}/products/${id}?hard=true` }))
         );
-        setNotification({ message: `Yakunlandi. O'chirildi: ${idsToDelete.length}`, type: 'success' });
+        setNotification({ message: `Якунланди. Ўчирилди: ${idsToDelete.length}`, type: 'success' });
         setSelectedProducts((prev) => prev.filter((id) => !idsToDelete.includes(Number(id))));
         await loadAllProducts();
         await loadDefectiveProducts();
         await loadFixedProducts();
       } catch (e2) {
-        setNotification({ message: e2.response?.data?.message || "Mahsulotlarni o'chirishda xatolik", type: 'error' });
+        setNotification({ message: e2.response?.data?.message || "Маҳсулотларни ўчиришда хатолик", type: 'error' });
       }
     } finally {
       setSubmitting(false);
@@ -1065,9 +1063,9 @@ const TovarlarRoyxati = () => {
     const productsToSelect = availableProducts.map((product) => product.id);
     setSelectedProducts((prev) => [...prev, ...productsToSelect]);
     if (productsToSelect.length > 0) {
-      setNotification({ message: `${productsToSelect.length} ta mahsulot tanlandi`, type: 'success' });
+      setNotification({ message: `${productsToSelect.length} та маҳсулот танланди`, type: 'success' });
     } else {
-      setNotification({ message: "Tanlash uchun yetarli mahsulot yo'q", type: 'error' });
+      setNotification({ message: "Танлаш учун етарли маҳсулот йўқ", type: 'error' });
     }
   };
 
@@ -1086,7 +1084,7 @@ const TovarlarRoyxati = () => {
       } else {
         const newSelection = products.map((product) => product.id);
         setSelectedProducts(newSelection);
-        setNotification({ message: `${newSelection.length} ta mahsulot tanlandi`, type: 'success' });
+        setNotification({ message: `${newSelection.length} та маҳсулот танланди`, type: 'success' });
       }
     } else if (type === 'defective') {
       if (selectedDefectiveProducts.length === defectiveProducts.length) {
@@ -1106,7 +1104,7 @@ const TovarlarRoyxati = () => {
 
   const handleUploadSubmit = async () => {
     if (!validateUploadFields()) {
-      setNotification({ message: "Barcha maydonlarni to'g'ri to'ldiring va fayl yuklang", type: 'error' });
+      setNotification({ message: "Барча майдонларни тўғри тўлдиринг ва файл юкланг", type: 'error' });
       return;
     }
     setSubmitting(true);
@@ -1122,14 +1120,14 @@ const TovarlarRoyxati = () => {
         data: formData,
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setNotification({ message: "Mahsulotlar muvaffaqiyatli qo'shildi", type: 'success' });
+      setNotification({ message: "Маҳсулотлар муваффақиятли қўшилди", type: 'success' });
       closeUploadModal();
       loadAllProducts();
       loadDefectiveProducts();
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || "Mahsulotlar qo'shishda xatolik",
+        message: err.response?.data?.message || "Маҳсулотлар қўшишда хатолик",
         type: 'error',
       });
     } finally {
@@ -1145,13 +1143,13 @@ const TovarlarRoyxati = () => {
         url: `${API_URL}/products/${id}/restore-defective`,
         data: { restoreCount },
       });
-      setNotification({ message: 'Defective mahsulot tuzatildi', type: 'success' });
+      setNotification({ message: 'Нуқсонли маҳсулот тузатилди', type: 'success' });
       loadAllProducts();
       loadDefectiveProducts();
       loadFixedProducts();
     } catch (err) {
       setNotification({
-        message: err.response?.data?.message || 'Tuzatishda xatolik',
+        message: err.response?.data?.message || 'Тузатишда хатолик',
         type: 'error',
       });
     } finally {
@@ -1166,17 +1164,17 @@ const TovarlarRoyxati = () => {
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
               {type === 'all' && (
-                <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Tanla</th>
+                <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Танла</th>
               )}
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Nomi</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Shtrix</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Model</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Narx (USD)</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Narx (сом)</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Sotish narxi (USD)</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Sotish narxi (сом)</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Miqdor</th>
-              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Amallar</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Номи</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Штрих</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Модель</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Нарx (USD)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Нарx (сўм)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Сотиш нарxи (USD)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Сотиш нарxи (сўм)</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Миқдор</th>
+              <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Амаллар</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -1245,7 +1243,7 @@ const TovarlarRoyxati = () => {
                         <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        Tuzatish
+                        Тузатиш
                       </button>
                     )}
                   </div>
@@ -1260,8 +1258,8 @@ const TovarlarRoyxati = () => {
           <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
           </svg>
-          <h3 className="mt-2 text-base font-medium text-gray-900">Hech qanday mahsulot topilmadi</h3>
-          <p className="mt-1 text-sm text-gray-500">Filialni tanlang yoki qidiruv so'zini o'zgartiring</p>
+          <h3 className="mt-2 text-base font-medium text-gray-900">Ҳеч қандай маҳсулот топилмади</h3>
+          <p className="mt-1 text-sm text-gray-500">Филиални танланг ёки қидирув сўзини ўзгартиринг</p>
         </div>
       )}
     </div>
@@ -1270,23 +1268,25 @@ const TovarlarRoyxati = () => {
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">Mahsulotlar Boshqaruvi</h1>
-        <p className="text-gray-700 text-lg">Barcha mahsulotlarni ko'rish, tahrirlash va boshqarish</p>
+        <h1 className="text-4xl font-bold text-gray-900 mb-2">Маҳсулотлар Бошқаруви</h1>
+        <p className="text-gray-700 text-lg">Барча маҳсулотларни кўриш, таҳрирлаш ва бошқариш</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <label className="block text-lg font-semibold text-gray-800 mb-3">Filialni tanlang</label>
+        <label className="block text-lg font-semibold text-gray-800 mb-3">Филиални танланг</label>
         <select
           value={selectedBranchId}
           onChange={(e) => {
-            setSelectedBranchId(e.target.value);
-            setEditBranch(e.target.value);
-            setCreateBranch(e.target.value);
-            setUploadBranch(e.target.value);
+            const newBranchId = e.target.value;
+            setSelectedBranchId(newBranchId);
+            setEditBranch(newBranchId);
+            setCreateBranch(newBranchId);
+            setUploadBranch(newBranchId);
+            localStorage.setItem('branchId', newBranchId); // Tanlangan filialni localStorage'ga saqlash
           }}
           className="w-full max-w-md px-5 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
         >
-          <option value="">Filialni tanlang</option>
+          <option value="">Филиални танланг</option>
           {branches.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
@@ -1306,7 +1306,7 @@ const TovarlarRoyxati = () => {
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
-              Yangi Mahsulot qo'shish
+              Янги Маҳсулот қўшиш
             </button>
             <div className="relative">
               <input
@@ -1324,7 +1324,7 @@ const TovarlarRoyxati = () => {
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                Excel yuklash
+                Excel юклаш
               </button>
             </div>
           </div>
@@ -1343,7 +1343,7 @@ const TovarlarRoyxati = () => {
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Nomi, shtrix kod yoki model bo'yicha qidiring..."
+            placeholder="Номи, штрих код ёки модель бўйича қидиринг..."
             className="block w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 placeholder-gray-400 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
           />
         </div>
@@ -1361,7 +1361,7 @@ const TovarlarRoyxati = () => {
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Barchasi ({products.length})
+            Барчаси ({products.length})
           </button>
           <button
             onClick={() => setActiveTab('defective')}
@@ -1371,7 +1371,7 @@ const TovarlarRoyxati = () => {
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Nuqsonli ({defectiveProducts.length})
+            Нуқсонли ({defectiveProducts.length})
           </button>
           <button
             onClick={() => setActiveTab('fixed')}
@@ -1381,7 +1381,7 @@ const TovarlarRoyxati = () => {
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Tuzatilgan ({fixedProducts.length})
+            Тузатилган ({fixedProducts.length})
           </button>
         </div>
       </div>
@@ -1389,7 +1389,7 @@ const TovarlarRoyxati = () => {
       {loading ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">Ma'lumotlar yuklanmoqda...</p>
+          <p className="text-gray-600 text-lg">Маълумотлар юкланмоқда...</p>
         </div>
       ) : (
         <>
@@ -1399,7 +1399,7 @@ const TovarlarRoyxati = () => {
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-medium text-gray-900">
-                      {selectedProducts.length} ta mahsulot tanlandi
+                      {selectedProducts.length} та маҳсулот танланди
                     </h3>
                     <div className="flex gap-3">
                       <button
@@ -1410,7 +1410,7 @@ const TovarlarRoyxati = () => {
                         <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        Barchasini tanlash
+                        Барчасини танлаш
                       </button>
                       {selectedProducts.length > 0 && (
                         <button
@@ -1421,7 +1421,7 @@ const TovarlarRoyxati = () => {
                           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
-                          Tanlanganlarni o'chirish
+                          Танланганларни ўчириш
                         </button>
                       )}
                     </div>
@@ -1437,7 +1437,7 @@ const TovarlarRoyxati = () => {
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-medium text-gray-900">
-                      {selectedDefectiveProducts.length} ta nuqsonli mahsulot tanlandi
+                      {selectedDefectiveProducts.length} та нуқсонли маҳсулот танланди
                     </h3>
                     <button
                       onClick={handleBulkRestore}
@@ -1447,7 +1447,7 @@ const TovarlarRoyxati = () => {
                       <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
-                      ni tuzatish
+                      ни тузатиш
                     </button>
                   </div>
                 </div>
@@ -1467,7 +1467,7 @@ const TovarlarRoyxati = () => {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-bold text-gray-900">Mahsulotni tahrirlash</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Маҳсулотни таҳрирлаш</h3>
                 <button
                   onClick={closeEditModal}
                   className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
@@ -1481,32 +1481,31 @@ const TovarlarRoyxati = () => {
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nomi</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Номи</label>
                   <input
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                       errors.name ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
-                    placeholder="Mahsulot nomi"
+                    placeholder="Маҳсулот номи"
                   />
                   {errors.name && <span className="text-red-500 text-xs mt-1">{errors.name}</span>}
                 </div>
-                {/* Shtrix kod removed from edit modal */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Модель</label>
                   <input
                     value={editModel}
                     onChange={(e) => setEditModel(e.target.value)}
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                       errors.model ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
-                    placeholder="Model"
+                    placeholder="Модель"
                   />
                   {errors.model && <span className="text-red-500 text-xs mt-1">{errors.model}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Narx (USD)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Нарx (USD)</label>
                   <input
                     type="number"
                     value={editPrice}
@@ -1519,7 +1518,7 @@ const TovarlarRoyxati = () => {
                   {errors.price && <span className="text-red-500 text-xs mt-1">{errors.price}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Miqdor</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Миқдор</label>
                   <input
                     type="number"
                     value={editQuantity}
@@ -1532,7 +1531,7 @@ const TovarlarRoyxati = () => {
                   {errors.quantity && <span className="text-red-500 text-xs mt-1">{errors.quantity}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Статус</label>
                   <select
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value)}
@@ -1546,7 +1545,7 @@ const TovarlarRoyxati = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Filial</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Филиал</label>
                   <select
                     value={editBranch}
                     onChange={(e) => setEditBranch(e.target.value)}
@@ -1554,7 +1553,7 @@ const TovarlarRoyxati = () => {
                       errors.branch ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
                   >
-                    <option value="">Filialni tanlang</option>
+                    <option value="">Филиални танланг</option>
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name}
@@ -1564,7 +1563,7 @@ const TovarlarRoyxati = () => {
                   {errors.branch && <span className="text-red-500 text-xs mt-1">{errors.branch}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Kategoriya</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Категория</label>
                   <select
                     value={editCategory}
                     onChange={(e) => setEditCategory(e.target.value)}
@@ -1572,7 +1571,7 @@ const TovarlarRoyxati = () => {
                       errors.category ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
                   >
-                    <option value="">Kategoriyani tanlang</option>
+                    <option value="">Категорияни танланг</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -1582,51 +1581,33 @@ const TovarlarRoyxati = () => {
                   {errors.category && <span className="text-red-500 text-xs mt-1">{errors.category}</span>}
                 </div>
               </div>
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={handleEditSubmit}
-                  disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-lg font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {submitting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                      Saqlanmoqda...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Saqlash
-                    </>
-                  )}
-                </button>
+              <div className="mt-8 flex justify-end gap-4">
                 <button
                   onClick={closeEditModal}
                   disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-lg font-medium rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-5 py-3 border border-gray-300 text-lg font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
                 >
-                  Bekor qilish
+                  Бекор қилиш
+                </button>
+                <button
+                  onClick={handleEditSubmit}
+                  disabled={submitting}
+                  className="px-5 py-3 border border-transparent text-lg font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Сақланмоқда...' : 'Сақлаш'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-bold text-gray-900">Yangi Mahsulot qo'shish</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Янги Маҳсулот қўшиш</h3>
                 <button
                   onClick={closeCreateModal}
                   className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
@@ -1640,32 +1621,31 @@ const TovarlarRoyxati = () => {
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nomi</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Номи</label>
                   <input
                     value={createName}
                     onChange={(e) => setCreateName(e.target.value)}
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                       errors.name ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
-                    placeholder="Mahsulot nomi"
+                    placeholder="Маҳсулот номи"
                   />
                   {errors.name && <span className="text-red-500 text-xs mt-1">{errors.name}</span>}
                 </div>
-                {/* Shtrix kod removed from create modal */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Model</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Модель</label>
                   <input
                     value={createModel}
                     onChange={(e) => setCreateModel(e.target.value)}
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                       errors.model ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
-                    placeholder="Model"
+                    placeholder="Модель"
                   />
                   {errors.model && <span className="text-red-500 text-xs mt-1">{errors.model}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Narx (USD)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Нарx (USD)</label>
                   <input
                     type="number"
                     value={createPrice}
@@ -1678,17 +1658,20 @@ const TovarlarRoyxati = () => {
                   {errors.price && <span className="text-red-500 text-xs mt-1">{errors.price}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Sotish narxi (USD)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Сотиш нарxи (USD)</label>
                   <input
                     type="number"
                     value={createMarketPrice}
                     onChange={(e) => setCreateMarketPrice(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+                      errors.marketPrice ? 'border-red-500 ring-red-200' : 'border-gray-300'
+                    }`}
                     placeholder="0"
                   />
+                  {errors.marketPrice && <span className="text-red-500 text-xs mt-1">{errors.marketPrice}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Miqdor</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Миқдор</label>
                   <input
                     type="number"
                     value={createQuantity}
@@ -1701,7 +1684,7 @@ const TovarlarRoyxati = () => {
                   {errors.quantity && <span className="text-red-500 text-xs mt-1">{errors.quantity}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Статус</label>
                   <select
                     value={createStatus}
                     onChange={(e) => setCreateStatus(e.target.value)}
@@ -1715,7 +1698,7 @@ const TovarlarRoyxati = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Filial</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Филиал</label>
                   <select
                     value={createBranch}
                     onChange={(e) => setCreateBranch(e.target.value)}
@@ -1723,7 +1706,7 @@ const TovarlarRoyxati = () => {
                       errors.branch ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
                   >
-                    <option value="">Filialni tanlang</option>
+                    <option value="">Филиални танланг</option>
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name}
@@ -1733,7 +1716,7 @@ const TovarlarRoyxati = () => {
                   {errors.branch && <span className="text-red-500 text-xs mt-1">{errors.branch}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Kategoriya</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Категория</label>
                   <select
                     value={createCategory}
                     onChange={(e) => setCreateCategory(e.target.value)}
@@ -1741,7 +1724,7 @@ const TovarlarRoyxati = () => {
                       errors.category ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
                   >
-                    <option value="">Kategoriyani tanlang</option>
+                    <option value="">Категорияни танланг</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -1751,51 +1734,33 @@ const TovarlarRoyxati = () => {
                   {errors.category && <span className="text-red-500 text-xs mt-1">{errors.category}</span>}
                 </div>
               </div>
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={handleCreateSubmit}
-                  disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-lg font-medium rounded-lg text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {submitting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                      Qo'shilmoqda...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      Qo'shish
-                    </>
-                  )}
-                </button>
+              <div className="mt-8 flex justify-end gap-4">
                 <button
                   onClick={closeCreateModal}
                   disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-lg font-medium rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-5 py-3 border border-gray-300 text-lg font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
                 >
-                  Bekor qilish
+                  Бекор қилиш
+                </button>
+                <button
+                  onClick={handleCreateSubmit}
+                  disabled={submitting}
+                  className="px-5 py-3 border border-transparent text-lg font-semibold rounded-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Сақланмоқда...' : 'Қўшиш'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-bold text-gray-900">Excel fayl yuklash</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Excel орқали юклаш</h3>
                 <button
                   onClick={closeUploadModal}
                   className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
@@ -1809,19 +1774,7 @@ const TovarlarRoyxati = () => {
             <div className="p-6">
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Fayl</label>
-                  <input
-                    type="file"
-                    accept=".xlsx, .xls"
-                    onChange={handleFileUpload}
-                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
-                      errors.file ? 'border-red-500 ring-red-200' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.file && <span className="text-red-500 text-xs mt-1">{errors.file}</span>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Filial</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Филиал</label>
                   <select
                     value={uploadBranch}
                     onChange={(e) => setUploadBranch(e.target.value)}
@@ -1829,7 +1782,7 @@ const TovarlarRoyxati = () => {
                       errors.branch ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
                   >
-                    <option value="">Filialni tanlang</option>
+                    <option value="">Филиални танланг</option>
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name}
@@ -1839,7 +1792,7 @@ const TovarlarRoyxati = () => {
                   {errors.branch && <span className="text-red-500 text-xs mt-1">{errors.branch}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Kategoriya</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Категория</label>
                   <select
                     value={uploadCategory}
                     onChange={(e) => setUploadCategory(e.target.value)}
@@ -1847,7 +1800,7 @@ const TovarlarRoyxati = () => {
                       errors.category ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
                   >
-                    <option value="">Kategoriyani tanlang</option>
+                    <option value="">Категорияни танланг</option>
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -1857,7 +1810,7 @@ const TovarlarRoyxati = () => {
                   {errors.category && <span className="text-red-500 text-xs mt-1">{errors.category}</span>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Статус</label>
                   <select
                     value={uploadStatus}
                     onChange={(e) => setUploadStatus(e.target.value)}
@@ -1870,52 +1823,46 @@ const TovarlarRoyxati = () => {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Excel файл</label>
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls"
+                    onChange={handleFileUpload}
+                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
+                      errors.file ? 'border-red-500 ring-red-200' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.file && <span className="text-red-500 text-xs mt-1">{errors.file}</span>}
+                </div>
               </div>
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={handleUploadSubmit}
-                  disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-lg font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {submitting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                      Yuklanmoqda...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      Yuklash
-                    </>
-                  )}
-                </button>
+              <div className="mt-8 flex justify-end gap-4">
                 <button
                   onClick={closeUploadModal}
                   disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-lg font-medium rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-5 py-3 border border-gray-300 text-lg font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
                 >
-                  Bekor qilish
+                  Бекор қилиш
+                </button>
+                <button
+                  onClick={handleUploadSubmit}
+                  disabled={submitting}
+                  className="px-5 py-3 border border-transparent text-lg font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Юкланмоқда...' : 'Юклаш'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
       {showDefectiveModal && selectedProduct && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-bold text-gray-900">Mahsulotni nuqsonli deb belgilash</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Маҳсулотни нуқсонли қилиш</h3>
                 <button
                   onClick={closeDefectiveModal}
                   className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
@@ -1929,15 +1876,11 @@ const TovarlarRoyxati = () => {
             <div className="p-6">
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Mahsulot</label>
-                  <input
-                    value={selectedProduct.name}
-                    disabled
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-800"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Маҳсулот</label>
+                  <p className="text-gray-900">{selectedProduct.name}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nuqsonli miqdor</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Нуқсонли миқдор</label>
                   <input
                     type="number"
                     value={defectiveCount}
@@ -1945,73 +1888,55 @@ const TovarlarRoyxati = () => {
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                       errors.defectiveCount ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
-                    placeholder={`1-${selectedProduct.quantity}`}
-                    min="1"
-                    max={selectedProduct.quantity}
+                    placeholder={`1 дан ${selectedProduct.quantity} гача`}
                   />
-                  {errors.defectiveCount && <span className="text-red-500 text-xs mt-1">{errors.defectiveCount}</span>}
+                  {errors.defectiveCount && (
+                    <span className="text-red-500 text-xs mt-1">{errors.defectiveCount}</span>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nuqson sababi</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Нуқсон сабаби</label>
                   <textarea
                     value={defectiveDescription}
                     onChange={(e) => setDefectiveDescription(e.target.value)}
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                       errors.defectiveDescription ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
-                    placeholder="Nuqson sababini kiriting"
-                    rows="4"
+                    placeholder="Нуқсон сабабини киритинг"
+                    rows={4}
                   />
                   {errors.defectiveDescription && (
                     <span className="text-red-500 text-xs mt-1">{errors.defectiveDescription}</span>
                   )}
                 </div>
               </div>
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={handleDefectiveSubmit}
-                  disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-lg font-medium rounded-lg text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {submitting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                      Belgilanmoqda...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Nuqsonli deb belgilash
-                    </>
-                  )}
-                </button>
+              <div className="mt-8 flex justify-end gap-4">
                 <button
                   onClick={closeDefectiveModal}
                   disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-lg font-medium rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-5 py-3 border border-gray-300 text-lg font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
                 >
-                  Bekor qilish
+                  Бекор қилиш
+                </button>
+                <button
+                  onClick={handleDefectiveSubmit}
+                  disabled={submitting}
+                  className="px-5 py-3 border border-transparent text-lg font-semibold rounded-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Сақланмоқда...' : 'Нуқсонли қилиш'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
       {showBulkDefectiveModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-bold text-gray-900">Tanlangan mahsulotlarni nuqsonli deb belgilash</h3>
+                <h3 className="text-2xl font-bold text-gray-900">Танланган маҳсулотларни нуқсонли қилиш</h3>
                 <button
                   onClick={closeBulkDefectiveModal}
                   className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
@@ -2025,154 +1950,99 @@ const TovarlarRoyxati = () => {
             <div className="p-6">
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nuqson sababi</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Нуқсон сабаби</label>
                   <textarea
                     value={bulkDefectiveDescription}
                     onChange={(e) => setBulkDefectiveDescription(e.target.value)}
                     className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 ${
                       errors.bulkDefectiveDescription ? 'border-red-500 ring-red-200' : 'border-gray-300'
                     }`}
-                    placeholder="Nuqson sababini kiriting"
-                    rows="4"
+                    placeholder="Нуқсон сабабини киритинг"
+                    rows={4}
                   />
                   {errors.bulkDefectiveDescription && (
                     <span className="text-red-500 text-xs mt-1">{errors.bulkDefectiveDescription}</span>
                   )}
                 </div>
               </div>
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={handleBulkDefectiveSubmit}
-                  disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-lg font-medium rounded-lg text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                >
-                  {submitting ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                      Belgilanmoqda...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Nuqsonli deb belgilash
-                    </>
-                  )}
-                </button>
+              <div className="mt-8 flex justify-end gap-4">
                 <button
                   onClick={closeBulkDefectiveModal}
                   disabled={submitting}
-                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-lg font-medium rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  className="px-5 py-3 border border-gray-300 text-lg font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
                 >
-                  Bekor qilish
+                  Бекор қилиш
+                </button>
+                <button
+                  onClick={handleBulkDefectiveSubmit}
+                  disabled={submitting}
+                  className="px-5 py-3 border border-transparent text-lg font-semibold rounded-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Сақланмоқда...' : 'Нуқсонли қилиш'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-      {showBarcodeModal && selectedBarcode && (
-  <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-      <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
-        <div className="flex items-center justify-between">
-          <h3 className="text-2xl font-bold text-gray-900">Barkod</h3>
-          <button
-            onClick={closeBarcodeModal}
-            className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-      <div className="p-6">
-        {/* Print styles for 3x4 label (inches). On larger paper it prints centered small label. */}
-        <style>
-          {`@media print {
-              @page { size: 3in 4in; margin: 0; }
-              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-              .no-print { display: none !important; }
-              .print-label { padding: 0.1in; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; margin: 0 auto; }
-              .print-row { margin: 0; padding: 0; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-              .row-shop { font-size: 12px; font-weight: 700; text-align: center; }
-              .row-name { font-size: 11px; font-weight: 600; text-align: center; }
-              .row-price { font-size: 12px; font-weight: 700; margin-top: 2px; text-align: center; }
-            }`}
-        </style>
-        <div className="no-print mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Do'kon nomi</label>
-          <input
-            value={shopName}
-            onChange={(e) => setShopName(e.target.value)}
-            placeholder="Masalan: Aminov Store"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-        <div className="print-label mx-auto border border-gray-200 rounded p-2" style={{ width: '3in', height: '4in', padding: '0.1in' }}>
-          {/* Row 1: Shop name */}
-          <p className="print-row row-shop">{shopName || ''}</p>
-          {/* Row 2: Product name + model */}
-          {selectedBarcodeProduct && (
-            <p className="print-row row-name" title={`${selectedBarcodeProduct.name}${selectedBarcodeProduct.model ? ' ' + selectedBarcodeProduct.model : ''}`}>
-              {selectedBarcodeProduct.name}{selectedBarcodeProduct.model ? ` ${selectedBarcodeProduct.model}` : ''}
-            </p>
-          )}
-          {/* Row 3: Price in so'm */}
-          {selectedBarcodeProduct && (
-            <p className="print-row row-price">
-              {formatMarketPriceSom(selectedBarcodeProduct.marketPrice || selectedBarcodeProduct.price)}
-            </p>
-          )}
-          {/* Row 4: Barcode */}
-          <div className="mt-1 flex justify-center">
-            <Barcode
-              value={selectedBarcode}
-              format="CODE128"
-              width={2}
-              height={60}
-              displayValue={true}
-              fontSize={10}
-              textMargin={2}
-              margin={0}
-            />
+
+      {showBarcodeModal && selectedBarcode && selectedBarcodeProduct && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold text-gray-900">Баркодни босиб чиқариш</h3>
+                <button
+                  onClick={closeBarcodeModal}
+                  className="text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Дўкон номи</label>
+                  <input
+                    value={shopName}
+                    onChange={(e) => setShopName(e.target.value)}
+                    className="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 border-gray-300"
+                    placeholder="Дўкон номини киритинг"
+                  />
+                </div>
+                <div className="text-center">
+                  <Barcode value={selectedBarcode} />
+                  <p className="mt-2 text-sm text-gray-600">{selectedBarcodeProduct.name}</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {formatMarketPriceSom(selectedBarcodeProduct.marketPrice || selectedBarcodeProduct.price)}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-8 flex justify-end gap-4">
+                <button
+                  onClick={closeBarcodeModal}
+                  disabled={submitting}
+                  className="px-5 py-3 border border-gray-300 text-lg font-semibold rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200"
+                >
+                  Бекор қилиш
+                </button>
+                <button
+                  onClick={handlePrintReceipt}
+                  disabled={submitting}
+                  className="px-5 py-3 border border-transparent text-lg font-semibold rounded-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Босиб чиқариш
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="flex gap-4 mt-8 no-print">
-          
-          <button
-            onClick={handlePrintReceipt}
-            disabled={submitting}
-            className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-lg font-medium rounded-lg text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-          >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l2-2 2 2m0 0l2-2 2 2M7 10h10M5 6h14M7 18h10" />
-            </svg>
-            Chekni chiqarish
-          </button>
-          <button
-            onClick={closeBarcodeModal}
-            disabled={submitting}
-            className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-lg font-medium rounded-lg text-gray-800 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-          >
-            Bekor qilish
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+      )}
     </div>
   );
 };
+
 export default TovarlarRoyxati;
