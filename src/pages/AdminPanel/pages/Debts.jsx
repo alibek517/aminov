@@ -1,511 +1,1119 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Search, Eye, CheckCircle, X, Loader2, CreditCard } from 'lucide-react';
-import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import { formatCurrency } from '../../../utils/currencyFormat';
 
-const Debts = ({ selectedBranchId: propSelectedBranchId }) => {
-  const BASE_URL = 'https://suddocs.uz';
-  const navigate = useNavigate();
+const Мижозлар = () => {
+  const [customers, setCustomers] = useState([]);
+  const [filteredCustomers, setFilteredCustomers] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [paymentSchedules, setPaymentSchedules] = useState([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentChannel, setPaymentChannel] = useState('CASH');
+  const [paymentRating, setPaymentRating] = useState('YAXSHI');
   const [loading, setLoading] = useState(false);
-  const [creditTransactions, setCreditTransactions] = useState([]);
-  const [summary, setSummary] = useState({ totalCredit: 0, totalTransactions: 0 });
-  const [search, setSearch] = useState('');
-  const [selectedBranchId, setSelectedBranchId] = useState(
-    propSelectedBranchId || localStorage.getItem('selectedBranchId') || localStorage.getItem('branchId') || ''
-  );
-  const [selectedTransaction, setSelectedTransaction] = useState(null);
-  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [notification, setNotification] = useState(null);
+  useEffect(() => {
+    if (!notification) return;
+    const t = setTimeout(() => setNotification(null), 1500);
+    return () => clearTimeout(t);
+  }, [notification]);
+  const [transactionTypeFilter, setTransactionTypeFilter] = useState('ALL');
+  const [transactionSearchTerm, setTransactionSearchTerm] = useState('');
+  const [expandedTransactions, setExpandedTransactions] = useState({});
+  const API_URL = 'https://suddocs.uz';
+  const [exchangeRate, setExchangeRate] = useState(12650);
 
-  const formatAmount = (value) => {
-    const num = Math.floor(Number(value) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  };
-  const formatDate = (date) => (date ? new Date(date).toLocaleDateString('uz-UZ') : 'N/A');
-  const addMonths = (date, months) => {
-    const d = new Date(date);
-    d.setMonth(d.getMonth() + months);
-    return d;
+  // Helper to get interest rate consistently
+  const getInterestRate = (transaction) => {
+    if (transaction.interestRate != null) {
+      const rate = Number(transaction.interestRate) / 100; // Assuming interestRate is in percentage (e.g., 10 for 10%)
+      console.log(`getInterestRate: transaction ${transaction.id} has interestRate ${transaction.interestRate}% -> ${rate}`);
+      return rate;
+    }
+    if (transaction.items && transaction.items.length > 0) {
+      const itemWithRate = transaction.items.find(item => item.creditPercent != null);
+      if (itemWithRate) {
+        const rate = Number(itemWithRate.creditPercent); // creditPercent is already a decimal
+        console.log(`getInterestRate: transaction ${transaction.id} has item creditPercent ${itemWithRate.creditPercent} -> ${rate}`);
+        return rate;
+      }
+    }
+    console.log(`getInterestRate: transaction ${transaction.id} no interest rate found, defaulting to 0`);
+    return 0; // Default to no interest if none found
   };
 
-  const fetchCreditTransactions = useCallback(async () => {
-    setLoading(true);
+  // Helpers to compute accurate paid/remaining amounts across different transaction shapes
+  const calculateTransactionRemaining = (t) => {
+    // If schedules exist, compute remaining strictly from schedules
+    if (Array.isArray(t?.paymentSchedules) && t.paymentSchedules.length > 0) {
+      const schedules = t.paymentSchedules;
+      const remainingFromSchedules = schedules.reduce((sum, sc) => {
+        const payment = Number(sc?.payment || 0);
+        const paid = Number(sc?.paidAmount || 0);
+        return sum + Math.max(0, payment - paid);
+      }, 0);
+      console.debug(`Transaction ${t.id}: remaining from schedules = ${remainingFromSchedules}`);
+      return Math.max(0, remainingFromSchedules);
+    }
+
+    // No schedules: fall back to remainingBalance if present, otherwise derive from totals
+    const downPayment = Number.isFinite(Number(t?.downPayment)) ? Number(t.downPayment) : 0;
+    const baseAmount = Number.isFinite(Number(t?.finalTotal || t?.total)) ? Number(t.finalTotal || t.total) : 0;
+    const remainingBase = Math.max(0, baseAmount - downPayment);
+    const creditRepaymentAmount = Number(t?.creditRepaymentAmount || 0);
+    const remaining = Math.max(0, remainingBase - creditRepaymentAmount);
+    console.log(`Transaction ${t.id} fallback calculation: base=${baseAmount}, downPayment=${downPayment}, creditRepaymentAmount=${creditRepaymentAmount}, remaining=${remaining}`);
+    return remaining;
+  };
+
+  const calculateTransactionPaid = (t) => {
+    const downPayment = Number(t?.downPayment || 0);
+
+    if (Array.isArray(t?.paymentSchedules) && t.paymentSchedules.length > 0) {
+      const schedulesPaid = t.paymentSchedules.reduce((sum, sc) => sum + Number(sc?.paidAmount || 0), 0);
+      return downPayment + schedulesPaid;
+    }
+
+    // No schedules: upfront + credit repayments
+    const creditRepaymentAmount = Number(t?.creditRepaymentAmount || 0);
+    const totalPaid = downPayment + creditRepaymentAmount;
+    if (Number(t?.amountPaid || 0) !== totalPaid) {
+      console.warn(`Paid amount mismatch for transaction ${t.id}: stored=${t.amountPaid}, calculated=${totalPaid}`);
+    }
+    return totalPaid;
+  };
+
+  useEffect(() => {
+    if (selectedCustomer) {
+      loadCustomerTransactions(selectedCustomer.id);
+    }
+  }, [transactionTypeFilter]);
+
+  const axiosWithAuth = axios.create({
+    baseURL: API_URL,
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const didInitCustomersRef = useRef(false);
+  useEffect(() => {
+    if (didInitCustomersRef.current) return;
+    didInitCustomersRef.current = true;
+    loadCustomers();
+    // fetch exchange rate once
+    (async () => {
+      try {
+        const res = await axiosWithAuth.get('/currency-exchange-rates');
+        const rate = Array.isArray(res.data) && res.data[0]?.rate ? Number(res.data[0].rate) : null;
+        if (rate) setExchangeRate(rate);
+      } catch { }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (searchTerm.trim() === '') {
+      setFilteredCustomers(customers);
+    } else {
+      const filtered = customers.filter(customer =>
+        customer.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.phone?.includes(searchTerm)
+      );
+      setFilteredCustomers(filtered);
+    }
+  }, [searchTerm, customers]);
+
+  const loadCustomers = async () => {
     try {
-      const token = localStorage.getItem('access_token');
-      if (!token) {
-        navigate('/login');
-        return;
+      setLoading(true);
+      const response = await axiosWithAuth.get('/customers?skip=0&take=1000');
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid customers data format');
       }
-      
-      const params = new URLSearchParams();
-      if (selectedBranchId) params.append('branchId', selectedBranchId);
-      params.append('type', 'SALE'); // Only sales
-      params.append('limit', 'all');
-      
-      const res = await fetch(`${BASE_URL}/transactions?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
-      });
-      
-      if (res.status === 401) {
-        localStorage.removeItem('access_token');
-        navigate('/login');
-        return;
-      }
-      
-      if (!res.ok) throw new Error('Ma\'lumotlarni olishda xatolik');
-      
-      const raw = await res.json();
-      const list = raw?.transactions || raw || [];
+      const allCustomers = response.data;
 
-      // Enrich credit/installment transactions with schedule analytics
-      const now = new Date();
-      const creditData = list
-        .filter(t => (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT'))
-        .map(t => {
-          const schedulesRaw = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
-          const baseDate = t.createdAt ? new Date(t.createdAt) : null;
-          const schedules = schedulesRaw.map((s) => {
-            const dueDate = baseDate ? addMonths(baseDate, s.month) : null;
-            const payment = Number(s.payment || 0);
-            const paidAmount = Number(s.paidAmount || 0);
-            const unpaidAmount = Math.max(0, payment - paidAmount);
-            const isOverdue = unpaidAmount > 0 && !!dueDate && dueDate < now && !s.isPaid;
-            const daysOverdue = isOverdue && dueDate ? Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)) : 0;
-            return { ...s, payment, paidAmount, unpaidAmount, dueDate, isOverdue, daysOverdue };
-          });
-          const unpaid = schedules.filter(s => s.unpaidAmount > 0);
-          const overdueDaysList = unpaid.filter(s => s.isOverdue).map(s => Number(s.daysOverdue || 0));
-          const maxDaysOverdue = overdueDaysList.length > 0 ? Math.max(...overdueDaysList) : 0;
-          const nextSchedule = unpaid.sort((a,b) => (a.month||0) - (b.month||0))[0] || null;
-          const monthsTaken = schedules.length > 0 ? Math.max(...schedules.map(s => s.month || 0)) : 0;
-          const monthsRemaining = unpaid.length;
-          const totalPayable = schedules.reduce((sum, s) => sum + s.payment, 0);
-          const totalPaidFromSchedules = schedules.reduce((sum, s) => sum + s.paidAmount, 0);
-          const upfrontPaid = (Number(t.downPayment) || 0) + (Number(t.amountPaid) || 0);
-          const totalPaid = totalPaidFromSchedules + upfrontPaid;
-          const outstanding = Math.max(0, totalPayable - totalPaid);
-          const lastPaid = schedules
-            .filter(s => (Number(s.paidAmount||0) > 0 || s.isPaid) && s.paidAt)
-            .sort((a,b) => new Date(b.paidAt) - new Date(a.paidAt))[0] || null;
-          const lastPaidBy = lastPaid?.paidBy || null;
-          const lastPaidByName = lastPaidBy ? `${lastPaidBy.firstName || ''} ${lastPaidBy.lastName || ''}`.trim() : null;
-          return {
-            ...t,
-            schedules,
-            unpaidSchedules: unpaid,
-            nextSchedule,
-            monthsTaken,
-            monthsRemaining,
-            totalPayable,
-            totalPaid,
-            outstanding,
-            maxDaysOverdue,
-            lastPaidBy,
-            lastPaidByName,
-          };
-        });
-
-      // Sort: most overdue (by days) first; then by highest outstanding; then by next unpaid month
-      creditData.sort((a,b) => {
-        const ad = Number(a.maxDaysOverdue || 0);
-        const bd = Number(b.maxDaysOverdue || 0);
-        if (ad !== bd) return bd - ad; // overdue first, largest days on top
-        const ao = Number(a.outstanding || 0);
-        const bo = Number(b.outstanding || 0);
-        if (ao !== bo) return bo - ao; // higher outstanding next
-        const am = a.nextSchedule?.month || 9999;
-        const bm = b.nextSchedule?.month || 9999;
-        if (am !== bm) return am - bm; // earlier month next
-        return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      const customersWithCredit = allCustomers.filter((customer) => {
+        if (!Array.isArray(customer.transactions) || customer.transactions.length === 0) return false;
+        const creditTransactions = customer.transactions.filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+        return creditTransactions.length > 0;
       });
 
-      setCreditTransactions(creditData);
-
-      const totalCredit = creditData.reduce((sum, t) => sum + (Number(t.outstanding) || 0), 0);
-      setSummary({ totalCredit, totalTransactions: creditData.length });
-      
-    } catch (e) {
-      console.error(e);
+      setCustomers(customersWithCredit);
+      setFilteredCustomers(customersWithCredit);
+      console.log('Юкланган кредит тарихи бор мижозлар:', customersWithCredit);
+    } catch (error) {
+      console.error('Мижозларни юклашда хатолик:', error);
+      setNotification({ message: 'Мижозларни юклашда хатолик: ' + error.message, type: 'error' });
     } finally {
       setLoading(false);
     }
-  }, [selectedBranchId, BASE_URL, navigate]);
+  };
 
-  useEffect(() => { 
-    fetchCreditTransactions(); 
-  }, [fetchCreditTransactions]);
-
-  // Ensure data loads on first open reliably and when returning to the tab
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchCreditTransactions();
-    }, 300);
-    window.addEventListener('focus', fetchCreditTransactions);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('focus', fetchCreditTransactions);
-    };
-  }, [fetchCreditTransactions]);
-
-  useEffect(() => {
-    if (propSelectedBranchId !== undefined) {
-      setSelectedBranchId(propSelectedBranchId);
-    }
-  }, [propSelectedBranchId]);
-
-  useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === 'selectedBranchId' || e.key === 'branchId') {
-        setSelectedBranchId(e.newValue || '');
+  const loadCustomerTransactions = async (customerId) => {
+    try {
+      setLoading(true);
+      const response = await axiosWithAuth.get(`/transactions?customerId=${customerId}&limit=100`);
+      let transactions = response.data.transactions || [];
+      
+      // Fetch detailed transactions with payment schedules
+      const detailedTransactions = [];
+      for (const tx of transactions) {
+        try {
+          const detailResponse = await axiosWithAuth.get(`/transactions/${tx.id}`);
+          detailedTransactions.push(detailResponse.data);
+        } catch (err) {
+          console.warn(`Failed to fetch details for transaction ${tx.id}:`, err);
+          detailedTransactions.push(tx); // fallback to original transaction
+        }
       }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
-
-  const filteredTransactions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return creditTransactions;
-    return creditTransactions.filter((t) =>
-      (t.customer?.firstName || '').toLowerCase().includes(q) ||
-      (t.customer?.lastName || '').toLowerCase().includes(q) ||
-      (t.customer?.phone || '').includes(q) ||
-      (t.id?.toString() || '').includes(q)
-    );
-  }, [creditTransactions, search]);
-
-  const openTransactionModal = (transaction) => {
-    setSelectedTransaction(transaction);
-    setShowTransactionModal(true);
-  };
-
-  const closeTransactionModal = () => {
-    setShowTransactionModal(false);
-    setSelectedTransaction(null);
-  };
-
-  const getPaymentStatusBadge = (status) => {
-    switch (status) {
-      case 'PAID':
-        return 'bg-green-100 text-green-800';
-      case 'PENDING':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'OVERDUE':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      transactions = detailedTransactions;
+      // Enrich from local storage meta (termUnit/days/interestRate) if available
+      let metaMap = {};
+      try {
+        const metaRaw = localStorage.getItem('tx_term_units');
+        metaMap = metaRaw ? JSON.parse(metaRaw) : {};
+        if (typeof metaMap !== 'object' || metaMap === null) {
+          console.warn('Invalid tx_term_units in localStorage');
+          metaMap = {};
+        }
+        if (metaMap && typeof metaMap === 'object') {
+          transactions = transactions.map((tx) => {
+            const meta = metaMap[String(tx.id)];
+            return meta ? { ...tx, ...meta } : tx;
+          });
+        }
+      } catch (e) {
+        console.error('Error parsing tx_term_units:', e);
+        metaMap = {};
+      }
+      // store raw USD values; conversion is done on render via exchangeRate
+      const allTransactions = [];
+      for (const transaction of transactions) {
+        console.log('Processing transaction:', {
+          id: transaction.id,
+          paymentType: transaction.paymentType,
+          hasSchedules: !!(transaction.paymentSchedules && transaction.paymentSchedules.length > 0),
+          schedulesCount: transaction.paymentSchedules ? transaction.paymentSchedules.length : 0,
+          termUnit: transaction.termUnit
+        });
+        
+        if (transaction.paymentSchedules && transaction.paymentSchedules.length > 0) {
+          allTransactions.push(...transaction.paymentSchedules.map(schedule => ({
+            ...schedule,
+            transaction: transaction,
+            customer: transaction.customer,
+            isPaymentSchedule: true
+          })));
+        } else {
+          // For daily installments or transactions without payment schedules
+          const calculatedRemaining = calculateTransactionRemaining(transaction);
+          
+          // For INSTALLMENT transactions, create monthly payment schedules
+          if (transaction.paymentType === 'INSTALLMENT') {
+            const months = (transaction.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || 1;
+            const monthlyPayment = calculatedRemaining / months;
+            
+            for (let month = 1; month <= months; month++) {
+              const isLastMonth = month === months;
+              const monthPayment = isLastMonth ? calculatedRemaining - (monthlyPayment * (months - 1)) : monthlyPayment;
+              
+              allTransactions.push({
+                id: `installment-${transaction.id}-${month}`,
+                transaction: transaction,
+                customer: transaction.customer,
+                isPaymentSchedule: true,
+                month: month.toString(),
+                payment: monthPayment,
+                paidAmount: 0,
+                remainingBalance: monthPayment,
+                isPaid: false,
+                paidAt: null,
+                paidChannel: null,
+                paidBy: null,
+                rating: null
+              });
+            }
+            
+            console.log('Created installment schedules:', {
+              transactionId: transaction.id,
+              months: months,
+              monthlyPayment: monthlyPayment,
+              totalRemaining: calculatedRemaining
+            });
+          } else {
+            // For other transactions without schedules
+            allTransactions.push({
+              id: `transaction-${transaction.id}`,
+              transaction: transaction,
+              customer: transaction.customer,
+              isPaymentSchedule: false,
+              payment: transaction.finalTotal,
+              paidAmount: transaction.amountPaid || 0,
+              remainingBalance: calculatedRemaining,
+              month: 1,
+              isPaid: calculatedRemaining <= 0
+            });
+          }
+          
+          console.log('Transaction without schedules debug:', {
+            transactionId: transaction.id,
+            paymentType: transaction.paymentType,
+            finalTotal: transaction.finalTotal,
+            amountPaid: transaction.amountPaid,
+            storedRemainingBalance: transaction.remainingBalance,
+            calculatedRemaining: calculatedRemaining,
+            termUnit: transaction.termUnit,
+            days: transaction.days,
+            months: transaction.months
+          });
+        }
+      }
+      console.log('Loaded transactions for customer:', {
+        customerId: customerId,
+        transactionsCount: transactions.length,
+        allTransactionsCount: allTransactions.length,
+        sampleTransaction: allTransactions[0],
+        dailyInstallments: allTransactions.filter(t => !t.isPaymentSchedule)
+      });
+      
+      setPaymentSchedules(allTransactions);
+      setSelectedCustomer(customers.find(c => c.id === customerId));
+    } catch (error) {
+      console.error('Мижоз транзакцияларини юклашда хатолик:', error);
+      setNotification({ message: 'Мижоз маълумотларини юклашда хатолик', type: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getPaymentStatusText = (status) => {
-    switch (status) {
-      case 'PAID':
-        return 'To\'langan';
-      case 'PENDING':
-        return 'Kutilmoqda';
-      case 'OVERDUE':
-        return 'Muddati o\'tgan';
-      default:
-        return 'Noma\'lum';
+  const handlePayment = async () => {
+    if (!selectedSchedule || !paymentAmount || Number(paymentAmount) <= 0) {
+      setNotification({ message: 'Тўлов миқдори тўғри киритилиши керак', type: 'error' });
+      return;
+    }
+    // Guard: do not allow paying later months if previous months are not fully paid
+    if (selectedSchedule.isPaymentSchedule && selectedSchedule.transaction?.termUnit !== 'DAYS') {
+      const allSchedules = selectedSchedule.transaction?.paymentSchedules || [];
+      const payable = isSchedulePayable(selectedSchedule, allSchedules, selectedSchedule.transaction?.termUnit);
+      if (!payable) {
+        setNotification({ message: 'Илтимос, аввалги ой(лар)ни тўлиқ тўланг', type: 'error' });
+        return;
+      }
+    }
+    const maxPayment = selectedSchedule.isPaymentSchedule
+      ? Number(selectedSchedule.payment) - Number(selectedSchedule.paidAmount || 0)
+      : Number(selectedSchedule.remainingBalance || 0);
+      
+    console.log('Payment validation debug:', {
+      selectedSchedule: {
+        isPaymentSchedule: selectedSchedule.isPaymentSchedule,
+        payment: selectedSchedule.payment,
+        paidAmount: selectedSchedule.paidAmount,
+        remainingBalance: selectedSchedule.remainingBalance
+      },
+      maxPayment: maxPayment,
+      paymentAmount: Number(paymentAmount)
+    });
+    
+    if (Number(paymentAmount) > maxPayment) {
+      setNotification({ message: `Тўлов миқдори ${formatCurrency(maxPayment)} дан кам бўлиши керак`, type: 'error' });
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const transaction = selectedSchedule.transaction;
+      
+      if (selectedSchedule.isPaymentSchedule) {
+        // For payment schedules, update the schedule directly
+        const currentPaidAmount = selectedSchedule.paidAmount || 0;
+        const newPaidAmount = currentPaidAmount + Number(paymentAmount);
+        const isFullyPaid = newPaidAmount >= selectedSchedule.payment;
+
+        const paymentScheduleUpdate = {
+          paidAmount: newPaidAmount,
+          isPaid: isFullyPaid,
+          paidAt: new Date().toISOString(),
+          paidChannel: paymentChannel,
+          rating: paymentRating,
+          // Add the delta amount for proper tracking
+          amountDelta: Number(paymentAmount)
+        };
+
+        console.log('Payment update data:', {
+          scheduleId: selectedSchedule.id,
+          paymentChannel: paymentChannel,
+          paymentChannelType: typeof paymentChannel,
+          paymentAmount: paymentAmount,
+          updateData: paymentScheduleUpdate
+        });
+
+        console.log('Frontend: About to send API call with paidChannel:', paymentChannel);
+
+        try {
+          console.log('Updating payment schedule with:', {
+            ...paymentScheduleUpdate,
+            creditRepaymentAmount: Number(paymentAmount),
+            repaymentDate: new Date().toISOString(),
+            paidByUserId: Number(localStorage.getItem('userId')) || undefined
+          });
+          const response = await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
+            ...paymentScheduleUpdate,
+            creditRepaymentAmount: Number(paymentAmount),
+            repaymentDate: new Date().toISOString(),
+            paidByUserId: Number(localStorage.getItem('userId')) || undefined
+          });
+          console.log('Payment schedule updated successfully. Response:', response.data);
+          
+          // Store payment log for Dashboard.jsx to read
+          try {
+            const creditRepaymentData = {
+              transactionId: transaction.id,
+              scheduleId: selectedSchedule.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              month: selectedSchedule.month,
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+            };
+            
+            await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
+            console.log('Payment log saved to backend:', creditRepaymentData);
+          } catch (error) {
+            console.error('Failed to save payment log to backend:', error);
+          }
+        } catch (error) {
+          console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
+          console.log('Frontend: Fallback API call with paidChannel:', paymentChannel);
+          // Ensure paidChannel is included in fallback
+          const fallbackResponse = await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
+            ...paymentScheduleUpdate,
+            paidChannel: paymentChannel // Explicitly include paidChannel in fallback
+          });
+          console.log('Fallback payment schedule update response:', fallbackResponse.data);
+          
+          // Store payment log even for fallback case
+          try {
+            const creditRepaymentData = {
+              transactionId: transaction.id,
+              scheduleId: selectedSchedule.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              month: String(selectedSchedule.month), // Convert to string
+              monthNumber: Number(selectedSchedule.month), // Add numeric value
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+              branchId: transaction.fromBranchId || transaction.branchId || null,
+            };
+            
+            console.log('Sending fallback credit repayment data:', creditRepaymentData);
+            console.log('Month type:', typeof creditRepaymentData.month, 'Value:', creditRepaymentData.month);
+            
+            await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
+            console.log('Payment log saved to backend (fallback):', creditRepaymentData);
+          } catch (error) {
+            console.error('Failed to save payment log to backend (fallback):', error);
+          }
+        }
+      } else {
+        // For transactions without payment schedules (including INSTALLMENT)
+        if (selectedSchedule.transaction.paymentType === 'INSTALLMENT') {
+          // Store payment log for INSTALLMENT transactions
+          try {
+            const creditRepaymentData = {
+              transactionId: selectedSchedule.transaction.id,
+              scheduleId: selectedSchedule.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              month: String(selectedSchedule.month), // Convert to string
+              monthNumber: Number(selectedSchedule.month), // Add numeric value
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+              branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
+            };
+            
+            await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
+            console.log('INSTALLMENT payment saved to backend:', creditRepaymentData);
+          } catch (error) {
+            console.error('Failed to save INSTALLMENT payment to backend:', error);
+          }
+        } else {
+          // Daily installment (no schedule): save to backend
+          try {
+            const dailyRepaymentData = {
+              transactionId: selectedSchedule.transaction.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+              branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
+            };
+            
+            await axiosWithAuth.post(`${API_URL}/daily-repayments`, dailyRepaymentData);
+            console.log('Daily repayment saved to backend:', dailyRepaymentData);
+          } catch (error) {
+            console.error('Failed to save daily repayment to backend:', error);
+          }
+        }
+        
+        // For daily installments, we need to update the transaction's remaining balance
+        // This is the same logic as for regular transactions
+        const dailyCurrentRemaining = transaction.remainingBalance || transaction.finalTotal;
+        const dailyNewRemaining = Math.max(0, dailyCurrentRemaining - Number(paymentAmount));
+        
+        console.log('Daily installment payment debug:', {
+          transactionId: transaction.id,
+          currentRemaining: dailyCurrentRemaining,
+          paymentAmount: Number(paymentAmount),
+          newRemaining: dailyNewRemaining,
+          termUnit: transaction.termUnit
+        });
+        
+        // Kunlik bo'lib to'lash uchun transaction ning remaining balance ni yangilash
+        const dailyTransactionUpdate = {
+          remainingBalance: dailyNewRemaining,
+          creditRepaymentAmount: (transaction.creditRepaymentAmount || 0) + Number(paymentAmount),
+          lastRepaymentDate: new Date().toISOString()
+        };
+        
+        try {
+          // Only update if transaction is not completed
+          if (transaction.status !== 'COMPLETED' && transaction.status !== 'CANCELLED') {
+            await axiosWithAuth.put(`/transactions/${transaction.id}`, dailyTransactionUpdate);
+            console.log('Daily installment transaction updated successfully');
+          } else {
+            console.log(`Transaction ${transaction.id} is ${transaction.status}, skipping update. Daily repayment record created successfully.`);
+          }
+        } catch (error) {
+          console.log('Failed to update daily installment transaction (this is normal for completed transactions):', error.message);
+          console.log('Daily repayment record was created successfully, transaction update is optional.');
+        }
+      }
+
+      // Update transaction with credit repayment tracking (NOT amountPaid)
+      // amountPaid should only be used for upfront payments, not for credit repayments
+      
+      // Calculate the new remaining balance correctly
+      let currentRemaining = transaction.remainingBalance || transaction.finalTotal;
+      let newRemaining = Math.max(0, currentRemaining - Number(paymentAmount));
+      
+      // Kunlik bo'lib to'lash uchun maxsus hisoblash
+      if (transaction.termUnit === 'DAYS' && !selectedSchedule.isPaymentSchedule) {
+        // Kunlik bo'lib to'lash uchun transaction ning remaining balance ni yangilash
+        currentRemaining = transaction.remainingBalance || transaction.finalTotal;
+        newRemaining = Math.max(0, currentRemaining - Number(paymentAmount));
+        
+        console.log('Daily installment payment calculation:', {
+          transactionId: transaction.id,
+          termUnit: transaction.termUnit,
+          currentRemaining: currentRemaining,
+          paymentAmount: Number(paymentAmount),
+          newRemaining: newRemaining
+        });
+      }
+      
+      console.log('Payment calculation debug:', {
+        transactionId: transaction.id,
+        currentRemaining: currentRemaining,
+        paymentAmount: Number(paymentAmount),
+        newRemaining: newRemaining,
+        transaction: {
+          finalTotal: transaction.finalTotal,
+          remainingBalance: transaction.remainingBalance,
+          amountPaid: transaction.amountPaid,
+          downPayment: transaction.downPayment,
+          termUnit: transaction.termUnit
+        }
+      });
+      
+      const transactionUpdate = {
+        // DO NOT update amountPaid for credit repayments - it's only for upfront payments
+        // amountPaid: currentTransactionPaid + Number(paymentAmount), // REMOVED
+        remainingBalance: newRemaining,
+        // Track credit repayments separately
+        creditRepaymentAmount: (transaction.creditRepaymentAmount || 0) + Number(paymentAmount),
+        lastRepaymentDate: new Date().toISOString()
+      };
+
+      try {
+        console.log('Updating transaction with:', transactionUpdate);
+        const response = await axiosWithAuth.put(`/transactions/${transaction.id}`, transactionUpdate);
+        console.log('Transaction updated successfully. Response:', response.data);
+      } catch (error) {
+        console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
+        console.log('Fallback update with remainingBalance:', transactionUpdate.remainingBalance);
+        // Fallback: only update remaining balance
+        const fallbackResponse = await axiosWithAuth.put(`/transactions/${transaction.id}`, {
+          remainingBalance: transactionUpdate.remainingBalance
+        });
+        console.log('Fallback update response:', fallbackResponse.data);
+      }
+
+      console.log('Payment completed successfully. Reloading customer transactions...');
+      setNotification({ message: 'Тўлов муваффақиятли амалга оширилди', type: 'success' });
+      setShowPaymentModal(false);
+      setSelectedSchedule(null);
+      setPaymentAmount('');
+      setPaymentChannel('CASH');
+      setPaymentRating('YAXSHI');
+
+      if (selectedCustomer) {
+        console.log('Reloading transactions for customer:', selectedCustomer.id);
+        loadCustomerTransactions(selectedCustomer.id);
+      }
+    } catch (error) {
+      console.error('Тўловни амалга оширишда хатолик:', error);
+      setNotification({ message: 'Тўловни амалга оширишда хатолик', type: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getScheduleStatus = (s) => {
-    if (!s) return 'PENDING';
-    if (s.isPaid || (Number(s.unpaidAmount) || 0) === 0) return 'PAID';
-    if ((Number(s.paidAmount) || 0) > 0 && (Number(s.unpaidAmount) || 0) > 0 && s.isOverdue) return 'OVERDUE';
-    if (s.isOverdue) return 'OVERDUE';
-    if ((Number(s.paidAmount) || 0) > 0) return 'PENDING';
-    return 'PENDING';
+  const formatDate = (date) => {
+    if (!date) return "Номаълум";
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) return "Номаълум";
+    return parsedDate.toLocaleDateString('uz-UZ') + ' ' + parsedDate.toLocaleTimeString('uz-UZ', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
   };
 
-  const getScheduleBadge = (s) => getPaymentStatusBadge(getScheduleStatus(s));
+  const getPaymentStatus = (schedule) => {
+    if (schedule.isPaid) return { text: 'Тўланган', color: 'text-green-600' };
+    if (schedule.paidAmount > 0) return { text: 'Қисман тўланган', color: 'text-yellow-600' };
+    return { text: 'Тўланмаган', color: 'text-red-600' };
+  };
+
+  // Only allow paying month N when all previous months are fully paid
+  const isSchedulePayable = (schedule, allSchedules = [], termUnit) => {
+    if (termUnit === 'DAYS') return true; // only one entry
+    const monthNum = Number(schedule?.month || 0);
+    if (!monthNum || !Array.isArray(allSchedules)) return true;
+    for (const sc of allSchedules) {
+      const m = Number(sc?.month || 0);
+      if (m > 0 && m < monthNum) {
+        const remaining = Math.max(0, Number(sc?.payment || 0) - Number(sc?.paidAmount || 0));
+        if (remaining > 0) return false;
+      }
+    }
+    return true;
+  };
 
   return (
-<div className="p-6 bg-gray-50 min-h-screen">
-<div className="p-6 bg-gray-50 min-h-screen">
-        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
-          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900">Кредит сотишлар</h1>
-              <p className="text-gray-500 mt-1">Кредит бўлиб сотилган товарлар</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={fetchCreditTransactions}
-                disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                Янгилаш
-              </button>
-            </div>
-          </div>
+    <div className="p-6 bg-gray-50 min-h-screen">
+      <h1 className="text-3xl font-bold text-gray-800 mb-6">Кредит Мижозлари ва Тўловлари</h1>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
-            <div className="bg-blue-50 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <CreditCard className="text-blue-600" size={24} />
-                <div>
-                  <p className="text-sm text-blue-600 font-medium">Жами кредит</p>
-                  <p className="text-2xl font-bold text-blue-900">{formatAmount(summary.totalCredit)}</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-green-50 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
-                  <span className="text-green-600 text-sm font-bold">{summary.totalTransactions}</span>
-                </div>
-                <div>
-                  <p className="text-sm text-green-600 font-medium">Кредит транзакциялар</p>
-                  <p className="text-2xl font-bold text-green-900">{summary.totalTransactions}</p>
-                </div>
-              </div>
-            </div>
-          </div>
+      {notification && (
+        <div className={`${notification.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          } mb-4 p-4 rounded-lg`}>
+          {notification.message}
         </div>
+      )}
 
-        {/* Search and Filters */}
-        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="Мижоз исми, телефони ёки транзакция ID сини киритинг..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold mb-4">Кредит Мижозлари</h2>
+
+            <div className="mb-4">
+              <input
+                type="text"
+                placeholder="Кредит мижозини қидириш..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
-          </div>
-        </div>
 
-        {/* Transactions Table */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Мижоз
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Қолган сумма
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Навбатдаги ой
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Навбатдаги тўлов
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ҳолат
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Сана
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Амаллар
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan="8" className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Loader2 className="animate-spin" size={20} />
-                        <span>Юкланмоқда...</span>
+
+            {loading ? (
+              <div className="text-center py-4">Юкланмоқда...</div>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {filteredCustomers.length > 0 ? (
+                  filteredCustomers.map((customer) => (
+                    <div
+                      key={customer.id}
+                      onClick={() => loadCustomerTransactions(customer.id)}
+                      className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedCustomer?.id === customer.id
+                          ? 'bg-blue-100 border-blue-300 border'
+                          : 'bg-gray-50 hover:bg-gray-100'
+                        }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium">{customer.fullName}</div>
+                          <div className="text-sm text-gray-600">{customer.phone}</div>
+                          {customer.email && (
+                            <div className="text-sm text-gray-500">{customer.email}</div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          {(() => {
+                            const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                            if (creditTransactions.length === 0) return null;
+
+                            const totalCredit = creditTransactions.reduce((sum, t) => sum + Number(t?.finalTotal || 0), 0);
+                            const totalRemaining = creditTransactions.reduce((sum, t) => sum + calculateTransactionRemaining(t), 0);
+                            const totalPaid = Math.max(0, totalCredit - totalRemaining);
+
+                            if (totalRemaining <= 0) return null;
+
+                            if (totalPaid > 0) {
+                              return (
+                                <div className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
+                                  {formatCurrency(totalPaid)} / {formatCurrency(totalCredit)}
+                                </div>
+                              );
+                            }
+                            return (
+                              <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                                {formatCurrency(totalCredit)}
+                              </div>
+                            );
+                          })()}
+
+                          {/* Rating indicator */}
+                          {(() => {
+                            const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                            if (creditTransactions.length === 0) return null;
+
+                            let totalMonths = 0;
+                            let goodMonths = 0;
+                            let badMonths = 0;
+
+                            creditTransactions.forEach(transaction => {
+                              if (transaction.paymentSchedules) {
+                                transaction.paymentSchedules.forEach(schedule => {
+                                  totalMonths++;
+                                  if (schedule.rating === 'YAXSHI') {
+                                    goodMonths++;
+                                  } else if (schedule.rating === 'YOMON') {
+                                    badMonths++;
+                                  }
+                                });
+                              }
+                            });
+
+                            if (totalMonths > 0) {
+                              if (badMonths > goodMonths) {
+                                return (
+                                  <div className="mt-1 bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+                                    Ёмон ({badMonths}/{totalMonths})
+                                  </div>
+                                );
+                              } else if (goodMonths > badMonths) {
+                                return (
+                                  <div className="mt-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                                    Яхши ({goodMonths}/{totalMonths})
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className="mt-1 bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">
+                                    Нейтрал ({goodMonths}/{totalMonths})
+                                  </div>
+                                );
+                              }
+                            }
+                            return null;
+                          })()}
+
+                          {/* Down Payment Summary */}
+                          {(() => {
+                            const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                            if (creditTransactions.length === 0) return null;
+
+                            const totalDownPayment = creditTransactions.reduce((sum, t) => sum + Number(t?.downPayment || 0), 0);
+                            if (totalDownPayment > 0) {
+                              return (
+                                <div className="mt-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                                  💰 Олдиндан: {formatCurrency(totalDownPayment)}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                       </div>
-                    </td>
-                  </tr>
-                ) : filteredTransactions.length === 0 ? (
-                  <tr>
-                    <td colSpan="8" className="px-6 py-4 text-center text-gray-500">
-                      Кредит транзакциялар топилмади
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTransactions.map((transaction) => (
-                    <tr key={transaction.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        #{transaction.id}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {transaction.customer?.fullName || `${transaction.customer?.firstName || ''} ${transaction.customer?.lastName || ''}`.trim() || 'N/A'}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {transaction.customer?.phone || 'Телефон йўқ'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                        {formatAmount(transaction.outstanding ?? transaction.remainingBalance ?? 0)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transaction.nextSchedule?.month || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatAmount(transaction.nextSchedule?.unpaidAmount || transaction.nextSchedule?.payment || 0)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          (Number(transaction.outstanding || 0) <= 0)
-                            ? 'bg-green-100 text-green-800'
-                            : (Number(transaction.maxDaysOverdue || 0) > 3)
-                              ? 'bg-red-200 text-red-900'
-                              : (Number(transaction.maxDaysOverdue || 0) > 0)
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {(Number(transaction.outstanding || 0) <= 0)
-                            ? "To'langan"
-                            : (Number(transaction.maxDaysOverdue || 0) > 0)
-                              ? "Muddati o'tgan"
-                              : 'Kutilmoqda'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatDate(transaction.lastRepaymentDate || transaction.createdAt)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button
-                          onClick={() => openTransactionModal(transaction)}
-                          className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
-                        >
-                          <Eye size={16} />
-                          Кўриш
-                        </button>
-                      </td>
-                    </tr>
+                    </div>
                   ))
+                ) : (
+                  <div className="text-center text-gray-500 py-4">
+                    {searchTerm ? 'Қидирув натижаси топилмади' : 'Кредит мижозлари мавжуд эмас'}
+                  </div>
                 )}
-              </tbody>
-            </table>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Transaction Details Modal */}
-        {showTransactionModal && selectedTransaction && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Транзакция #{selectedTransaction.id}
-                  </h3>
-                  <button
-                    onClick={closeTransactionModal}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X size={24} />
-                  </button>
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-xl font-semibold mb-4">
+              {selectedCustomer ? `${selectedCustomer.fullName} - Маълумотлар` : 'Маълумотлар'}
+            </h2>
+
+            {selectedCustomer ? (
+              <div className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+                <div>
+                  <div className="space-y-3">
+                    {(() => {
+                      const uniqueTxMap = new Map(paymentSchedules.map(ps => [ps.transaction.id, ps.transaction]));
+                      let txs = Array.from(uniqueTxMap.values());
+                      if (transactionTypeFilter !== 'ALL') {
+                        txs = txs.filter(t => t.paymentType === transactionTypeFilter);
+                      }
+                      if (transactionSearchTerm) {
+                        const s = transactionSearchTerm.toLowerCase();
+                        txs = txs.filter(t => {
+                          const names = (t.items || []).map(it => it.product?.name || '').join(' ').toLowerCase();
+                          const idStr = String(t.id || '');
+                          return names.includes(s) || idStr.includes(s);
+                        });
+                      }
+                      if (txs.length === 0) {
+                        return (
+                          <div className="text-center text-gray-500 py-8">
+                            {paymentSchedules.length === 0
+                              ? 'Бу мижоз ҳали ҳеч қандай маҳсулот сотиб олмаган'
+                              : `"${transactionTypeFilter === 'ALL' ? 'Ҳаммаси' : transactionTypeFilter === 'CASH' ? 'Нақд пул' : transactionTypeFilter === 'CARD' ? 'Карта' : transactionTypeFilter === 'CREDIT' ? 'Кредит' : 'Бўлиб тўлаш'}" туридаги тўловлар топилмади`}
+                            {transactionSearchTerm && (
+                              <div className="mt-2 text-sm text-gray-500">Қидирув: "{transactionSearchTerm}"</div>
+                            )}
+                          </div>
+                        );
+                      }
+                      const typeLabel = (pt) => pt === 'CASH' ? 'Нақд' : pt === 'CARD' ? 'Карта' : pt === 'CREDIT' ? 'Кредит' : pt === 'INSTALLMENT' ? 'Бўлиб тўлаш' : pt;
+                      return txs.map((t) => {
+                        const isOpen = !!expandedTransactions[t.id];
+                        const toggle = () => setExpandedTransactions(prev => ({ ...prev, [t.id]: !prev[t.id] }));
+                        const productNames = (t.items || []).map(it => it.product?.name || it.name || '').join(', ');
+                        const months = (t.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || (Array.isArray(t.paymentSchedules) ? t.paymentSchedules.length : 0);
+                        const percent = (t.items || []).map(it => (typeof it.creditPercent === 'number' ? Number(it.creditPercent) : null)).find(v => v != null);
+                        // Also try to get interest rate from transaction level
+                        const transactionInterestRate = t.interestRate || (percent ? percent * 100 : null);
+
+
+                        const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
+                        const totalAmount = Number(t.finalTotal || 0);
+                        const paidAmountCompact = calculateTransactionPaid(t);
+                        const remainingCompact = calculateTransactionRemaining(t);
+                        return (
+                          <div key={t.id} className="border rounded-lg bg-white">
+                            <button onClick={toggle} className="w-full text-left p-4 flex items-start justify-between">
+                              <div>
+                                <div className="font-medium text-lg">{productNames || `#${t.id}`}</div>
+                                <div className="text-sm text-gray-600">
+                                  {typeLabel(t.paymentType)} {
+                                    t.termUnit === 'DAYS' 
+                                      ? (t.days ? `— ${t.days} кун (1 та тўлов)` : '') 
+                                      : (months ? `— ${months} ой` : '')
+                                  }
+                                  {percent != null ? `, ${(percent * 100).toFixed(0)}%` : ''}
+                                  {paidAmountCompact > 0 && remainingCompact > 0 && (
+                                    <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 align-middle">Қисман тўланған</span>
+                                  )}
+                                </div>
+                                {t.termUnit === 'DAYS' && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Асосий сумма: {formatCurrency(t.total || totalAmount)} | Тўланған: {formatCurrency(paidAmountCompact)} | Қолган: {formatCurrency(calculateTransactionRemaining(t))} | {t.days || 0} кун ичида тўлаш керак
+                                  </div>
+                                )}
+                                {t.downPayment && t.downPayment > 0 && (
+                                  <div className="text-xs text-blue-600 mt-1">
+                                    💰 Олдиндан олинған: {formatCurrency(t.downPayment)}
+                                  </div>
+                                )}
+                                <div className="text-xs text-gray-500">Сана: {formatDate(t.createdAt)}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold">{formatCurrency(calculateTransactionPaid(t) + calculateTransactionRemaining(t))}</div>
+                                <div className="text-xs text-gray-600">Тўланған: {formatCurrency(calculateTransactionPaid(t))}</div>
+                                <div className="text-xs text-gray-600">Қолган: {formatCurrency(calculateTransactionRemaining(t))}</div>
+
+
+                                {calculateTransactionRemaining(t) <= 0 && (
+                                  <div className="mt-1 inline-block bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Тўлиқ тўланған</div>
+                                )}
+                              </div>
+                            </button>
+                            {isOpen && (
+                              <div className="px-4 pb-4">
+                                {(t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') && schedules.length > 0 ? (
+                                  <div className="mb-3">
+                                    <div className="text-sm font-medium mb-2">
+                                      {t.termUnit === 'DAYS' ? 'Кунлик тўлов' : 'Тўлов жадвали'}
+                                    </div>
+                                    <div className="text-xs text-gray-600 mb-2">
+                                      {t.termUnit === 'DAYS' 
+                                        ? `Кунлар: ${t.days || 0} | Тўланған: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/1`
+                                        : `Тўланған ойлар: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/${schedules.length}`
+                                      }
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-sm border">
+                                        <thead className="bg-gray-50">
+                                          <tr>
+                                            <th className="px-2 py-1 text-left">{t.termUnit === 'DAYS' ? 'Кун' : 'Ой'}</th>
+                                            <th className="px-2 py-1 text-left">Тўлов</th>
+                                            <th className="px-2 py-1 text-left">Тўланған</th>
+                                            <th className="px-2 py-1 text-left">Қолган</th>
+                                            <th className="px-2 py-1 text-left">Ҳолат</th>
+                                            <th className="px-2 py-1 text-left">Тўланған куни</th>
+                                            <th className="px-2 py-1 text-left">Канал</th>
+                                            <th className="px-2 py-1 text-left">Қабул қилған</th>
+                                            <th className="px-2 py-1 text-left">Баҳо</th>
+                                            <th className="px-2 py-1 text-left">Тўлов вақти</th>
+                                            <th className="px-2 py-1 text-left">Амал</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                          {schedules.sort((a, b) => (a.month || 0) - (b.month || 0)).map(sc => {
+                                            const rem = Number(sc.payment || 0) - Number(sc.paidAmount || 0);
+                                            const st = getPaymentStatus(sc);
+                                            const payable = isSchedulePayable(sc, schedules, t.termUnit);
+                                            return (
+                                              <tr key={sc.id} className="align-top">
+                                                <td className="px-2 py-1">
+                                                  {t.termUnit === 'DAYS' ? `${sc.daysCount || t.days || 0} кун` : sc.month}
+                                                </td>
+                                                <td className="px-2 py-1">{formatCurrency(sc.payment)}</td>
+                                                <td className="px-2 py-1">{formatCurrency(sc.paidAmount)}</td>
+                                                <td className="px-2 py-1">{formatCurrency((Number(sc.payment || 0) - Number(sc.paidAmount || 0)))}</td>
+                                                <td className={`px-2 py-1 text-xs ${st.color}`}>{st.text}</td>
+                                                <td className="px-2 py-1">{sc.paidAt ? formatDate(sc.paidAt) : '-'}</td>
+                                                <td className="px-2 py-1">{sc.paidChannel === 'CARD' ? 'Карта' : (sc.paidChannel === 'CASH' ? 'Нақд' : '-')}</td>
+                                                <td className="px-2 py-1">{sc.paidBy ? `${sc.paidBy.firstName || ''} ${sc.paidBy.lastName || ''}`.trim() : '-'}</td>
+                                                <td className="px-2 py-1">
+                                                  {sc.rating ? (
+                                                    <span className={`text-xs px-2 py-1 rounded ${sc.rating === 'YAXSHI'
+                                                        ? 'bg-green-100 text-green-800'
+                                                        : 'bg-red-100 text-red-800'
+                                                      }`}>
+                                                      {sc.rating === 'YAXSHI' ? 'Яхши' : 'Ёмон'}
+                                                    </span>
+                                                  ) : (
+                                                    <span className="text-xs text-gray-400">—</span>
+                                                  )}
+                                                </td>
+                                                <td className="px-2 py-1">
+                                                  {(() => {
+                                                    if (t.termUnit === 'DAYS') {
+                                                      // Kunlik bo'lib to'lash uchun kunlar soni keyin to'lov muddati
+                                                      const dueDate = new Date(t.createdAt || Date.now());
+                                                      if (!t.createdAt) {
+                                                        console.warn(`Missing createdAt for transaction ${t.id}, using current date`);
+                                                      }
+                                                      dueDate.setDate(dueDate.getDate() + (sc.daysCount || t.days || 0));
+                                                      const now = new Date();
+                                                      const isOverdue = dueDate < now && rem > 0;
+                                                      return (
+                                                        <span className={`text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}`}>
+                                                          {formatDate(dueDate)}
+                                                          {isOverdue && <span className="ml-1">⚠️</span>}
+                                                        </span>
+                                                      );
+                                                    } else {
+                                                      // Oylik bo'lib to'lash uchun oylar soni keyin to'lov muddati
+                                                      const dueDate = new Date(t.createdAt || Date.now());
+                                                      if (!t.createdAt) {
+                                                        console.warn(`Missing createdAt for transaction ${t.id}, using current date`);
+                                                      }
+                                                      dueDate.setMonth(dueDate.getMonth() + sc.month);
+                                                      const now = new Date();
+                                                      const isOverdue = dueDate < now && rem > 0;
+                                                      return (
+                                                        <span className={`text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}`}>
+                                                          {formatDate(dueDate)}
+                                                          {isOverdue && <span className="ml-1">⚠️</span>}
+                                                        </span>
+                                                      );
+                                                    }
+                                                  })()}
+                                                </td>
+                                                <td className="px-2 py-1">
+                                                  {rem > 0 ? (
+                                                    <button
+                                                      onClick={() => { if (!payable) return; setSelectedSchedule({ ...sc, transaction: t, isPaymentSchedule: true }); setPaymentAmount(rem.toString()); setShowPaymentModal(true); }}
+                                                      disabled={!payable}
+                                                      className={`px-3 py-1 rounded text-xs ${payable ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                                                    >
+                                                      Тўлаш
+                                                    </button>
+                                                  ) : (
+                                                    <span className="text-xs text-gray-400">—</span>
+                                                  )}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                ) : null}
+                                <div>
+                                  <div className="text-sm font-medium mb-2">Маҳсулотлар</div>
+                                  <div className="space-y-2">
+                                    {(t.items || []).map((it, i) => (
+                                      <div key={i} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                        <div className="font-medium text-sm">{it.product?.name || it.name}</div>
+                                        <div className="text-xs text-gray-600">{it.quantity} дона × {formatCurrency(it.price)}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
                 </div>
+              </div>
+            ) : (
+              <div className="text-center text-gray-500 py-8">
+                Мижоз танланг
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Мижоз маълумотлари</h4>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p><span className="font-medium">Ф.И.Ш:</span> {selectedTransaction.customer?.fullName || `${selectedTransaction.customer?.firstName || ''} ${selectedTransaction.customer?.lastName || ''}`.trim() || 'N/A'}</p>
-                      <p><span className="font-medium">Телефон:</span> {selectedTransaction.customer?.phone || 'N/A'}</p>
-                      <p><span className="font-medium">Паспорт:</span> {selectedTransaction.customer?.passportSeries || '-'}</p>
-                      <p><span className="font-medium">ЖШШИР:</span> {selectedTransaction.customer?.jshshir || '-'}</p>
-                    </div>
-                  </div>
+      {showPaymentModal && selectedSchedule && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Кредит Тўлови Қилиш</h3>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-gray-600 mb-2">
+                  <strong>{selectedSchedule.transaction.customer.fullName}</strong> учун
+                </p>
+                <p className="text-gray-600 mb-2">
+                  <strong>Маҳсулот:</strong> {selectedSchedule.transaction.items?.map(item => item.product?.name).join(', ')}
+                </p>
+                <p className="text-gray-600 mb-2">
+                  <strong>Тўлов тури:</strong> {
+                    selectedSchedule.transaction.paymentType === 'CREDIT' ? 'Кредит' :
+                      selectedSchedule.transaction.paymentType === 'INSTALLMENT' ? 'Бўлиб тўлаш' :
+                        selectedSchedule.transaction.paymentType === 'CASH' ? 'Нақд пул' : 'Карта'
+                  }
+                </p>
+                {selectedSchedule.isPaymentSchedule ? (
+                  <>
+                    <p className="text-gray-600 mb-2">
+                      <strong>{selectedSchedule.month}-ой тўлови:</strong> {formatCurrency(selectedSchedule.payment)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Тўланған:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Қолган:</strong> {formatCurrency(selectedSchedule.payment - selectedSchedule.paidAmount)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-lg font-bold text-gray-900">
+                      <strong>Умумий сумма:</strong> {formatCurrency(selectedSchedule.transaction.total || selectedSchedule.payment)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Тўланған:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Қолган:</strong> {formatCurrency(selectedSchedule.remainingBalance)}
+                    </p>
+                    {selectedSchedule.transaction.termUnit === 'DAYS' && (
+                      <p className="text-gray-600 mb-2">
+                        <strong>Тўлов тури:</strong> {selectedSchedule.transaction.days} кун ичида 1 та тўлов
+                      </p>
+                    )}
+                  </>
+                )}
+                {selectedSchedule.transaction.downPayment && selectedSchedule.transaction.downPayment > 0 && (
+                  <p className="text-gray-600 mb-2">
+                    <strong>Бошланғич тўлов:</strong> {formatCurrency(selectedSchedule.transaction.downPayment)}
+                  </p>
+                )}
+              </div>
 
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Товарлар</h4>
-                    <div className="space-y-2">
-                      {(selectedTransaction.items || selectedTransaction.products || []).map((product, index) => (
-                        <div key={index} className="bg-gray-50 rounded-lg p-3">
-                          <p><span className="font-medium">Номи:</span> {product.product?.name || product.productName || product.name}</p>
-                          <p><span className="font-medium">Миқдори:</span> {product.quantity}</p>
-                          <p><span className="font-medium">Нархи:</span> {formatAmount(product.price)}</p>
-                          <p><span className="font-medium">Жами:</span> {formatAmount((Number(product.price)||0) * (Number(product.quantity)||0))}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Тўлов маълумотлари</h4>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p><span className="font-medium">Жами сумма (фоиз билан):</span> {formatAmount(selectedTransaction.totalPayable || selectedTransaction.finalTotal || selectedTransaction.totalAmount || 0)}</p>
-                      <p><span className="font-medium">Тўланган:</span> {formatAmount(selectedTransaction.totalPaid || selectedTransaction.amountPaid || 0)}</p>
-                      <p><span className="font-medium">Қолган сумма:</span> {formatAmount(selectedTransaction.outstanding || selectedTransaction.remainingBalance || 0)}</p>
-                      <p><span className="font-medium">Навбатдаги ой:</span> {selectedTransaction.nextSchedule?.month || '-'}</p>
-                      <p><span className="font-medium">Навбатдаги тўлов:</span> {formatAmount(selectedTransaction.nextSchedule?.unpaidAmount || selectedTransaction.nextSchedule?.payment || 0)}</p>
-                      {selectedTransaction.nextSchedule?.isOverdue && (
-                        <p className="text-red-600"><span className="font-medium">Кечиккан кун:</span> {selectedTransaction.nextSchedule?.daysOverdue}</p>
-                      )}
-                      <p><span className="font-medium">Олинган ойлар:</span> {selectedTransaction.monthsTaken || '-'}</p>
-                      <p><span className="font-medium">Қолган ойлар:</span> {selectedTransaction.monthsRemaining || '-'}</p>
-                      <p><span className="font-medium">Сўнгги тўлов санаси:</span> {formatDate(selectedTransaction.lastRepaymentDate || selectedTransaction.createdAt)}</p>
-                      <p><span className="font-medium">Сўнгги тўловни қабул қилган:</span> {selectedTransaction.lastPaidByName || (selectedTransaction.lastPaidBy ? `${selectedTransaction.lastPaidBy.firstName || ''} ${selectedTransaction.lastPaidBy.lastName || ''}`.trim() : '-')}</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-2">Тўлов жадвали</h4>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ой</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Муддати</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тўлов</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тўланган</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Қолган</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ҳолат</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Тўланган куни</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Қабул қилган</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {(selectedTransaction.schedules || selectedTransaction.paymentSchedules || []).map((s, idx) => (
-                            <tr key={idx}>
-                              <td className="px-4 py-2 text-sm text-gray-900">{s.month}</td>
-                              <td className="px-4 py-2 text-sm text-gray-900">{s.dueDate ? formatDate(s.dueDate) : '-'}</td>
-                              <td className="px-4 py-2 text-sm text-gray-900">{formatAmount(s.payment)}</td>
-                              <td className="px-4 py-2 text-sm text-gray-900">{formatAmount(s.paidAmount || 0)}</td>
-                              <td className="px-4 py-2 text-sm text-gray-900">{formatAmount(s.unpaidAmount || Math.max(0, (s.payment || 0) - (s.paidAmount || 0)))}</td>
-                              <td className="px-4 py-2 whitespace-nowrap">
-                                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getScheduleBadge(s)}`}>
-                                  {getPaymentStatusText(getScheduleStatus(s))}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2 text-sm text-gray-900">{(s.isPaid || (Number(s.paidAmount || 0) > 0)) ? formatDate(s.paidAt || s.paymentDate || s.paidDate || s.datePaid || s.updatedAt || s.createdAt) : '-'}</td>
-                              <td className="px-4 py-2 text-sm text-gray-900">{s.paidBy ? `${s.paidBy.firstName || ''} ${s.paidBy.lastName || ''}`.trim() : '-'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Тўлов канали</label>
+                <div className="flex items-center gap-6 text-sm">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="paymentChannel" value="CASH" checked={paymentChannel === 'CASH'} onChange={() => setPaymentChannel('CASH')} />
+                    <span>Нақд</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="paymentChannel" value="CARD" checked={paymentChannel === 'CARD'} onChange={() => setPaymentChannel('CARD')} />
+                    <span>Карта</span>
+                  </label>
                 </div>
+              </div>
 
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={closeTransactionModal}
-                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                  >
-                    Ёпиш
-                  </button>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ой баҳоси</label>
+                <div className="flex items-center gap-6 text-sm">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="paymentRating" value="YAXSHI" checked={paymentRating === 'YAXSHI'} onChange={() => setPaymentRating('YAXSHI')} />
+                    <span className="text-green-600 font-medium">Яхши</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="paymentRating" value="YOMON" checked={paymentRating === 'YOMON'} onChange={() => setPaymentRating('YOMON')} />
+                    <span className="text-red-600 font-medium">Ёмон</span>
+                  </label>
                 </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Тўлов Миқдори</label>
+                <input 
+                  type="number" 
+                  value={paymentAmount} 
+                  onChange={(e) => setPaymentAmount(e.target.value)} 
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  min="0.01" 
+                  max={(() => {
+                    const max = selectedSchedule.isPaymentSchedule 
+                      ? (selectedSchedule.payment - selectedSchedule.paidAmount) 
+                      : selectedSchedule.remainingBalance;
+                    console.log('Payment input max calculation:', {
+                      isPaymentSchedule: selectedSchedule.isPaymentSchedule,
+                      payment: selectedSchedule.payment,
+                      paidAmount: selectedSchedule.paidAmount,
+                      remainingBalance: selectedSchedule.remainingBalance,
+                      max: max
+                    });
+                    return max;
+                  })()} 
+                  step="0" 
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Максимал тўлов: {formatCurrency(selectedSchedule.isPaymentSchedule 
+                    ? (selectedSchedule.payment - selectedSchedule.paidAmount) 
+                    : selectedSchedule.remainingBalance)}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3">
+                <button onClick={() => { setShowPaymentModal(false); setSelectedSchedule(null); setPaymentAmount(''); setPaymentChannel('CASH'); }} className="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Бекор қилиш</button>
+                <button onClick={handlePayment} disabled={loading || !paymentAmount || Number(paymentAmount) <= 0} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50">{loading ? 'Жараёнда...' : 'Кредит Тўлови Қилиш'}</button>
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default Debts;
+export default Мижозлар;

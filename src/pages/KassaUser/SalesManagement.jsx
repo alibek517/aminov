@@ -75,26 +75,57 @@ const SalesManagement = () => {
       return sum + Number(item.quantity) * Number(displayPrice);
     }, 0);
 
-    const paid = Number(customerPaid) || 0;                    // Mijoz to'lagan pul
-    const remainingPrincipal = Math.max(0, baseTotal - paid);  // Asosiy puldan to'lagan pulni ayirish
-    const interestAmount = remainingPrincipal * rate;          // Qolgan pulga foiz qo'yish
-    const remaining = remainingPrincipal + interestAmount;     // Qolgan + foiz
-    const totalWithInterest = paid + remaining;
-    const change = paid > totalWithInterest ? paid - totalWithInterest : 0;
-    const monthlyPayment = termCount > 0 && remaining > 0 ? remaining / termCount : 0;
-    const schedule = [];
-
-    let remainingBalance = remaining;
-    for (let i = 1; i <= termCount; i++) {
-      schedule.push({
-        month: i,
-        payment: monthlyPayment,
-        remainingBalance: Math.max(0, remainingBalance - monthlyPayment),
-      });
-      remainingBalance -= monthlyPayment;
+    const upfrontPayment = Number(customerPaid) || 0;                    // Mijoz oldindan to'lagan pul
+    const remainingPrincipal = Math.max(0, baseTotal - upfrontPayment);  // Asosiy puldan oldindan to'lagan pulni ayirish
+    const interestAmount = remainingPrincipal * rate;                    // Qolgan pulga foiz qo'yish
+    const remainingWithInterest = remainingPrincipal + interestAmount;   // Qolgan + foiz
+    const totalWithInterest = upfrontPayment + remainingWithInterest;    // Oldindan to'lov + qolgan (foiz bilan)
+    const change = upfrontPayment > baseTotal ? upfrontPayment - baseTotal : 0; // Qaytim (agar oldindan to'lov asosiy summani oshirsa)
+    
+    let periodicPayment, schedule;
+    
+    if (isDays) {
+      // Kunlik bo'lib to'lash uchun: mijoz kunlar ichida qolgan summani to'lab ketishi kerak
+      // Faqat 1 ta to'lov yaratiladi, lekin mijoz bu kunlar ichida to'lab ketishi kerak
+      periodicPayment = remainingWithInterest; // To'liq qolgan summa
+      schedule = [{
+        month: 1,
+        payment: remainingWithInterest,
+        remainingBalance: 0,
+        isDailyInstallment: true,
+        daysCount: termCount,
+        dueDate: new Date(Date.now() + termCount * 24 * 60 * 60 * 1000) // Kunlar soni keyin to'lov muddati
+      }];
+    } else {
+      // Oylik bo'lib to'lash uchun: har oy uchun alohida to'lov
+      periodicPayment = termCount > 0 && remainingWithInterest > 0 ? remainingWithInterest / termCount : 0;
+      schedule = [];
+      let remainingBalance = remainingWithInterest;
+      for (let i = 1; i <= termCount; i++) {
+        // For the last month, use the exact remaining balance to avoid floating point errors
+        const currentPayment = i === termCount ? remainingBalance : periodicPayment;
+        schedule.push({
+          month: i,
+          payment: currentPayment,
+          remainingBalance: Math.max(0, remainingBalance - currentPayment),
+        });
+        remainingBalance -= currentPayment;
+      }
     }
 
-    return { totalWithInterest, monthlyPayment, schedule, change, remaining };
+    return { 
+      totalWithInterest, 
+      monthlyPayment: periodicPayment, // Oylik yoki kunlik to'lov
+      schedule, 
+      change, 
+      remaining: remainingWithInterest,
+      baseTotal,
+      upfrontPayment,
+      remainingPrincipal,
+      interestAmount,
+      isDays,
+      termCount
+    };
   };
 
   const generatePDF = () => {
@@ -143,7 +174,7 @@ const SalesManagement = () => {
   Mijoz to'lagan: ${formatAmount(Number(downPayment))}\\\\
   Qaytim: ${formatAmount(change)}\\\\
   Qolgan summa: ${formatAmount(remaining)}\\\\
-  Oylik To'lov: ${formatAmount(monthlyPayment)}\\\\
+  ${isDays ? 'Kunlik to\'lov (1 ta to\'lov):' : 'Oylik To\'lov:'} ${formatAmount(monthlyPayment)}\\\\
   Mijoz: ${escapeLatex(firstName)} ${escapeLatex(lastName)}, Telefon: ${escapeLatex(phone)}\\\\
   ${passportSeries ? `Passport: ${escapeLatex(passportSeries)}\\\\` : ''}\\\\
   ${jshshir ? `JSHSHIR: ${escapeLatex(jshshir)}\\\\` : ''}\\\\
@@ -511,10 +542,14 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       const m = isDays ? Number(daysCount) : Number(months);
       const rate = Number(interestRate) / 100 || 0;
-      const finalTotal = baseTotal * (1 + rate);
-      const paid = Number(customerPaid) || 0;
-      const remaining = paid < finalTotal ? finalTotal - paid : 0;
-      const monthlyPayment = m > 0 && remaining > 0 ? remaining / m : 0;
+      
+      // To'g'ri hisoblash: oldindan to'lovni ayirib, keyin foiz qo'shish
+      const upfrontPayment = Number(customerPaid) || 0;
+      const remainingPrincipal = Math.max(0, baseTotal - upfrontPayment);
+      const interestAmount = remainingPrincipal * rate;
+      const remainingWithInterest = remainingPrincipal + interestAmount;
+      const finalTotal = upfrontPayment + remainingWithInterest;
+      const monthlyPayment = m > 0 && remainingWithInterest > 0 ? remainingWithInterest / m : 0;
 
       console.log('Setting receiptData with upfrontPaymentType:', upfrontPaymentType);
 
@@ -542,7 +577,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
           ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT'
             ? {
               creditMonth: m,
-              creditPercent: rate,
+              creditPercent: rate, // This is already a decimal (0.20 for 20%)
               monthlyPayment: Number(monthlyPayment),
             }
             : {}),
@@ -554,8 +589,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         days: isDays ? m : 0,
         termUnit: isDays ? 'DAYS' : 'MONTHS',
         interestRate: Number(interestRate),
-        paid: Number(paid),
-        remaining: Number(remaining),
+        paid: Number(upfrontPayment),
+        remaining: Number(remainingWithInterest),
         monthlyPayment: Number(monthlyPayment),
         totalInSom: Number(baseTotal),
         finalTotalInSom: Number(finalTotal),
@@ -1134,21 +1169,35 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
                       })()}</div>
                     </div>
-                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && !(paymentType === 'INSTALLMENT' && termUnit === 'DAYS') && (
+                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
                       <>
                         <div className="bg-white p-3 rounded border">
-                          <div className="text-gray-600 text-xs mb-1">Фоиз билан:</div>
-                          <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(totalWithInterest)} сом</div>
-                        </div>
-                        <div className="bg-white p-3 rounded border">
-                          <div className="text-gray-600 text-xs mb-1">Тўланган:</div>
+                          <div className="text-gray-600 text-xs mb-1">Олдиндан тўлов:</div>
                           <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0))} сом</div>
                         </div>
                         <div className="bg-white p-3 rounded border">
-                          <div className="text-gray-600 text-xs mb-1">Қолган:</div>
+                          <div className="text-gray-600 text-xs mb-1">Қолган (фоиз билан):</div>
                           <div className="font-medium text-red-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(remaining)} сом</div>
                         </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Умумий (фоиз билан):</div>
+                          <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(totalWithInterest)} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">
+                            {calculatePaymentSchedule().isDays ? 'Кунлик тўлов (1 та тўлов):' : 'Ойлик тўлов:'}
+                          </div>
+                          <div className="font-medium text-blue-600 break-words text-sm">
+                            {new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().monthlyPayment)} сом
+                          </div>
+                          {calculatePaymentSchedule().isDays && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {calculatePaymentSchedule().daysCount} кун ичида тўлаш керак (1 та тўлов)
+                            </div>
+                          )}
+                        </div>
                       </>
+                      
                     )}
                   </div>
                 </div>
@@ -1546,16 +1595,29 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
                       <>
                         <div className="bg-white p-3 rounded border">
-                          <div className="text-gray-600 text-xs mb-1">Фоиз билан:</div>
-                          <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(totalWithInterest)} сом</div>
-                        </div>
-                        <div className="bg-white p-3 rounded border">
-                          <div className="text-gray-600 text-xs mb-1">Тўланган:</div>
+                          <div className="text-gray-600 text-xs mb-1">Олдиндан тўлов:</div>
                           <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0))} сом</div>
                         </div>
                         <div className="bg-white p-3 rounded border">
-                          <div className="text-gray-600 text-xs mb-1">Қолган:</div>
+                          <div className="text-gray-600 text-xs mb-1">Қолган (фоиз билан):</div>
                           <div className="font-medium text-red-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(remaining)} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Умумий (фоиз билан):</div>
+                          <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(totalWithInterest)} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">
+                            {calculatePaymentSchedule().isDays ? 'Кунлик тўлов (1 та тўлов):' : 'Ойлик тўлов:'}
+                          </div>
+                          <div className="font-medium text-blue-600 break-words text-sm">
+                            {new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().monthlyPayment)} сом
+                          </div>
+                          {calculatePaymentSchedule().isDays && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {calculatePaymentSchedule().daysCount} кун ичида тўлаш керак (1 та тўлов)
+                            </div>
+                          )}
                         </div>
                       </>
                     )}
@@ -1607,54 +1669,58 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       const soldByUserId = rd.seller?.id ? Number(rd.seller.id) : Number(selectedUserId);
                       if (!soldByUserId || isNaN(soldByUserId)) throw new Error("Сотувчи ID топилмади");
 
-                      const payload = {
-                        type: 'SALE',
-                        status: 'PENDING',
-                        total: Number(rd.totalInSom ?? computedBaseTotal) || 0,
-                        finalTotal: Number(rd.finalTotalInSom ?? rd.totalInSom ?? computedBaseTotal) || 0,
-                        amountPaid: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
-                          ? 0
-                          : Number(rd.paid || 0),
-                        downPayment: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
-                          ? Number(rd.paid || 0)
-                          : 0,
-                        userId: userId,
-                        remainingBalance: Number(rd.remaining || 0) || 0,
-                        paymentType: rd.paymentType,
-                        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
-                          ? rd.upfrontPaymentType
-                          : rd.paymentType,
-                        deliveryMethod: rd.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
-                        deliveryAddress:
-                          rd.deliveryType === 'DELIVERY' || rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
-                            ? rd.deliveryAddress || rd.customer?.address || ''
-                            : '',
-                        customer: {
-                          fullName: (rd.customer?.fullName || `${rd.customer?.firstName || ''} ${rd.customer?.lastName || ''}`).trim() || 'Номаълум',
-                          phone: (rd.customer?.phone || '').replace(/\s+/g, '') || '',
-                          passportSeries: rd.customer?.passportSeries || '',
-                          jshshir: rd.customer?.jshshir || '',
-                          address: rd.customer?.address || rd.deliveryAddress || '',
-                        },
-                        fromBranchId: fromBranchId,
-                        soldByUserId: soldByUserId,
-                        items: rd.items.map((item) => ({
-                          productId: item.id || 0,
-                          productName: item.name || 'Номаълум маҳсулот',
-                          quantity: Number(item.quantity) || 0,
-                          price: Number(item.sellingPrice ?? item.price) || 0,
-                          sellingPrice: Number(item.sellingPrice ?? item.price) || 0,
-                          originalPrice: Number(item.originalPrice ?? item.price) || 0,
-                          total: Number(item.quantity || 0) * Number(item.sellingPrice ?? item.price) || 0,
-                          ...(rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
-                            ? {
-                              creditMonth: Number(rd.months || rd.days || 0) || 0,
-                              creditPercent: Number(rd.interestRate || 0) / 100 || 0,
-                              monthlyPayment: Number(rd.monthlyPayment || 0) || 0,
-                            }
-                            : {}),
-                        })),
-                      };
+                            const payload = {
+        type: 'SALE',
+        status: 'PENDING',
+        total: Number(rd.totalInSom ?? computedBaseTotal) || 0,
+        finalTotal: Number(rd.finalTotalInSom ?? rd.totalInSom ?? computedBaseTotal) || 0,
+        amountPaid: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+          ? Number(rd.paid || 0)  // Oldindan to'lov miqdori
+          : Number(rd.paid || 0),
+        downPayment: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+          ? Number(rd.paid || 0)  // Oldindan to'lov miqdori
+          : 0,
+        userId: userId,
+        remainingBalance: Number(rd.remaining || 0) || 0,  // Qolgan summa (foiz bilan)
+        paymentType: rd.paymentType,
+        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+          ? rd.upfrontPaymentType
+          : rd.paymentType,
+        termUnit: rd.termUnit || 'MONTHS',
+        // Kunlik bo'lib to'lash uchun kunlar sonini yuborish
+        days: rd.termUnit === 'DAYS' ? Number(rd.days || 0) : 0,
+        months: rd.termUnit === 'MONTHS' ? Number(rd.months || 0) : 0,
+        deliveryMethod: rd.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
+        deliveryAddress:
+          rd.deliveryType === 'DELIVERY' || rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
+            ? rd.deliveryAddress || rd.customer?.address || ''
+            : '',
+        customer: {
+          fullName: (rd.customer?.fullName || `${rd.customer?.firstName || ''} ${rd.customer?.lastName || ''}`).trim() || 'Номаълум',
+          phone: (rd.customer?.phone || '').replace(/\s+/g, '') || '',
+          passportSeries: rd.customer?.passportSeries || '',
+          jshshir: rd.customer?.jshshir || '',
+          address: rd.customer?.address || rd.deliveryAddress || '',
+        },
+        fromBranchId: fromBranchId,
+        soldByUserId: soldByUserId,
+        items: rd.items.map((item) => ({
+          productId: item.id || 0,
+          productName: item.name || 'Номаълум маҳсулот',
+          quantity: Number(item.quantity) || 0,
+          price: Number(item.sellingPrice ?? item.price) || 0,
+          sellingPrice: Number(item.sellingPrice ?? item.price) || 0,
+          originalPrice: Number(item.originalPrice ?? item.price) || 0,
+          total: Number(item.quantity || 0) * Number(item.sellingPrice ?? item.price) || 0,
+          ...(rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
+            ? {
+              creditMonth: rd.termUnit === 'DAYS' ? Number(rd.days || 0) : Number(rd.months || 0),
+              creditPercent: Number(rd.interestRate || 0) / 100 || 0,
+              monthlyPayment: Number(rd.monthlyPayment || 0) || 0,
+            }
+            : {}),
+        })),
+      };
 
                       console.log('Sending payload to API:', JSON.stringify(payload, null, 2));
                       console.log('Payload upfrontPaymentType:', payload.upfrontPaymentType);

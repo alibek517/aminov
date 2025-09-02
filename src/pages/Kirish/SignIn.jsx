@@ -109,7 +109,12 @@ const SignIn = () => {
         const decodedToken = jwtDecode(access_token);
         localStorage.setItem('access_token', access_token);
         localStorage.setItem('userRole', user.role);
-        localStorage.setItem('branchId', user.branchId);
+        // Only store branchId if it's a valid number, otherwise store null
+        if (user.branchId && !isNaN(Number(user.branchId))) {
+          localStorage.setItem('branchId', user.branchId.toString());
+        } else {
+          localStorage.removeItem('branchId'); // Remove if invalid or null
+        }
         const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
         const displayName = fullName || user.name || user.username || 'User';
         localStorage.setItem('user', JSON.stringify({

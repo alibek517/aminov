@@ -13,6 +13,7 @@ import {
   X,
   DollarSign,
   Users,
+  ArrowRightLeft,
 } from "lucide-react";
 
 import LocationApp from "./pages/LocationApp";
@@ -26,6 +27,7 @@ import Branches from "./pages/Branches";
 import ExchangeRates from "./pages/ExchangeRates";
 import Logout from "../Chiqish/logout";
 import Sotuvchilar from "./pages/Sotuvchilar";
+import Tranzaksiyalar from "./pages/Tranzaksiyalar";
 
 export default function AdminPanel() {
   const location = useLocation();
@@ -189,6 +191,7 @@ export default function AdminPanel() {
     { id: "geolocation", name: "Доставщиклар", icon: MapPin, path: "/admin/geolocation" },
     { id: "exchange-rates", name: "Валюталар", icon: DollarSign, path: "/admin/exchange-rates" },
     { id: "sotuvchilar", name: "Сотувчилар", icon: Users, path: "/admin/sotuvchilar" },
+    { id: "Tranzaksiyalar", name: "Транзаксияалар", icon: ArrowRightLeft , path: "/admin/tranzaksiyalar" },
   ];
 
   const handleLogoutConfirm = () => {
@@ -259,6 +262,8 @@ export default function AdminPanel() {
         return <ExchangeRates selectedBranchId={selectedBranchId} />;
         case "sotuvchilar":
           return <Sotuvchilar selectedBranchId={selectedBranchId} />;
+          case "tranzaksiyalar":
+          return <Tranzaksiyalar selectedBranchId={selectedBranchId} />;
       default:
         return <Inventory selectedBranchId={selectedBranchId} />;
     }

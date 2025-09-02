@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut, Users, Ban, Menu, X } from 'lucide-react';
+import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut, Users, Ban, Menu, X, RotateCcw } from 'lucide-react';
 import Logout from '../Chiqish/logout';
 import { formatAmount, formatCurrency } from '../../utils/currencyFormat'; 
 
@@ -20,6 +20,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
     { id: 'dashboard', label: 'Бошқарув панели', icon: BarChart3, path: '/kasir/dashboard' },
     { id: 'sales', label: 'Сотиш', icon: ShoppingCart, path: '/kasir/sales' },
     { id: 'defective', label: 'Брак/Қайтариш', icon: AlertTriangle, path: '/kasir/defective' },
+    { id: 'returned', label: 'Қайтарилганлар', icon: RotateCcw, path: '/kasir/returned' },
     { id: 'mijozlar', label: 'Мижозлар', icon: Users, path: '/kasir/mijozlar' },
     { id: 'sotuvchilar', label: 'Сотувчилар моаши', icon: Users, path: '/kasir/sotuvchilar' },
   ];

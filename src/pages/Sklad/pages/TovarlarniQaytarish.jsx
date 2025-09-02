@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatAmount, formatCurrency } from '../../utils/currencyFormat';
+import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
 const DefectiveManagement = () => {
   const navigate = useNavigate();

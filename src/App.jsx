@@ -419,6 +419,8 @@ import SkladPanel from './pages/Sklad/SkladPanel';
 import Menyu from './pages/KassaUser/Menyu';
 import Logout from './pages/Chiqish/logout';
 import Dastafka from './pages/Dastafka/DeliveryPanel';
+import Sotuv from './pages/Sotuv/Korish';
+
 
 function App() {
   const [role, setRole] = useState(null);
@@ -544,6 +546,14 @@ function App() {
           element={
             <PrivateRoute allowedRoles={['AUDITOR']}>
               <Dastafka token={token} />
+            </PrivateRoute>
+          }
+        />
+<Route
+          path="/sotuv/*"
+          element={
+            <PrivateRoute allowedRoles={['MARKETING']}>
+              <Sotuv token={token} />
             </PrivateRoute>
           }
         />

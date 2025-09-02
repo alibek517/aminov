@@ -3,7 +3,8 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { TrendingDown, BarChart3, Box, Settings, LogOut, Bell, Users, Menu, X, TrendingUp } from 'lucide-react';
 import Chiqim from './pages/Chiqim';
 import Tovarlar from './pages/Tovarlar';
-
+import TovarlarniQaytarish from './pages/TovarlarniQaytarish';
+import Qaytarilganlar from './pages/Qaytarilganlar';
 import TovarlarRoyxati from './pages/TovarlarRoyxati';
 import Hisobotlar from './pages/Hisobotlar';
 import Customers from './pages/Customers';
@@ -61,6 +62,8 @@ function SkladPanel() {
     { id: 'chiqim', name: 'Чиким', icon: TrendingUp, path: '/sklad/chiqim' },
     { id: 'tovarlar', name: 'Товарлар', icon: TrendingDown, path: '/sklad/tovarlar' },   // 🔥 yangi qo‘shildi
     { id: 'tovarlarroyxati', name: "Товарлар Руйхати", icon: Box, path: '/sklad/tovarlarroyxati' },
+    { id: 'tovarlarniqaytarish', name: 'Товарларни қайтариш', icon: TrendingDown, path: '/sklad/tovarlarniqaytarish' },
+    { id: 'qaytarilganlar', name: 'Қайтарилганлар', icon: TrendingDown, path: '/sklad/qaytarilganlar' },
     { id: 'hisobotlar', name: 'Хисоботлар', icon: BarChart3, path: '/sklad/hisobotlar' },
     { id: 'customers', name: 'Кредит', icon: Users, path: '/sklad/customers' },
   ];
@@ -208,6 +211,10 @@ function SkladPanel() {
         return <Tovarlar selectedBranchId={selectedBranchId} />;   // 🔥 yangi qo‘shildi
       case 'tovarlarroyxati':
         return <TovarlarRoyxati selectedBranchId={selectedBranchId} />;
+      case 'tovarlarniqaytarish':
+        return <TovarlarniQaytarish selectedBranchId={selectedBranchId} />;
+      case 'qaytarilganlar':
+        return <Qaytarilganlar selectedBranchId={selectedBranchId} />;
       case 'hisobotlar':
         return <Hisobotlar selectedBranchId={selectedBranchId} />;
       case 'customers':

@@ -193,7 +193,7 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
                     {formatAmountSom(transaction.remaining || 0)}
                   </div>
                 </div>
-                {transaction.paymentType === 'INSTALLMENT' && transaction.termUnit === 'DAYS' ? (
+                {transaction.paymentType === 'INSTALLMENT' && (transaction.termUnit === 'DAYS' || transaction.days) ? (
                   <>
                     <div>
                       <span className="text-blue-600 font-medium block">Муддат:</span>
@@ -295,24 +295,28 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
                     {formatAmountSom(actualTotal)}
                   </span>
                 </div>
-                {!(transaction.paymentType === 'INSTALLMENT' && transaction.termUnit === 'DAYS') && (
-                  <div className="flex justify-between">
-                    <span>Фоиз билан:</span>
-                    <span className="font-semibold">
-                      {formatAmountSom(transaction.finalTotalInSom || actualTotal)}
-                    </span>
-                  </div>
-                )}
                 <div className="flex justify-between">
-                  <span>Тўланган:</span>
+                  <span>Фоиз билан:</span>
+                  <span className="font-semibold">
+                    {formatAmountSom(transaction.finalTotalInSom || transaction.finalTotal || actualTotal)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Олдиндан тўлов:</span>
                   <span className="font-semibold">
                     {formatAmountSom(transaction.paid || 0)}
                   </span>
                 </div>
                 <div className="flex justify-between font-semibold">
-                  <span>Қолган:</span>
+                  <span>Қолган (фоиз билан):</span>
                   <span>
                     {formatAmountSom(transaction.remaining || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{(transaction.paymentType === 'INSTALLMENT' && (transaction.termUnit === 'DAYS' || transaction.days)) ? 'Кунлик тўлов:' : 'Ойлик тўлов:'}</span>
+                  <span className="font-semibold">
+                    {formatAmountSom(transaction.monthlyPayment || 0)}
                   </span>
                 </div>
               </div>

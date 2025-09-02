@@ -180,6 +180,16 @@ const Dashboard = () => {
         if (!res.ok) throw new Error("Server error");
         const data = await res.json();
         const transactions = data.transactions || data || [];
+        
+        // Debug: Log the raw transactions data
+        console.log('Raw transactions from API:', transactions.slice(0, 3)); // Show first 3 transactions
+        
+        // Filter transactions for current user to see what we're working with
+        const userTransactions = transactions.filter(t => 
+          t.type === 'SALE' && 
+          (t.soldBy?.id === currentUserId || t.user?.id === currentUserId)
+        );
+        console.log('User transactions:', userTransactions.slice(0, 3));
 
         const startBound = reportDate.startDate
           ? new Date(`${reportDate.startDate}T00:00:00`)
@@ -215,10 +225,38 @@ const Dashboard = () => {
               t.soldBy?.id === currentUserId ||
               t.user?.id === currentUserId
             ) {
+              // Debug: Log each transaction being processed
+              console.log('Processing transaction:', {
+                id: t.id,
+                type: t.type,
+                paymentType: t.paymentType,
+                amountPaid: t.amountPaid,
+                downPayment: t.downPayment,
+                upfrontPaymentType: t.upfrontPaymentType,
+                finalTotal: t.finalTotal,
+                total: t.total
+              });
               const final = Number(t.finalTotal || t.total || 0);
               const amountPaid = Number(t.amountPaid || 0);
               const downPayment = Number(t.downPayment || 0);
-              const upfront = amountPaid + downPayment;
+                             // For CREDIT/INSTALLMENT, upfront payment is stored in amountPaid
+               // For other payment types, upfront is 0
+               // NOTE: amountPaid contains ONLY the upfront payment, not credit repayments
+               // Credit repayments are tracked separately in creditRepaymentAmount field
+               const upfront = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ? amountPaid : 0;
+              
+              // Debug logging for upfront payments
+              if (['CREDIT', 'INSTALLMENT'].includes(t.paymentType) && upfront > 0) {
+                console.log('Upfront payment found:', {
+                  transactionId: t.id,
+                  paymentType: t.paymentType,
+                  amountPaid,
+                  downPayment,
+                  upfront,
+                  upfrontPaymentType: t.upfrontPaymentType
+                });
+              }
+              
               switch (t.paymentType) {
                 case "CASH":
                   agg.cashTotal += final;
@@ -231,6 +269,12 @@ const Dashboard = () => {
                   agg.upfrontTotal += upfront;
                   // Track upfront payment by type
                   const upfrontType = t.upfrontPaymentType || 'CASH';
+                  console.log('Processing upfront payment:', {
+                    transactionId: t.id,
+                    upfrontType,
+                    upfront,
+                    upfrontPaymentType: t.upfrontPaymentType
+                  });
                   if (upfrontType === 'CASH') {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType === 'CARD') {
@@ -242,6 +286,12 @@ const Dashboard = () => {
                   agg.upfrontTotal += upfront;
                   // Track upfront payment by type
                   const upfrontType2 = t.upfrontPaymentType || 'CASH';
+                  console.log('Processing installment upfront payment:', {
+                    transactionId: t.id,
+                    upfrontType: upfrontType2,
+                    upfront,
+                    upfrontPaymentType: t.upfrontPaymentType
+                  });
                   if (upfrontType2 === 'CASH') {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType2 === 'CARD') {
@@ -269,6 +319,7 @@ const Dashboard = () => {
                 finalTotal: t.finalTotal || t.total || 0,
                 amountPaid,
                 downPayment,
+                upfrontPaymentType: t.upfrontPaymentType,
                 soldByName: getUserName(t.soldBy) || getUserName(t.user) || "-",
               });
             }
@@ -290,6 +341,12 @@ const Dashboard = () => {
                 if (s.id && seenSchedules.has(s.id)) continue;
                 if (s.id) seenSchedules.add(s.id);
                 agg.repaymentTotal += installment;
+                console.log('Dashboard: Processing payment schedule:', {
+                  scheduleId: s.id,
+                  paidChannel: s.paidChannel,
+                  amount: installment,
+                  transactionId: t.id
+                });
                 agg.repayments.push({
                   scheduleId: s.id,
                   paidAt: s.paidAt,
@@ -395,32 +452,75 @@ const Dashboard = () => {
           console.warn("Supplemental credit/installment fetch failed", e);
         }
 
-        // Include local daily repayments into cashierReport totals and list
+        // Include daily repayments from backend into cashierReport totals and list
         try {
-          const logsRaw = localStorage.getItem('tx_daily_repayments');
-          const logs = logsRaw ? JSON.parse(logsRaw) : [];
-          for (const l of Array.isArray(logs) ? logs : []) {
-            const pDate = l.paidAt ? new Date(l.paidAt) : null;
-            const inRange = pDate && (!startBound || pDate >= startBound) && (!endBound || pDate <= endBound);
-            if (!inRange) continue;
-            const ch = (l.channel || 'CASH').toUpperCase();
-            agg.repaymentTotal += Number(l.amount || 0);
-            agg.repayments.push({
-              scheduleId: `local-${l.transactionId}-${l.paidAt}`,
-              paidAt: l.paidAt,
-              amount: Number(l.amount || 0),
-              channel: ch,
-              transactionId: l.transactionId,
-              month: '-',
-              customer: null,
-              paidBy: { id: l.paidByUserId },
-            });
+          const dailyRepaymentsRes = await fetch(
+            `https://suddocs.uz/daily-repayments/cashier/${currentUserId}?branchId=${selectedBranchId}&startDate=${new Date(`${reportDate.startDate}T00:00:00`).toISOString()}&endDate=${new Date(`${reportDate.endDate}T23:59:59`).toISOString()}`,
+            { headers }
+          );
+          
+          if (dailyRepaymentsRes.ok) {
+            const dailyRepayments = await dailyRepaymentsRes.json();
+            for (const l of Array.isArray(dailyRepayments) ? dailyRepayments : []) {
+              const ch = (l.channel || 'CASH').toUpperCase();
+              agg.repaymentTotal += Number(l.amount || 0);
+              agg.repayments.push({
+                scheduleId: `daily-${l.id}`,
+                paidAt: l.paidAt,
+                amount: Number(l.amount || 0),
+                channel: ch,
+                transactionId: l.transactionId,
+                month: 'Кунлик',
+                customer: l.transaction?.customer || null,
+                paidBy: l.paidBy || { id: l.paidByUserId },
+              });
+              console.log('Dashboard: Added daily repayment from backend:', {
+                amount: l.amount,
+                channel: ch,
+                transactionId: l.transactionId
+              });
+            }
           }
-        } catch {}
+        } catch (error) {
+          console.warn('Failed to fetch daily repayments from backend:', error);
+        }
 
-        setCashierReport(agg);
+        // Include credit repayments from backend into cashierReport totals and list
+        try {
+          const creditRepaymentsRes = await fetch(
+            `https://suddocs.uz/credit-repayments/cashier/${currentUserId}?branchId=${selectedBranchId}&startDate=${new Date(`${reportDate.startDate}T00:00:00`).toISOString()}&endDate=${new Date(`${reportDate.endDate}T23:59:59`).toISOString()}`,
+            { headers }
+          );
+          
+          if (creditRepaymentsRes.ok) {
+            const creditRepayments = await creditRepaymentsRes.json();
+            for (const l of Array.isArray(creditRepayments) ? creditRepayments : []) {
+              const ch = (l.channel || 'CASH').toUpperCase();
+              agg.repaymentTotal += Number(l.amount || 0);
+              agg.repayments.push({
+                scheduleId: l.scheduleId || `credit-${l.id}`,
+                paidAt: l.paidAt,
+                amount: Number(l.amount || 0),
+                channel: ch,
+                transactionId: l.transactionId,
+                month: l.month || '-',
+                customer: l.transaction?.customer || null,
+                paidBy: l.paidBy || { id: l.paidByUserId },
+                soldBy: l.transaction?.soldBy || null,
+              });
+              console.log('Dashboard: Added credit repayment from backend:', {
+                amount: l.amount,
+                channel: ch,
+                transactionId: l.transactionId,
+                month: l.month
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to fetch credit repayments from backend:', error);
+        }
 
-        // Fetch defective logs and compute cash adjustments (+/-) within date range
+        // Include defective logs (returns) for cash adjustments
         try {
           const params2 = new URLSearchParams();
           if (selectedBranchId) params2.append("branchId", selectedBranchId);
@@ -452,6 +552,21 @@ const Dashboard = () => {
           setDefectivePlus(0);
           setDefectiveMinus(0);
         }
+
+        // Debug logging for final aggregation
+        console.log('Final cashier report aggregation:', {
+          cashTotal: agg.cashTotal,
+          cardTotal: agg.cardTotal,
+          creditTotal: agg.creditTotal,
+          installmentTotal: agg.installmentTotal,
+          upfrontTotal: agg.upfrontTotal,
+          upfrontCash: agg.upfrontCash,
+          upfrontCard: agg.upfrontCard,
+          repaymentTotal: agg.repaymentTotal
+        });
+        
+        setCashierReport(agg);
+
       } catch (e) {
         console.error("Cashier report error", e);
         setCashierReport(null);
@@ -467,6 +582,11 @@ const Dashboard = () => {
     reportDate.endDate,
     selectedBranchId,
   ]);
+
+  // Refresh dashboard when report date changes
+  useEffect(() => {
+    // This will trigger a re-fetch when report date changes
+  }, [reportDate.startDate, reportDate.endDate]);
 
   if (error) {
     return <div className="text-red-600 text-center">{error}</div>;
@@ -558,15 +678,44 @@ const Dashboard = () => {
                     <div className="text-sm text-gray-500">Нақд</div>
                     <div className="font-semibold">
                       {formatAmount(
-                        Number(cashierReport.cashTotal || 0) +
-                        (Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))
+                        Number(cashierReport.cashTotal || 0) +                    // Cash sales
+                        Number(cashierReport.upfrontCash || 0) +                  // Upfront payments in cash
+                        (cashierReport.repayments || [])                          // Credit repayments in cash
+                          .filter(r => (r.channel || "CASH").toUpperCase() === "CASH")
+                          .reduce((s, r) => s + Number(r.amount || 0), 0) +
+                        Math.max(0, defectivePlus) - Math.max(0, defectiveMinus)   // Defective log adjustments (returns subtract from cash)
                       )}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      <div>💵 Нақд сотувлар: {formatAmount(cashierReport.cashTotal || 0)}</div>
+                      <div>💰 Олдиндан тўловлар: {formatAmount(cashierReport.upfrontCash || 0)}</div>
+                      <div>💳 Кредит тўловлар: {formatAmount(
+                        (cashierReport.repayments || [])
+                          .filter(r => (r.channel || "CASH").toUpperCase() === "CASH")
+                          .reduce((s, r) => s + Number(r.amount || 0), 0)
+                      )}</div>
+                      <div>📊 Қайтариш тўловлар: {formatAmount(Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))}</div>
                     </div>
                   </div>
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Карта</div>
                     <div className="font-semibold">
-                      {formatAmount(cashierReport.cardTotal)}
+                      {formatAmount(
+                        Number(cashierReport.cardTotal || 0) +                    // Card sales
+                        Number(cashierReport.upfrontCard || 0) +                  // Upfront payments in card
+                        (cashierReport.repayments || [])                          // Credit repayments in card
+                          .filter(r => (r.channel || "CARD").toUpperCase() === "CARD")
+                          .reduce((s, r) => s + Number(r.amount || 0), 0)
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      <div>💳 Карта сотувлар: {formatAmount(cashierReport.cardTotal || 0)}</div>
+                      <div>💰 Олдиндан тўловлар: {formatAmount(cashierReport.upfrontCard || 0)}</div>
+                      <div>💳 Кредит тўловлар: {formatAmount(
+                        (cashierReport.repayments || [])
+                          .filter(r => (r.channel || "CARD").toUpperCase() === "CARD")
+                          .reduce((s, r) => s + Number(r.amount || 0), 0)
+                      )}</div>
                     </div>
                   </div>
                   <div className="p-3 rounded border">
@@ -590,13 +739,13 @@ const Dashboard = () => {
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                       <div>
-                        <div className="text-xs">Naqd</div>
+                        <div className="text-xs">Нақд</div>
                         <div className="font-semibold">
                           {formatAmount(cashierReport.upfrontCash || 0)}
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs">Karta</div>
+                        <div className="text-xs">Карта</div>
                         <div className="font-semibold">
                           {formatAmount(cashierReport.upfrontCard || 0)}
                         </div>
@@ -610,7 +759,7 @@ const Dashboard = () => {
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                       <div>
-                        <div className="text-xs">Naqd</div>
+                        <div className="text-xs">Нақд</div>
                         <div className="font-semibold">
                           {formatAmount(
                             (cashierReport.repayments || [])
@@ -623,18 +772,24 @@ const Dashboard = () => {
                         </div>
                       </div>
                       <div>
-                        <div className="text-xs">Karta</div>
+                        <div className="text-xs">Карта</div>
                         <div className="font-semibold">
                           {formatAmount(
                             (cashierReport.repayments || [])
                               .filter(
                                 (r) =>
-                                  (r.channel || "CASH").toUpperCase() === "CARD"
+                                  (r.channel || "CARD").toUpperCase() === "CARD"
                               )
                               .reduce((s, r) => s + Number(r.amount || 0), 0)
                           )}
                         </div>
                       </div>
+                    </div>
+                    <div className="mt-2 text-xs text-gray-600">
+                      💡 Нақд тўловлар "Топширадиган пул" га қўшилади
+                    </div>
+                    <div className="mt-1 text-xs text-blue-600">
+                      📊 Кунлик + Ойлик тўловлар
                     </div>
                   </div>
                   
@@ -644,19 +799,26 @@ const Dashboard = () => {
                     </div>
                     <div className="font-semibold">
                       {formatAmount(
-                        Number(cashierReport.cashTotal || 0) +
-                          (cashierReport.repayments || [])
+                        Number(cashierReport.cashTotal || 0) +                    // Cash sales
+                          (cashierReport.repayments || [])                       // Credit repayments in cash (both monthly and daily)
                             .filter(
                               (r) =>
                                 (r.channel || "CASH").toUpperCase() === "CASH"
                             )
                             .reduce((s, r) => s + Number(r.amount || 0), 0) +
-                          Number(cashierReport.upfrontTotal || 0) +
-                          (Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))
+                        Number(cashierReport.upfrontCash || 0) +               // Upfront payments in CASH only
+                        Math.max(0, defectivePlus) - Math.max(0, defectiveMinus) // Defective log adjustments (returns reduce cash to hand over)
                       )}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      <div>💡 Нақд сотувлар + Кредит тўловлар (нақд) + Олдиндан тўловлар (нақд) + Қайтариш тўловлар</div>
+                      <div className="mt-1 text-blue-600">⚠️ Карта тўловлар топширадиган пулга қўшилмайди</div>
+                      <div className="mt-1 text-green-600">✅ Кунлик + Ойлик тўловлар (нақд) қўшилади</div>
                     </div>
                   </div>
                 </div>
+
+
 
                 {Array.isArray(cashierReport.repayments) &&
                   cashierReport.repayments.length > 0 && (
@@ -677,11 +839,15 @@ const Dashboard = () => {
                                 Транзакция
                               </th>
                               <th className="px-3 py-2 text-left">Мижоз</th>
+                              <th className="px-3 py-2 text-left">
+                                Қабул қилган
+                              </th>
+                              <th className="px-3 py-2 text-left">Сотган</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
                             {cashierReport.repayments.map((r, idx) => (
-                              <tr key={idx} className="hover:bg-gray-50">
+                              <tr key={`cashier-repayment-${r.scheduleId || r.transactionId || r.paidAt || idx}-${idx}`} className="hover:bg-gray-50">
                                 <td className="px-3 py-2">{r.month}</td>
                                 <td className="px-3 py-2">
                                   {formatDate(r.paidAt)}
@@ -695,6 +861,20 @@ const Dashboard = () => {
                                 <td className="px-3 py-2">
                                   {r.customer?.fullName || "-"}
                                 </td>
+                                <td className="px-3 py-2">
+                                  {r.paidBy
+                                    ? `${r.paidBy.firstName || ""} ${
+                                        r.paidBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.soldBy
+                                    ? `${r.soldBy.firstName || ""} ${
+                                        r.soldBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -704,14 +884,26 @@ const Dashboard = () => {
                   )}
 
                 <div className="overflow-x-auto">
+                  <div className="text-xs text-gray-600 mb-2 p-2 bg-gray-50 rounded">
+                    📊 Транзакциялар рўйхати: "Олдиндан тўлов" майдонида Кредит/Бўлиб тўлаш учун олдиндан тўланган сумма кўрсатилади
+                  </div>
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-3 py-2 text-left">ID</th>
                         <th className="px-3 py-2 text-left">Сана</th>
                         <th className="px-3 py-2 text-left">Тўлов тури</th>
-                        <th className="px-3 py-2 text-left">Олдиндан</th>
+                        <th className="px-3 py-2 text-left">Сотган</th>
+                        <th className="px-3 py-2 text-left">
+                          <div className="flex items-center gap-1">
+                            <span>Олдиндан тўлов</span>
+                            <div className="text-xs text-gray-400" title="Кредит/Бўлиб тўлаш учун олдиндан тўланган сумма">
+                              ℹ️
+                            </div>
+                          </div>
+                        </th>
                         <th className="px-3 py-2 text-left">Якуний</th>
+                        <th className="px-3 py-2 text-left">Олдиндан тури</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -725,17 +917,56 @@ const Dashboard = () => {
                             {getPaymentTypeLabel(t.paymentType)}
                           </td>
                           <td className="px-3 py-2">
+                            {t.soldByName || "-"}
+                          </td>
+                          <td className="px-3 py-2">
                             {formatAmount(
-                              Number(t.amountPaid || 0) +
-                                Number(t.downPayment || 0)
+                              ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) 
+                                ? Number(t.amountPaid || 0)  // For CREDIT/INSTALLMENT: show only amountPaid (avoid double-counting)
+                                : Number(t.amountPaid || 0) + Number(t.downPayment || 0)  // For other types: show sum
                             )}
                           </td>
                           <td className="px-3 py-2">
                             {formatAmount(t.finalTotal)}
                           </td>
+                          <td className="px-3 py-2">
+                            {['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ? 
+                              (t.upfrontPaymentType === 'CASH' ? 'Нақд' : 
+                               t.upfrontPaymentType === 'CARD' ? 'Карта' : 'Номаълум') : 
+                              '-'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot className="bg-gray-50">
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 font-semibold text-right">
+                          Жами олдиндан тўловлар:
+                        </td>
+                        <td className="px-3 py-2 font-semibold">
+                          {formatAmount(
+                            (cashierReport.transactions || [])
+                              .filter(t => ['CREDIT', 'INSTALLMENT'].includes(t.paymentType))
+                              .reduce((sum, t) => sum + Number(t.amountPaid || 0), 0)
+                          )}
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                      <tr>
+                        <td colSpan={4} className="px-3 py-2 font-semibold text-right">
+                          Жами тўланган (олдиндан + кредит):
+                        </td>
+                        <td className="px-3 py-2 font-semibold">
+                          {formatAmount(
+                            (cashierReport.transactions || [])
+                              .filter(t => ['CREDIT', 'INSTALLMENT'].includes(t.paymentType))
+                              .reduce((sum, t) => sum + Number(t.amountPaid || 0), 0) +
+                            (cashierReport.repaymentTotal || 0)
+                          )}
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </>

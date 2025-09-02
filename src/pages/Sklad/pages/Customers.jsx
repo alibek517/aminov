@@ -26,82 +26,64 @@ const Мижозлар = () => {
   const API_URL = 'https://suddocs.uz';
   const [exchangeRate, setExchangeRate] = useState(12650);
 
-      // Helpers to compute accurate paid/remaining amounts across different transaction shapes
-  const calculateTransactionRemaining = (t) => {
-    // For transactions with down payment, interest should NOT be applied to the down payment
-    const baseAmount = Number(t?.total || 0); // Use base amount without interest
-    const downPayment = Number(t?.downPayment || 0);
-    
-    if (t && typeof t.remainingBalance === 'number' && Number.isFinite(t.remainingBalance)) {
-      return Math.max(0, Number(t.remainingBalance));
+  // Helper to get interest rate consistently
+  const getInterestRate = (transaction) => {
+    if (transaction.interestRate != null) {
+      const rate = Number(transaction.interestRate) / 100; 
+      console.log(`getInterestRate: transaction ${transaction.id} has interestRate ${transaction.interestRate}% -> ${rate}`);
+      return rate;
     }
-    
-    if (Array.isArray(t?.paymentSchedules) && t.paymentSchedules.length > 0) {
-      const schedulesPaid = t.paymentSchedules.reduce((sum, sc) => sum + Number(sc?.paidAmount || 0), 0);
-      
-      // Calculate remaining based on base amount (without interest on down payment)
-      // Interest should only be applied to the remaining balance after down payment
-      const remainingBase = Math.max(0, baseAmount - downPayment);
-      const remainingAfterSchedules = Math.max(0, remainingBase - schedulesPaid);
-      
-      // If this is a credit transaction, we need to calculate the interest correctly
-      if (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') {
-        // Interest is only on the remaining balance (not on down payment)
-        // Try to get interest rate from multiple sources
-        let interestRate = 0;
-        if (t.interestRate) {
-          interestRate = Number(t.interestRate) / 100;
-        } else if (t.items && t.items.length > 0) {
-          // Try to get from items - creditPercent is stored as decimal (0.10 for 10%)
-          const itemWithRate = t.items.find(item => item.creditPercent != null);
-          if (itemWithRate) {
-            interestRate = Number(itemWithRate.creditPercent);
-          }
-        }
-        
-        // Interest is applied only to the remaining base amount (after down payment)
-        const interestAmount = remainingAfterSchedules * interestRate;
-        return remainingAfterSchedules + interestAmount;
+    if (transaction.items && transaction.items.length > 0) {
+      const itemWithRate = transaction.items.find(item => item.creditPercent != null);
+      if (itemWithRate) {
+        const rate = Number(itemWithRate.creditPercent); // creditPercent is already a decimal
+        console.log(`getInterestRate: transaction ${transaction.id} has item creditPercent ${itemWithRate.creditPercent} -> ${rate}`);
+        return rate;
       }
-      
-      return remainingAfterSchedules;
     }
-    
-    const paidFallback = Number(t?.amountPaid || 0);
-    const remainingBase = Math.max(0, baseAmount - downPayment - paidFallback);
-    
-    // If this is a credit transaction, calculate interest correctly
-    if (t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') {
-      // Try to get interest rate from multiple sources
-      let interestRate = 0;
-      if (t.interestRate) {
-        interestRate = Number(t.interestRate) / 100;
-      } else if (t.items && t.items.length > 0) {
-        // Try to get from items - creditPercent is stored as decimal (0.10 for 10%)
-        const itemWithRate = t.items.find(item => item.creditPercent != null);
-          if (itemWithRate) {
-            interestRate = Number(itemWithRate.creditPercent);
-          }
-        }
-      
-      // Interest is applied only to the remaining base amount (after down payment)
-      const interestAmount = remainingBase * interestRate;
-      return remainingBase + interestAmount;
+    console.log(`getInterestRate: transaction ${transaction.id} no interest rate found, defaulting to 0`);
+    return 0; // Default to no interest if none found
+  };
+
+  // Helpers to compute accurate paid/remaining amounts across different transaction shapes
+  const calculateTransactionRemaining = (t) => {
+    // If schedules exist, compute remaining strictly from schedules
+    if (Array.isArray(t?.paymentSchedules) && t.paymentSchedules.length > 0) {
+      const schedules = t.paymentSchedules;
+      const remainingFromSchedules = schedules.reduce((sum, sc) => {
+        const payment = Number(sc?.payment || 0);
+        const paid = Number(sc?.paidAmount || 0);
+        return sum + Math.max(0, payment - paid);
+      }, 0);
+      console.debug(`Transaction ${t.id}: remaining from schedules = ${remainingFromSchedules}`);
+      return Math.max(0, remainingFromSchedules);
     }
-    
-    return remainingBase;
+
+    // No schedules: fall back to remainingBalance if present, otherwise derive from totals
+    const downPayment = Number.isFinite(Number(t?.downPayment)) ? Number(t.downPayment) : 0;
+    const baseAmount = Number.isFinite(Number(t?.finalTotal || t?.total)) ? Number(t.finalTotal || t.total) : 0;
+    const remainingBase = Math.max(0, baseAmount - downPayment);
+    const creditRepaymentAmount = Number(t?.creditRepaymentAmount || 0);
+    const remaining = Math.max(0, remainingBase - creditRepaymentAmount);
+    console.log(`Transaction ${t.id} fallback calculation: base=${baseAmount}, downPayment=${downPayment}, creditRepaymentAmount=${creditRepaymentAmount}, remaining=${remaining}`);
+    return remaining;
   };
 
   const calculateTransactionPaid = (t) => {
     const downPayment = Number(t?.downPayment || 0);
-    
+
     if (Array.isArray(t?.paymentSchedules) && t.paymentSchedules.length > 0) {
       const schedulesPaid = t.paymentSchedules.reduce((sum, sc) => sum + Number(sc?.paidAmount || 0), 0);
       return downPayment + schedulesPaid;
     }
-    
-    const paidFallback = Number(t?.amountPaid || 0);
-    return downPayment + paidFallback;
+
+    // No schedules: upfront + credit repayments
+    const creditRepaymentAmount = Number(t?.creditRepaymentAmount || 0);
+    const totalPaid = downPayment + creditRepaymentAmount;
+    if (Number(t?.amountPaid || 0) !== totalPaid) {
+      console.warn(`Paid amount mismatch for transaction ${t.id}: stored=${t.amountPaid}, calculated=${totalPaid}`);
+    }
+    return totalPaid;
   };
 
   useEffect(() => {
@@ -129,7 +111,7 @@ const Мижозлар = () => {
         const res = await axiosWithAuth.get('/currency-exchange-rates');
         const rate = Array.isArray(res.data) && res.data[0]?.rate ? Number(res.data[0].rate) : null;
         if (rate) setExchangeRate(rate);
-      } catch {}
+      } catch { }
     })();
   }, []);
 
@@ -137,7 +119,7 @@ const Мижозлар = () => {
     if (searchTerm.trim() === '') {
       setFilteredCustomers(customers);
     } else {
-      const filtered = customers.filter(customer => 
+      const filtered = customers.filter(customer =>
         customer.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         customer.phone?.includes(searchTerm)
       );
@@ -149,7 +131,10 @@ const Мижозлар = () => {
     try {
       setLoading(true);
       const response = await axiosWithAuth.get('/customers?skip=0&take=1000');
-      const allCustomers = Array.isArray(response.data) ? response.data : [];
+      if (!Array.isArray(response.data)) {
+        throw new Error('Invalid customers data format');
+      }
+      const allCustomers = response.data;
 
       const customersWithCredit = allCustomers.filter((customer) => {
         if (!Array.isArray(customer.transactions) || customer.transactions.length === 0) return false;
@@ -162,7 +147,7 @@ const Мижозлар = () => {
       console.log('Юкланган кредит тарихи бор мижозлар:', customersWithCredit);
     } catch (error) {
       console.error('Мижозларни юклашда хатолик:', error);
-      setNotification({ message: 'Мижозларни юклашда хатолик', type: 'error' });
+      setNotification({ message: 'Мижозларни юклашда хатолик: ' + error.message, type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -173,20 +158,49 @@ const Мижозлар = () => {
       setLoading(true);
       const response = await axiosWithAuth.get(`/transactions?customerId=${customerId}&limit=100`);
       let transactions = response.data.transactions || [];
+      
+      // Fetch detailed transactions with payment schedules
+      const detailedTransactions = [];
+      for (const tx of transactions) {
+        try {
+          const detailResponse = await axiosWithAuth.get(`/transactions/${tx.id}`);
+          detailedTransactions.push(detailResponse.data);
+        } catch (err) {
+          console.warn(`Failed to fetch details for transaction ${tx.id}:`, err);
+          detailedTransactions.push(tx); // fallback to original transaction
+        }
+      }
+      transactions = detailedTransactions;
       // Enrich from local storage meta (termUnit/days/interestRate) if available
+      let metaMap = {};
       try {
         const metaRaw = localStorage.getItem('tx_term_units');
-        const metaMap = metaRaw ? JSON.parse(metaRaw) : {};
+        metaMap = metaRaw ? JSON.parse(metaRaw) : {};
+        if (typeof metaMap !== 'object' || metaMap === null) {
+          console.warn('Invalid tx_term_units in localStorage');
+          metaMap = {};
+        }
         if (metaMap && typeof metaMap === 'object') {
           transactions = transactions.map((tx) => {
             const meta = metaMap[String(tx.id)];
             return meta ? { ...tx, ...meta } : tx;
           });
         }
-      } catch {}
+      } catch (e) {
+        console.error('Error parsing tx_term_units:', e);
+        metaMap = {};
+      }
       // store raw USD values; conversion is done on render via exchangeRate
       const allTransactions = [];
       for (const transaction of transactions) {
+        console.log('Processing transaction:', {
+          id: transaction.id,
+          paymentType: transaction.paymentType,
+          hasSchedules: !!(transaction.paymentSchedules && transaction.paymentSchedules.length > 0),
+          schedulesCount: transaction.paymentSchedules ? transaction.paymentSchedules.length : 0,
+          termUnit: transaction.termUnit
+        });
+        
         if (transaction.paymentSchedules && transaction.paymentSchedules.length > 0) {
           allTransactions.push(...transaction.paymentSchedules.map(schedule => ({
             ...schedule,
@@ -195,19 +209,77 @@ const Мижозлар = () => {
             isPaymentSchedule: true
           })));
         } else {
-          allTransactions.push({
-            id: `transaction-${transaction.id}`,
-            transaction: transaction,
-            customer: transaction.customer,
-            isPaymentSchedule: false,
-            payment: transaction.finalTotal,
-            paidAmount: transaction.amountPaid || 0,
-            remainingBalance: transaction.remainingBalance || 0,
-            month: 1,
-            isPaid: (transaction.amountPaid || 0) >= (transaction.finalTotal || 0)
+          // For daily installments or transactions without payment schedules
+          const calculatedRemaining = calculateTransactionRemaining(transaction);
+          
+          // For INSTALLMENT transactions, create monthly payment schedules
+          if (transaction.paymentType === 'INSTALLMENT') {
+            const months = (transaction.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || 1;
+            const monthlyPayment = calculatedRemaining / months;
+            
+            for (let month = 1; month <= months; month++) {
+              const isLastMonth = month === months;
+              const monthPayment = isLastMonth ? calculatedRemaining - (monthlyPayment * (months - 1)) : monthlyPayment;
+              
+              allTransactions.push({
+                id: `installment-${transaction.id}-${month}`,
+                transaction: transaction,
+                customer: transaction.customer,
+                isPaymentSchedule: true,
+                month: month.toString(),
+                payment: monthPayment,
+                paidAmount: 0,
+                remainingBalance: monthPayment,
+                isPaid: false,
+                paidAt: null,
+                paidChannel: null,
+                paidBy: null,
+                rating: null
+              });
+            }
+            
+            console.log('Created installment schedules:', {
+              transactionId: transaction.id,
+              months: months,
+              monthlyPayment: monthlyPayment,
+              totalRemaining: calculatedRemaining
+            });
+          } else {
+            // For other transactions without schedules
+            allTransactions.push({
+              id: `transaction-${transaction.id}`,
+              transaction: transaction,
+              customer: transaction.customer,
+              isPaymentSchedule: false,
+              payment: transaction.finalTotal,
+              paidAmount: transaction.amountPaid || 0,
+              remainingBalance: calculatedRemaining,
+              month: 1,
+              isPaid: calculatedRemaining <= 0
+            });
+          }
+          
+          console.log('Transaction without schedules debug:', {
+            transactionId: transaction.id,
+            paymentType: transaction.paymentType,
+            finalTotal: transaction.finalTotal,
+            amountPaid: transaction.amountPaid,
+            storedRemainingBalance: transaction.remainingBalance,
+            calculatedRemaining: calculatedRemaining,
+            termUnit: transaction.termUnit,
+            days: transaction.days,
+            months: transaction.months
           });
         }
       }
+      console.log('Loaded transactions for customer:', {
+        customerId: customerId,
+        transactionsCount: transactions.length,
+        allTransactionsCount: allTransactions.length,
+        sampleTransaction: allTransactions[0],
+        dailyInstallments: allTransactions.filter(t => !t.isPaymentSchedule)
+      });
+      
       setPaymentSchedules(allTransactions);
       setSelectedCustomer(customers.find(c => c.id === customerId));
     } catch (error) {
@@ -223,81 +295,275 @@ const Мижозлар = () => {
       setNotification({ message: 'Тўлов миқдори тўғри киритилиши керак', type: 'error' });
       return;
     }
+    // Guard: do not allow paying later months if previous months are not fully paid
+    if (selectedSchedule.isPaymentSchedule && selectedSchedule.transaction?.termUnit !== 'DAYS') {
+      const allSchedules = selectedSchedule.transaction?.paymentSchedules || [];
+      const payable = isSchedulePayable(selectedSchedule, allSchedules, selectedSchedule.transaction?.termUnit);
+      if (!payable) {
+        setNotification({ message: 'Илтимос, аввалги ой(лар)ни тўлиқ тўланг', type: 'error' });
+        return;
+      }
+    }
+    const maxPayment = selectedSchedule.isPaymentSchedule
+      ? Number(selectedSchedule.payment) - Number(selectedSchedule.paidAmount || 0)
+      : Number(selectedSchedule.remainingBalance || 0);
+      
+    console.log('Payment validation debug:', {
+      selectedSchedule: {
+        isPaymentSchedule: selectedSchedule.isPaymentSchedule,
+        payment: selectedSchedule.payment,
+        paidAmount: selectedSchedule.paidAmount,
+        remainingBalance: selectedSchedule.remainingBalance
+      },
+      maxPayment: maxPayment,
+      paymentAmount: Number(paymentAmount)
+    });
+    
+    if (Number(paymentAmount) > maxPayment) {
+      setNotification({ message: `Тўлов миқдори ${formatCurrency(maxPayment)} дан кам бўлиши керак`, type: 'error' });
+      return;
+    }
 
     try {
       setLoading(true);
-      
+
       const transaction = selectedSchedule.transaction;
-      const currentTransactionPaid = transaction.amountPaid || 0;
-      const newTransactionPaid = currentTransactionPaid + Number(paymentAmount);
-      const newRemainingBalance = Math.max(0, transaction.finalTotal - newTransactionPaid);
       
       if (selectedSchedule.isPaymentSchedule) {
+        // For payment schedules, update the schedule directly
         const currentPaidAmount = selectedSchedule.paidAmount || 0;
         const newPaidAmount = currentPaidAmount + Number(paymentAmount);
         const isFullyPaid = newPaidAmount >= selectedSchedule.payment;
-        
+
         const paymentScheduleUpdate = {
           paidAmount: newPaidAmount,
           isPaid: isFullyPaid,
           paidAt: new Date().toISOString(),
           paidChannel: paymentChannel,
-          rating: paymentRating
+          rating: paymentRating,
+          // Add the delta amount for proper tracking
+          amountDelta: Number(paymentAmount)
         };
-        
+
+        console.log('Payment update data:', {
+          scheduleId: selectedSchedule.id,
+          paymentChannel: paymentChannel,
+          paymentChannelType: typeof paymentChannel,
+          paymentAmount: paymentAmount,
+          updateData: paymentScheduleUpdate
+        });
+
+        console.log('Frontend: About to send API call with paidChannel:', paymentChannel);
+
         try {
-          await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
+          console.log('Updating payment schedule with:', {
             ...paymentScheduleUpdate,
             creditRepaymentAmount: Number(paymentAmount),
             repaymentDate: new Date().toISOString(),
             paidByUserId: Number(localStorage.getItem('userId')) || undefined
           });
+          const response = await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
+            ...paymentScheduleUpdate,
+            creditRepaymentAmount: Number(paymentAmount),
+            repaymentDate: new Date().toISOString(),
+            paidByUserId: Number(localStorage.getItem('userId')) || undefined
+          });
+          console.log('Payment schedule updated successfully. Response:', response.data);
+          
+          // Store payment log for Dashboard.jsx to read
+          try {
+            const creditRepaymentData = {
+              transactionId: transaction.id,
+              scheduleId: selectedSchedule.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              month: selectedSchedule.month,
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+            };
+            
+            await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
+            console.log('Payment log saved to backend:', creditRepaymentData);
+          } catch (error) {
+            console.error('Failed to save payment log to backend:', error);
+          }
         } catch (error) {
           console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
-          await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, paymentScheduleUpdate);
+          console.log('Frontend: Fallback API call with paidChannel:', paymentChannel);
+          // Ensure paidChannel is included in fallback
+          const fallbackResponse = await axiosWithAuth.put(`/payment-schedules/${selectedSchedule.id}`, {
+            ...paymentScheduleUpdate,
+            paidChannel: paymentChannel // Explicitly include paidChannel in fallback
+          });
+          console.log('Fallback payment schedule update response:', fallbackResponse.data);
+          
+          // Store payment log even for fallback case
+          try {
+            const creditRepaymentData = {
+              transactionId: transaction.id,
+              scheduleId: selectedSchedule.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              month: String(selectedSchedule.month), // Convert to string
+              monthNumber: Number(selectedSchedule.month), // Add numeric value
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+              branchId: transaction.fromBranchId || transaction.branchId || null,
+            };
+            
+            console.log('Sending fallback credit repayment data:', creditRepaymentData);
+            console.log('Month type:', typeof creditRepaymentData.month, 'Value:', creditRepaymentData.month);
+            
+            await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
+            console.log('Payment log saved to backend (fallback):', creditRepaymentData);
+          } catch (error) {
+            console.error('Failed to save payment log to backend (fallback):', error);
+          }
         }
       } else {
-        // Daily installment (no schedule): store a local repayment log for dashboards/reports
-        try {
-          const logsRaw = localStorage.getItem('tx_daily_repayments');
-          const logs = logsRaw ? JSON.parse(logsRaw) : [];
-          logs.push({
-            transactionId: selectedSchedule.transaction.id,
-            amount: Number(paymentAmount),
-            paidAt: new Date().toISOString(),
-            channel: paymentChannel,
-            paidByUserId: Number(localStorage.getItem('userId')) || null,
-            customerId: selectedSchedule.transaction.customer?.id || null,
-            branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
-          });
-          localStorage.setItem('tx_daily_repayments', JSON.stringify(logs));
-        } catch {}
-      }
-
-      const transactionUpdate = {
-        amountPaid: newTransactionPaid,
-        remainingBalance: newRemainingBalance
-      };
-      
-      try {
-        await axiosWithAuth.put(`/transactions/${transaction.id}`, {
-          ...transactionUpdate,
+        // For transactions without payment schedules (including INSTALLMENT)
+        if (selectedSchedule.transaction.paymentType === 'INSTALLMENT') {
+          // Store payment log for INSTALLMENT transactions
+          try {
+            const creditRepaymentData = {
+              transactionId: selectedSchedule.transaction.id,
+              scheduleId: selectedSchedule.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              month: String(selectedSchedule.month), // Convert to string
+              monthNumber: Number(selectedSchedule.month), // Add numeric value
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+              branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
+            };
+            
+            await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
+            console.log('INSTALLMENT payment saved to backend:', creditRepaymentData);
+          } catch (error) {
+            console.error('Failed to save INSTALLMENT payment to backend:', error);
+          }
+        } else {
+          // Daily installment (no schedule): save to backend
+          try {
+            const dailyRepaymentData = {
+              transactionId: selectedSchedule.transaction.id,
+              amount: Number(paymentAmount),
+              channel: paymentChannel,
+              paidAt: new Date().toISOString(),
+              paidByUserId: Number(localStorage.getItem('userId')) || null,
+              branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
+            };
+            
+            await axiosWithAuth.post(`${API_URL}/daily-repayments`, dailyRepaymentData);
+            console.log('Daily repayment saved to backend:', dailyRepaymentData);
+          } catch (error) {
+            console.error('Failed to save daily repayment to backend:', error);
+          }
+        }
+        
+        // For daily installments, we need to update the transaction's remaining balance
+        // This is the same logic as for regular transactions
+        const dailyCurrentRemaining = transaction.remainingBalance || transaction.finalTotal;
+        const dailyNewRemaining = Math.max(0, dailyCurrentRemaining - Number(paymentAmount));
+        
+        console.log('Daily installment payment debug:', {
+          transactionId: transaction.id,
+          currentRemaining: dailyCurrentRemaining,
+          paymentAmount: Number(paymentAmount),
+          newRemaining: dailyNewRemaining,
+          termUnit: transaction.termUnit
+        });
+        
+        // Kunlik bo'lib to'lash uchun transaction ning remaining balance ni yangilash
+        const dailyTransactionUpdate = {
+          remainingBalance: dailyNewRemaining,
           creditRepaymentAmount: (transaction.creditRepaymentAmount || 0) + Number(paymentAmount),
           lastRepaymentDate: new Date().toISOString()
-        });
-      } catch (error) {
-        console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
-        await axiosWithAuth.put(`/transactions/${transaction.id}`, transactionUpdate);
+        };
+        
+        try {
+          // Only update if transaction is not completed
+          if (transaction.status !== 'COMPLETED' && transaction.status !== 'CANCELLED') {
+            await axiosWithAuth.put(`/transactions/${transaction.id}`, dailyTransactionUpdate);
+            console.log('Daily installment transaction updated successfully');
+          } else {
+            console.log(`Transaction ${transaction.id} is ${transaction.status}, skipping update. Daily repayment record created successfully.`);
+          }
+        } catch (error) {
+          console.log('Failed to update daily installment transaction (this is normal for completed transactions):', error.message);
+          console.log('Daily repayment record was created successfully, transaction update is optional.');
+        }
       }
 
+      // Update transaction with credit repayment tracking (NOT amountPaid)
+      // amountPaid should only be used for upfront payments, not for credit repayments
+      
+      // Calculate the new remaining balance correctly
+      let currentRemaining = transaction.remainingBalance || transaction.finalTotal;
+      let newRemaining = Math.max(0, currentRemaining - Number(paymentAmount));
+      
+      // Kunlik bo'lib to'lash uchun maxsus hisoblash
+      if (transaction.termUnit === 'DAYS' && !selectedSchedule.isPaymentSchedule) {
+        // Kunlik bo'lib to'lash uchun transaction ning remaining balance ni yangilash
+        currentRemaining = transaction.remainingBalance || transaction.finalTotal;
+        newRemaining = Math.max(0, currentRemaining - Number(paymentAmount));
+        
+        console.log('Daily installment payment calculation:', {
+          transactionId: transaction.id,
+          termUnit: transaction.termUnit,
+          currentRemaining: currentRemaining,
+          paymentAmount: Number(paymentAmount),
+          newRemaining: newRemaining
+        });
+      }
+      
+      console.log('Payment calculation debug:', {
+        transactionId: transaction.id,
+        currentRemaining: currentRemaining,
+        paymentAmount: Number(paymentAmount),
+        newRemaining: newRemaining,
+        transaction: {
+          finalTotal: transaction.finalTotal,
+          remainingBalance: transaction.remainingBalance,
+          amountPaid: transaction.amountPaid,
+          downPayment: transaction.downPayment,
+          termUnit: transaction.termUnit
+        }
+      });
+      
+      const transactionUpdate = {
+        // DO NOT update amountPaid for credit repayments - it's only for upfront payments
+        // amountPaid: currentTransactionPaid + Number(paymentAmount), // REMOVED
+        remainingBalance: newRemaining,
+        // Track credit repayments separately
+        creditRepaymentAmount: (transaction.creditRepaymentAmount || 0) + Number(paymentAmount),
+        lastRepaymentDate: new Date().toISOString()
+      };
+
+      try {
+        console.log('Updating transaction with:', transactionUpdate);
+        const response = await axiosWithAuth.put(`/transactions/${transaction.id}`, transactionUpdate);
+        console.log('Transaction updated successfully. Response:', response.data);
+      } catch (error) {
+        console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
+        console.log('Fallback update with remainingBalance:', transactionUpdate.remainingBalance);
+        // Fallback: only update remaining balance
+        const fallbackResponse = await axiosWithAuth.put(`/transactions/${transaction.id}`, {
+          remainingBalance: transactionUpdate.remainingBalance
+        });
+        console.log('Fallback update response:', fallbackResponse.data);
+      }
+
+      console.log('Payment completed successfully. Reloading customer transactions...');
       setNotification({ message: 'Тўлов муваффақиятли амалга оширилди', type: 'success' });
       setShowPaymentModal(false);
       setSelectedSchedule(null);
       setPaymentAmount('');
       setPaymentChannel('CASH');
       setPaymentRating('YAXSHI');
-      
+
       if (selectedCustomer) {
+        console.log('Reloading transactions for customer:', selectedCustomer.id);
         loadCustomerTransactions(selectedCustomer.id);
       }
     } catch (error) {
@@ -308,10 +574,14 @@ const Мижозлар = () => {
     }
   };
 
-
-
   const formatDate = (date) => {
-    return date ? new Date(date).toLocaleDateString('uz-UZ') : "Номаълум";
+    if (!date) return "Номаълум";
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate.getTime())) return "Номаълум";
+    return parsedDate.toLocaleDateString('uz-UZ') + ' ' + parsedDate.toLocaleTimeString('uz-UZ', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
   };
 
   const getPaymentStatus = (schedule) => {
@@ -320,14 +590,28 @@ const Мижозлар = () => {
     return { text: 'Тўланмаган', color: 'text-red-600' };
   };
 
+  // Only allow paying month N when all previous months are fully paid
+  const isSchedulePayable = (schedule, allSchedules = [], termUnit) => {
+    if (termUnit === 'DAYS') return true; // only one entry
+    const monthNum = Number(schedule?.month || 0);
+    if (!monthNum || !Array.isArray(allSchedules)) return true;
+    for (const sc of allSchedules) {
+      const m = Number(sc?.month || 0);
+      if (m > 0 && m < monthNum) {
+        const remaining = Math.max(0, Number(sc?.payment || 0) - Number(sc?.paidAmount || 0));
+        if (remaining > 0) return false;
+      }
+    }
+    return true;
+  };
+
   return (
-<div className="p-6 bg-gray-50 min-h-screen">
+    <div className="p-6 bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Кредит Мижозлари ва Тўловлари</h1>
 
       {notification && (
-        <div className={`${
-          notification.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-        } mb-4 p-4 rounded-lg`}>
+        <div className={`${notification.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          } mb-4 p-4 rounded-lg`}>
           {notification.message}
         </div>
       )}
@@ -336,7 +620,7 @@ const Мижозлар = () => {
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-xl font-semibold mb-4">Кредит Мижозлари</h2>
-            
+
             <div className="mb-4">
               <input
                 type="text"
@@ -346,7 +630,7 @@ const Мижозлар = () => {
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            
+
 
             {loading ? (
               <div className="text-center py-4">Юкланмоқда...</div>
@@ -354,113 +638,112 @@ const Мижозлар = () => {
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {filteredCustomers.length > 0 ? (
                   filteredCustomers.map((customer) => (
-                      <div
-                        key={customer.id}
-                        onClick={() => loadCustomerTransactions(customer.id)}
-                        className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                          selectedCustomer?.id === customer.id
-                            ? 'bg-blue-100 border-blue-300 border'
-                            : 'bg-gray-50 hover:bg-gray-100'
+                    <div
+                      key={customer.id}
+                      onClick={() => loadCustomerTransactions(customer.id)}
+                      className={`p-3 rounded-lg cursor-pointer transition-colors ${selectedCustomer?.id === customer.id
+                          ? 'bg-blue-100 border-blue-300 border'
+                          : 'bg-gray-50 hover:bg-gray-100'
                         }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="font-medium">{customer.fullName}</div>
-                            <div className="text-sm text-gray-600">{customer.phone}</div>
-                            {customer.email && (
-                              <div className="text-sm text-gray-500">{customer.email}</div>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            {(() => {
-                              const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
-                              if (creditTransactions.length === 0) return null;
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-medium">{customer.fullName}</div>
+                          <div className="text-sm text-gray-600">{customer.phone}</div>
+                          {customer.email && (
+                            <div className="text-sm text-gray-500">{customer.email}</div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          {(() => {
+                            const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                            if (creditTransactions.length === 0) return null;
 
-                              const totalBaseCredit = creditTransactions.reduce((sum, t) => sum + Number(t?.total || 0), 0);
-                              const totalRemaining = creditTransactions.reduce((sum, t) => sum + calculateTransactionRemaining(t), 0);
-                              const totalPaid = Math.max(0, totalBaseCredit - totalRemaining);
+                            const totalCredit = creditTransactions.reduce((sum, t) => sum + Number(t?.finalTotal || 0), 0);
+                            const totalRemaining = creditTransactions.reduce((sum, t) => sum + calculateTransactionRemaining(t), 0);
+                            const totalPaid = Math.max(0, totalCredit - totalRemaining);
 
-                              if (totalRemaining <= 0) return null;
+                            if (totalRemaining <= 0) return null;
 
-                              if (totalPaid > 0) {
-                                return (
-                                  <div className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
-                                    {formatCurrency(totalPaid)} / {formatCurrency(totalBaseCredit)}
-                                  </div>
-                                );
-                              }
+                            if (totalPaid > 0) {
                               return (
-                                <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                                  {formatCurrency(totalBaseCredit)}
+                                <div className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
+                                  {formatCurrency(totalPaid)} / {formatCurrency(totalCredit)}
                                 </div>
                               );
-                            })()}
-                            
-                            {/* Rating indicator */}
-                            {(() => {
-                              const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
-                              if (creditTransactions.length === 0) return null;
+                            }
+                            return (
+                              <div className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                                {formatCurrency(totalCredit)}
+                              </div>
+                            );
+                          })()}
 
-                              let totalMonths = 0;
-                              let goodMonths = 0;
-                              let badMonths = 0;
+                          {/* Rating indicator */}
+                          {(() => {
+                            const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                            if (creditTransactions.length === 0) return null;
 
-                              creditTransactions.forEach(transaction => {
-                                if (transaction.paymentSchedules) {
-                                  transaction.paymentSchedules.forEach(schedule => {
-                                    totalMonths++;
-                                    if (schedule.rating === 'YAXSHI') {
-                                      goodMonths++;
-                                    } else if (schedule.rating === 'YOMON') {
-                                      badMonths++;
-                                    }
-                                  });
-                                }
-                              });
+                            let totalMonths = 0;
+                            let goodMonths = 0;
+                            let badMonths = 0;
 
-                              if (totalMonths > 0) {
-                                if (badMonths > goodMonths) {
-                                  return (
-                                    <div className="mt-1 bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
-                                      Ёмон ({badMonths}/{totalMonths})
-                                    </div>
-                                  );
-                                } else if (goodMonths > badMonths) {
-                                  return (
-                                    <div className="mt-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                                      Яхши ({goodMonths}/{totalMonths})
-                                    </div>
-                                  );
-                                } else {
-                                  return (
-                                    <div className="mt-1 bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">
-                                      Нейтрал ({goodMonths}/{totalMonths})
-                                    </div>
-                                  );
-                                }
+                            creditTransactions.forEach(transaction => {
+                              if (transaction.paymentSchedules) {
+                                transaction.paymentSchedules.forEach(schedule => {
+                                  totalMonths++;
+                                  if (schedule.rating === 'YAXSHI') {
+                                    goodMonths++;
+                                  } else if (schedule.rating === 'YOMON') {
+                                    badMonths++;
+                                  }
+                                });
                               }
-                              return null;
-                            })()}
-                            
-                            {/* Down Payment Summary */}
-                            {(() => {
-                              const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
-                              if (creditTransactions.length === 0) return null;
+                            });
 
-                              const totalDownPayment = creditTransactions.reduce((sum, t) => sum + Number(t?.downPayment || 0), 0);
-                              if (totalDownPayment > 0) {
+                            if (totalMonths > 0) {
+                              if (badMonths > goodMonths) {
                                 return (
-                                  <div className="mt-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                                    💰 Олдиндан: {formatCurrency(totalDownPayment)}
+                                  <div className="mt-1 bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+                                    Ёмон ({badMonths}/{totalMonths})
+                                  </div>
+                                );
+                              } else if (goodMonths > badMonths) {
+                                return (
+                                  <div className="mt-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                                    Яхши ({goodMonths}/{totalMonths})
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className="mt-1 bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">
+                                    Нейтрал ({goodMonths}/{totalMonths})
                                   </div>
                                 );
                               }
-                              return null;
-                            })()}
-                          </div>
+                            }
+                            return null;
+                          })()}
+
+                          {/* Down Payment Summary */}
+                          {(() => {
+                            const creditTransactions = (customer.transactions || []).filter((t) => t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT');
+                            if (creditTransactions.length === 0) return null;
+
+                            const totalDownPayment = creditTransactions.reduce((sum, t) => sum + Number(t?.downPayment || 0), 0);
+                            if (totalDownPayment > 0) {
+                              return (
+                                <div className="mt-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                                  💰 Олдиндан: {formatCurrency(totalDownPayment)}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       </div>
-                    ))
+                    </div>
+                  ))
                 ) : (
                   <div className="text-center text-gray-500 py-4">
                     {searchTerm ? 'Қидирув натижаси топилмади' : 'Кредит мижозлари мавжуд эмас'}
@@ -476,7 +759,7 @@ const Мижозлар = () => {
             <h2 className="text-xl font-semibold mb-4">
               {selectedCustomer ? `${selectedCustomer.fullName} - Маълумотлар` : 'Маълумотлар'}
             </h2>
-            
+
             {selectedCustomer ? (
               <div className="space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
                 <div>
@@ -513,100 +796,107 @@ const Мижозлар = () => {
                         const toggle = () => setExpandedTransactions(prev => ({ ...prev, [t.id]: !prev[t.id] }));
                         const productNames = (t.items || []).map(it => it.product?.name || it.name || '').join(', ');
                         const months = (t.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || (Array.isArray(t.paymentSchedules) ? t.paymentSchedules.length : 0);
-                                                 const percent = (t.items || []).map(it => (typeof it.creditPercent === 'number' ? Number(it.creditPercent) : null)).find(v => v != null);
-                         // Also try to get interest rate from transaction level
-                         const transactionInterestRate = t.interestRate || (percent ? percent * 100 : null);
-                         
-                         
+                        const percent = (t.items || []).map(it => (typeof it.creditPercent === 'number' ? Number(it.creditPercent) : null)).find(v => v != null);
+                        // Also try to get interest rate from transaction level
+                        const transactionInterestRate = t.interestRate || (percent ? percent * 100 : null);
+
+
                         const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
-                                                 const totalAmount = Number(t.finalTotal || 0);
-                         const paidAmountCompact = calculateTransactionPaid(t);
-                         const remainingCompact = calculateTransactionRemaining(t);
-                         return (
-                           <div key={t.id} className="border rounded-lg bg-white">
-                             <button onClick={toggle} className="w-full text-left p-4 flex items-start justify-between">
-                               <div>
-                                 <div className="font-medium text-lg">{productNames || `#${t.id}`}</div>
-                                 <div className="text-sm text-gray-600">{typeLabel(t.paymentType)} {t.termUnit === 'DAYS' ? (t.days ? `— ${t.days} кун` : '') : (months ? `— ${months} ой` : '')}{percent != null ? `, ${(percent*100).toFixed(0)}%` : ''}
-                                   {paidAmountCompact > 0 && remainingCompact > 0 && (
-                                     <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 align-middle">Қисман тўланган</span>
-                                   )}
-                                 </div>
-                                                                 {t.termUnit === 'DAYS' && (
-                                   <div className="text-xs text-gray-500 mt-1">
-                                     Асосий сумма: {formatCurrency(t.total || 0)} | Тўланган: {formatCurrency(paidAmountCompact)} | Қолган: {formatCurrency(calculateTransactionRemaining(t))}
-                                   </div>
-                                 )}
+                        const totalAmount = Number(t.finalTotal || 0);
+                        const paidAmountCompact = calculateTransactionPaid(t);
+                        const remainingCompact = calculateTransactionRemaining(t);
+                        return (
+                          <div key={t.id} className="border rounded-lg bg-white">
+                            <button onClick={toggle} className="w-full text-left p-4 flex items-start justify-between">
+                              <div>
+                                <div className="font-medium text-lg">{productNames || `#${t.id}`}</div>
+                                <div className="text-sm text-gray-600">
+                                  {typeLabel(t.paymentType)} {
+                                    t.termUnit === 'DAYS' 
+                                      ? (t.days ? `— ${t.days} кун (1 та тўлов)` : '') 
+                                      : (months ? `— ${months} ой` : '')
+                                  }
+                                  {percent != null ? `, ${(percent * 100).toFixed(0)}%` : ''}
+                                  {paidAmountCompact > 0 && remainingCompact > 0 && (
+                                    <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 align-middle">Қисман тўланған</span>
+                                  )}
+                                </div>
+                                {t.termUnit === 'DAYS' && (
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Асосий сумма: {formatCurrency(t.total || totalAmount)} | Тўланған: {formatCurrency(paidAmountCompact)} | Қолган: {formatCurrency(calculateTransactionRemaining(t))} | {t.days || 0} кун ичида тўлаш керак
+                                  </div>
+                                )}
                                 {t.downPayment && t.downPayment > 0 && (
                                   <div className="text-xs text-blue-600 mt-1">
-                                    💰 Олдиндан олинган: {formatCurrency(t.downPayment)}
+                                    💰 Олдиндан олинған: {formatCurrency(t.downPayment)}
                                   </div>
                                 )}
                                 <div className="text-xs text-gray-500">Сана: {formatDate(t.createdAt)}</div>
                               </div>
-                                                             <div className="text-right">
-                                 <div className="text-lg font-bold">{formatCurrency(t.total || 0)}</div>
-                                 <div className="text-xs text-gray-600">Тўланган: {formatCurrency(calculateTransactionPaid(t))}</div>
-                                 <div className="text-xs text-gray-600">Қолган: {formatCurrency(calculateTransactionRemaining(t))}</div>
-                                 
-                                 {/* Show interest amount if applicable */}
-                                 {(t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') && (
-                                   <div className="text-xs text-blue-600">
-                                     Фоиз: {formatCurrency(calculateTransactionRemaining(t) - Math.max(0, (t.total || 0) - (t.downPayment || 0) - (t.amountPaid || 0)))}
-                                   </div>
-                                 )}
+                              <div className="text-right">
+                                <div className="text-lg font-bold">{formatCurrency(calculateTransactionPaid(t) + calculateTransactionRemaining(t))}</div>
+                                <div className="text-xs text-gray-600">Тўланған: {formatCurrency(calculateTransactionPaid(t))}</div>
+                                <div className="text-xs text-gray-600">Қолган: {formatCurrency(calculateTransactionRemaining(t))}</div>
 
-                                 {calculateTransactionRemaining(t) <= 0 && (
-                                   <div className="mt-1 inline-block bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Тўлиқ тўланган</div>
-                                 )}
-                               </div>
+
+                                {calculateTransactionRemaining(t) <= 0 && (
+                                  <div className="mt-1 inline-block bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Тўлиқ тўланған</div>
+                                )}
+                              </div>
                             </button>
                             {isOpen && (
                               <div className="px-4 pb-4">
                                 {(t.paymentType === 'CREDIT' || t.paymentType === 'INSTALLMENT') && schedules.length > 0 ? (
                                   <div className="mb-3">
-                                    <div className="text-sm font-medium mb-2">Тўлов жадвали</div>
+                                    <div className="text-sm font-medium mb-2">
+                                      {t.termUnit === 'DAYS' ? 'Кунлик тўлов' : 'Тўлов жадвали'}
+                                    </div>
                                     <div className="text-xs text-gray-600 mb-2">
-                                      Тўланган ойлар: {schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/{schedules.length}
+                                      {t.termUnit === 'DAYS' 
+                                        ? `Кунлар: ${t.days || 0} | Тўланған: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/1`
+                                        : `Тўланған ойлар: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/${schedules.length}`
+                                      }
                                     </div>
                                     <div className="overflow-x-auto">
                                       <table className="w-full text-sm border">
                                         <thead className="bg-gray-50">
                                           <tr>
-                                            <th className="px-2 py-1 text-left">Ой/Кун</th>
+                                            <th className="px-2 py-1 text-left">{t.termUnit === 'DAYS' ? 'Кун' : 'Ой'}</th>
                                             <th className="px-2 py-1 text-left">Тўлов</th>
-                                            <th className="px-2 py-1 text-left">Тўланган</th>
+                                            <th className="px-2 py-1 text-left">Тўланған</th>
                                             <th className="px-2 py-1 text-left">Қолган</th>
                                             <th className="px-2 py-1 text-left">Ҳолат</th>
-                                            <th className="px-2 py-1 text-left">Тўланган куни</th>
+                                            <th className="px-2 py-1 text-left">Тўланған куни</th>
                                             <th className="px-2 py-1 text-left">Канал</th>
-                                            <th className="px-2 py-1 text-left">Қабул қилган</th>
+                                            <th className="px-2 py-1 text-left">Қабул қилған</th>
                                             <th className="px-2 py-1 text-left">Баҳо</th>
                                             <th className="px-2 py-1 text-left">Тўлов вақти</th>
                                             <th className="px-2 py-1 text-left">Амал</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y">
-                                          {schedules.sort((a,b)=> (a.month||0)-(b.month||0)).map(sc => {
-                                            const rem = Number(sc.payment||0) - Number(sc.paidAmount||0);
+                                          {schedules.sort((a, b) => (a.month || 0) - (b.month || 0)).map(sc => {
+                                            const rem = Number(sc.payment || 0) - Number(sc.paidAmount || 0);
                                             const st = getPaymentStatus(sc);
+                                            const payable = isSchedulePayable(sc, schedules, t.termUnit);
                                             return (
                                               <tr key={sc.id} className="align-top">
-                                                <td className="px-2 py-1">{sc.month}</td>
+                                                <td className="px-2 py-1">
+                                                  {t.termUnit === 'DAYS' ? `${sc.daysCount || t.days || 0} кун` : sc.month}
+                                                </td>
                                                 <td className="px-2 py-1">{formatCurrency(sc.payment)}</td>
                                                 <td className="px-2 py-1">{formatCurrency(sc.paidAmount)}</td>
-                                                <td className="px-2 py-1">{formatCurrency((Number(sc.payment||0)-Number(sc.paidAmount||0)))}</td>
+                                                <td className="px-2 py-1">{formatCurrency((Number(sc.payment || 0) - Number(sc.paidAmount || 0)))}</td>
                                                 <td className={`px-2 py-1 text-xs ${st.color}`}>{st.text}</td>
                                                 <td className="px-2 py-1">{sc.paidAt ? formatDate(sc.paidAt) : '-'}</td>
                                                 <td className="px-2 py-1">{sc.paidChannel === 'CARD' ? 'Карта' : (sc.paidChannel === 'CASH' ? 'Нақд' : '-')}</td>
                                                 <td className="px-2 py-1">{sc.paidBy ? `${sc.paidBy.firstName || ''} ${sc.paidBy.lastName || ''}`.trim() : '-'}</td>
                                                 <td className="px-2 py-1">
                                                   {sc.rating ? (
-                                                    <span className={`text-xs px-2 py-1 rounded ${
-                                                      sc.rating === 'YAXSHI' 
-                                                        ? 'bg-green-100 text-green-800' 
+                                                    <span className={`text-xs px-2 py-1 rounded ${sc.rating === 'YAXSHI'
+                                                        ? 'bg-green-100 text-green-800'
                                                         : 'bg-red-100 text-red-800'
-                                                    }`}>
+                                                      }`}>
                                                       {sc.rating === 'YAXSHI' ? 'Яхши' : 'Ёмон'}
                                                     </span>
                                                   ) : (
@@ -615,23 +905,45 @@ const Мижозлар = () => {
                                                 </td>
                                                 <td className="px-2 py-1">
                                                   {(() => {
-                                                    const dueDate = new Date(t.createdAt);
-                                                    dueDate.setMonth(dueDate.getMonth() + sc.month);
-                                                    const now = new Date();
-                                                    const isOverdue = dueDate < now && rem > 0;
-                                                    return (
-                                                      <span className={`text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}`}>
-                                                        {formatDate(dueDate)}
-                                                        {isOverdue && <span className="ml-1">⚠️</span>}
-                                                      </span>
-                                                    );
+                                                    if (t.termUnit === 'DAYS') {
+                                                      // Kunlik bo'lib to'lash uchun kunlar soni keyin to'lov muddati
+                                                      const dueDate = new Date(t.createdAt || Date.now());
+                                                      if (!t.createdAt) {
+                                                        console.warn(`Missing createdAt for transaction ${t.id}, using current date`);
+                                                      }
+                                                      dueDate.setDate(dueDate.getDate() + (sc.daysCount || t.days || 0));
+                                                      const now = new Date();
+                                                      const isOverdue = dueDate < now && rem > 0;
+                                                      return (
+                                                        <span className={`text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}`}>
+                                                          {formatDate(dueDate)}
+                                                          {isOverdue && <span className="ml-1">⚠️</span>}
+                                                        </span>
+                                                      );
+                                                    } else {
+                                                      // Oylik bo'lib to'lash uchun oylar soni keyin to'lov muddati
+                                                      const dueDate = new Date(t.createdAt || Date.now());
+                                                      if (!t.createdAt) {
+                                                        console.warn(`Missing createdAt for transaction ${t.id}, using current date`);
+                                                      }
+                                                      dueDate.setMonth(dueDate.getMonth() + sc.month);
+                                                      const now = new Date();
+                                                      const isOverdue = dueDate < now && rem > 0;
+                                                      return (
+                                                        <span className={`text-xs ${isOverdue ? 'text-red-600 font-bold' : 'text-gray-600'}`}>
+                                                          {formatDate(dueDate)}
+                                                          {isOverdue && <span className="ml-1">⚠️</span>}
+                                                        </span>
+                                                      );
+                                                    }
                                                   })()}
                                                 </td>
                                                 <td className="px-2 py-1">
                                                   {rem > 0 ? (
                                                     <button
-                                                      onClick={() => { setSelectedSchedule({ ...sc, transaction: t, isPaymentSchedule: true }); setPaymentAmount(rem.toString()); setShowPaymentModal(true); }}
-                                                      className="bg-blue-500 text-white px-3 py-1 rounded text-xs hover:bg-blue-600"
+                                                      onClick={() => { if (!payable) return; setSelectedSchedule({ ...sc, transaction: t, isPaymentSchedule: true }); setPaymentAmount(rem.toString()); setShowPaymentModal(true); }}
+                                                      disabled={!payable}
+                                                      className={`px-3 py-1 rounded text-xs ${payable ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                                                     >
                                                       Тўлаш
                                                     </button>
@@ -650,7 +962,7 @@ const Мижозлар = () => {
                                 <div>
                                   <div className="text-sm font-medium mb-2">Маҳсулотлар</div>
                                   <div className="space-y-2">
-                                    {(t.items||[]).map((it, i) => (
+                                    {(t.items || []).map((it, i) => (
                                       <div key={i} className="flex items-center justify-between bg-gray-50 p-2 rounded">
                                         <div className="font-medium text-sm">{it.product?.name || it.name}</div>
                                         <div className="text-xs text-gray-600">{it.quantity} дона × {formatCurrency(it.price)}</div>
@@ -658,48 +970,6 @@ const Мижозлар = () => {
                                     ))}
                                   </div>
                                 </div>
-
-                                                                 {(() => {
-                                   if (!(t.paymentType === 'INSTALLMENT')) return null;
-                                   const total = Number(t.total || t.finalTotal || 0);
-                                   const paid = calculateTransactionPaid(t);
-                                   const remaining = calculateTransactionRemaining(t);
-                                   if (remaining <= 0) return null;
-                                   return (
-                                     <div className="mt-3 bg-blue-50 border border-blue-200 rounded p-2">
-                                       <div className="flex items-center justify-between gap-2">
-                                         <div className="text-sm text-blue-800">Қолган: <span className="font-semibold">{formatCurrency(remaining)}</span></div>
-                                         <div className="flex items-center gap-2">
-                                           <input
-                                             type="number"
-                                             min="1"
-                                             value={paymentAmount}
-                                             onChange={(e)=>setPaymentAmount(e.target.value)}
-                                             placeholder="Сумма"
-                                             className="w-28 p-1.5 border border-blue-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                           />
-                                           <button
-                                             onClick={() => {
-                                               const amt = Number(paymentAmount);
-                                               setSelectedSchedule({
-                                                 transaction: t,
-                                                 isPaymentSchedule: false,
-                                                 payment: total,
-                                                 paidAmount: paid,
-                                                 remainingBalance: remaining,
-                                               });
-                                               setPaymentAmount(!isNaN(amt) && amt>0 ? String(amt) : String(remaining));
-                                               setShowPaymentModal(true);
-                                             }}
-                                             className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1.5 rounded"
-                                           >
-                                             Тўлаш
-                                           </button>
-                                         </div>
-                                       </div>
-                                     </div>
-                                   );
-                                 })()}
                               </div>
                             )}
                           </div>
@@ -734,9 +1004,9 @@ const Мижозлар = () => {
                 </p>
                 <p className="text-gray-600 mb-2">
                   <strong>Тўлов тури:</strong> {
-                    selectedSchedule.transaction.paymentType === 'CREDIT' ? 'Кредит' : 
-                    selectedSchedule.transaction.paymentType === 'INSTALLMENT' ? 'Бўлиб тўлаш' : 
-                    selectedSchedule.transaction.paymentType === 'CASH' ? 'Нақд пул' : 'Карта'
+                    selectedSchedule.transaction.paymentType === 'CREDIT' ? 'Кредит' :
+                      selectedSchedule.transaction.paymentType === 'INSTALLMENT' ? 'Бўлиб тўлаш' :
+                        selectedSchedule.transaction.paymentType === 'CASH' ? 'Нақд пул' : 'Карта'
                   }
                 </p>
                 {selectedSchedule.isPaymentSchedule ? (
@@ -745,57 +1015,46 @@ const Мижозлар = () => {
                       <strong>{selectedSchedule.month}-ой тўлови:</strong> {formatCurrency(selectedSchedule.payment)}
                     </p>
                     <p className="text-gray-600 mb-2">
-                      <strong>Тўланган:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                      <strong>Тўланған:</strong> {formatCurrency(selectedSchedule.paidAmount)}
                     </p>
                     <p className="text-gray-600 mb-2">
                       <strong>Қолган:</strong> {formatCurrency(selectedSchedule.payment - selectedSchedule.paidAmount)}
                     </p>
                   </>
-                                 ) : (
-                   <>
-                     <p className="text-lg font-bold text-gray-900">
-                       <strong>Асосий сумма:</strong> {formatCurrency(selectedSchedule.transaction.total || 0)}
-                     </p>
-                     <p className="text-gray-600 mb-2">
-                       <strong>Олдиндан олинган:</strong> {formatCurrency(selectedSchedule.transaction.downPayment || 0)}
-                     </p>
-                     <p className="text-gray-600 mb-2">
-                       <strong>Тўланган:</strong> {formatCurrency(selectedSchedule.paidAmount)}
-                     </p>
-                     <p className="text-gray-600 mb-2">
-                       <strong>Қолган (фоиз билан):</strong> {formatCurrency(selectedSchedule.remainingBalance)}
-                     </p>
-                     {/* Show interest amount */}
-                     {(() => {
-                       const baseRemaining = Math.max(0, (selectedSchedule.transaction.total || 0) - (selectedSchedule.transaction.downPayment || 0) - selectedSchedule.paidAmount);
-                       const interestAmount = selectedSchedule.remainingBalance - baseRemaining;
-                       if (interestAmount > 0) {
-                         return (
-                           <p className="text-blue-600 mb-2">
-                             <strong>Фоиз:</strong> {formatCurrency(interestAmount)}
-                           </p>
-                         );
-                       }
-                       return null;
-                     })()}
-                   </>
-                 )}
+                ) : (
+                  <>
+                    <p className="text-lg font-bold text-gray-900">
+                      <strong>Умумий сумма:</strong> {formatCurrency(selectedSchedule.transaction.total || selectedSchedule.payment)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Тўланған:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                    </p>
+                    <p className="text-gray-600 mb-2">
+                      <strong>Қолган:</strong> {formatCurrency(selectedSchedule.remainingBalance)}
+                    </p>
+                    {selectedSchedule.transaction.termUnit === 'DAYS' && (
+                      <p className="text-gray-600 mb-2">
+                        <strong>Тўлов тури:</strong> {selectedSchedule.transaction.days} кун ичида 1 та тўлов
+                      </p>
+                    )}
+                  </>
+                )}
                 {selectedSchedule.transaction.downPayment && selectedSchedule.transaction.downPayment > 0 && (
                   <p className="text-gray-600 mb-2">
                     <strong>Бошланғич тўлов:</strong> {formatCurrency(selectedSchedule.transaction.downPayment)}
                   </p>
                 )}
               </div>
-              
+
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Тўлов канали</label>
                 <div className="flex items-center gap-6 text-sm">
                   <label className="inline-flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="paymentChannel" value="CASH" checked={paymentChannel==='CASH'} onChange={()=>setPaymentChannel('CASH')} />
+                    <input type="radio" name="paymentChannel" value="CASH" checked={paymentChannel === 'CASH'} onChange={() => setPaymentChannel('CASH')} />
                     <span>Нақд</span>
                   </label>
                   <label className="inline-flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="paymentChannel" value="CARD" checked={paymentChannel==='CARD'} onChange={()=>setPaymentChannel('CARD')} />
+                    <input type="radio" name="paymentChannel" value="CARD" checked={paymentChannel === 'CARD'} onChange={() => setPaymentChannel('CARD')} />
                     <span>Карта</span>
                   </label>
                 </div>
@@ -805,11 +1064,11 @@ const Мижозлар = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Ой баҳоси</label>
                 <div className="flex items-center gap-6 text-sm">
                   <label className="inline-flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="paymentRating" value="YAXSHI" checked={paymentRating==='YAXSHI'} onChange={()=>setPaymentRating('YAXSHI')} />
+                    <input type="radio" name="paymentRating" value="YAXSHI" checked={paymentRating === 'YAXSHI'} onChange={() => setPaymentRating('YAXSHI')} />
                     <span className="text-green-600 font-medium">Яхши</span>
                   </label>
                   <label className="inline-flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="paymentRating" value="YOMON" checked={paymentRating==='YOMON'} onChange={()=>setPaymentRating('YOMON')} />
+                    <input type="radio" name="paymentRating" value="YOMON" checked={paymentRating === 'YOMON'} onChange={() => setPaymentRating('YOMON')} />
                     <span className="text-red-600 font-medium">Ёмон</span>
                   </label>
                 </div>
@@ -817,11 +1076,36 @@ const Мижозлар = () => {
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Тўлов Миқдори</label>
-                <input type="number" value={paymentAmount} onChange={(e)=>setPaymentAmount(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" min="0.01" max={selectedSchedule.isPaymentSchedule ? (selectedSchedule.payment - selectedSchedule.paidAmount) : selectedSchedule.remainingBalance} step="0" />
+                <input 
+                  type="number" 
+                  value={paymentAmount} 
+                  onChange={(e) => setPaymentAmount(e.target.value)} 
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                  min="0.01" 
+                  max={(() => {
+                    const max = selectedSchedule.isPaymentSchedule 
+                      ? (selectedSchedule.payment - selectedSchedule.paidAmount) 
+                      : selectedSchedule.remainingBalance;
+                    console.log('Payment input max calculation:', {
+                      isPaymentSchedule: selectedSchedule.isPaymentSchedule,
+                      payment: selectedSchedule.payment,
+                      paidAmount: selectedSchedule.paidAmount,
+                      remainingBalance: selectedSchedule.remainingBalance,
+                      max: max
+                    });
+                    return max;
+                  })()} 
+                  step="0" 
+                />
+                <div className="text-xs text-gray-500 mt-1">
+                  Максимал тўлов: {formatCurrency(selectedSchedule.isPaymentSchedule 
+                    ? (selectedSchedule.payment - selectedSchedule.paidAmount) 
+                    : selectedSchedule.remainingBalance)}
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3">
-                <button onClick={()=>{ setShowPaymentModal(false); setSelectedSchedule(null); setPaymentAmount(''); setPaymentChannel('CASH'); }} className="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Бекор қилиш</button>
+                <button onClick={() => { setShowPaymentModal(false); setSelectedSchedule(null); setPaymentAmount(''); setPaymentChannel('CASH'); }} className="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Бекор қилиш</button>
                 <button onClick={handlePayment} disabled={loading || !paymentAmount || Number(paymentAmount) <= 0} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50">{loading ? 'Жараёнда...' : 'Кредит Тўлови Қилиш'}</button>
               </div>
             </div>
