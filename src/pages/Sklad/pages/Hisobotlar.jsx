@@ -49,7 +49,7 @@ const Hisobotlar = () => {
   const userRole = localStorage.getItem("userRole");
   // Get selectedBranchId from localStorage, but handle null/undefined cases
   const selectedBranchId = localStorage.getItem("branchId");
-  
+
   // Debug: Log the branch ID and user information
   console.log('Hisobotlar: Debug info:', {
     selectedBranchId,
@@ -74,7 +74,7 @@ const Hisobotlar = () => {
       </div>
     );
   }
-  
+
   // Cashier report state (current user from localStorage)
   const currentUserId = Number(localStorage.getItem("userId")) || null;
   const [cashierLoading, setCashierLoading] = useState(false);
@@ -154,12 +154,12 @@ const Hisobotlar = () => {
   const formatDate = (dateString) => {
     return dateString
       ? new Date(dateString).toLocaleDateString("uz-UZ", {
-          year: "numeric",
-          month: "2-digit",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        })
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
       : "N/A";
   };
 
@@ -206,7 +206,7 @@ const Hisobotlar = () => {
       const res = await fetch(`https://suddocs.uz/transactions/statistics?${params.toString()}`, { headers });
       if (!res.ok) throw new Error("Server error");
       const data = await res.json();
-      
+
       console.log('Transaction statistics:', data);
       setTransactionStats(data);
     } catch (error) {
@@ -248,13 +248,13 @@ const Hisobotlar = () => {
         if (!res.ok) throw new Error("Server error");
         const data = await res.json();
         const transactions = data.transactions || data || [];
-        
+
         // Debug: Log the raw transactions data
         console.log('Raw transactions from API:', transactions.slice(0, 3)); // Show first 3 transactions
-        
+
         // Filter transactions for current user to see what we're working with
-        const userTransactions = transactions.filter(t => 
-          t.type === 'SALE' && 
+        const userTransactions = transactions.filter(t =>
+          t.type === 'SALE' &&
           (t.soldBy?.id === currentUserId || t.user?.id === currentUserId)
         );
         console.log('User transactions:', userTransactions.slice(0, 3));
@@ -304,45 +304,45 @@ const Hisobotlar = () => {
                 finalTotal: t.finalTotal,
                 total: t.total
               });
-                             const final = Number(t.finalTotal || t.total || 0);
-               const amountPaid = Number(t.amountPaid || 0);
+              const final = Number(t.finalTotal || t.total || 0);
+              const amountPaid = Number(t.amountPaid || 0);
               const downPayment = Number(t.downPayment || 0);
-                             // For CREDIT/INSTALLMENT, upfront payment is stored in amountPaid
-               // For other payment types, upfront is 0
-               // NOTE: amountPaid contains ONLY the upfront payment, not credit repayments
-               // Credit repayments are tracked separately in creditRepaymentAmount field
-               const upfront = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ? amountPaid : 0;
-               
-                               // Debug logging for upfront payments
+              // For CREDIT/INSTALLMENT, upfront payment is stored in amountPaid
+              // For other payment types, upfront is 0
+              // NOTE: amountPaid contains ONLY the upfront payment, not credit repayments
+              // Credit repayments are tracked separately in creditRepaymentAmount field
+              const upfront = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ? amountPaid : 0;
+
+              // Debug logging for upfront payments
               if (['CREDIT', 'INSTALLMENT'].includes(t.paymentType) && upfront > 0) {
-                  console.log('Upfront payment found:', {
-                    transactionId: t.id,
-                    paymentType: t.paymentType,
+                console.log('Upfront payment found:', {
+                  transactionId: t.id,
+                  paymentType: t.paymentType,
                   amountPaid,
                   downPayment,
                   upfront,
                   upfrontPaymentType: t.upfrontPaymentType
                 });
               }
-              
+
               switch (t.paymentType) {
                 case "CASH":
                   agg.cashTotal += final;
                   break;
-                                case "CARD":
+                case "CARD":
                   agg.cardTotal += final;
                   break;
-                                                  case "CREDIT":
+                case "CREDIT":
                   agg.creditTotal += final;
                   agg.upfrontTotal += upfront;
                   // Track upfront payment by type
                   const upfrontType = t.upfrontPaymentType || 'CASH';
                   console.log('Processing upfront payment:', {
-                      transactionId: t.id,
+                    transactionId: t.id,
                     upfrontType,
                     upfront,
-                      upfrontPaymentType: t.upfrontPaymentType
-                    });
+                    upfrontPaymentType: t.upfrontPaymentType
+                  });
                   if (upfrontType === 'CASH') {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType === 'CARD') {
@@ -355,11 +355,11 @@ const Hisobotlar = () => {
                   // Track upfront payment by type
                   const upfrontType2 = t.upfrontPaymentType || 'CASH';
                   console.log('Processing installment upfront payment:', {
-                      transactionId: t.id,
+                    transactionId: t.id,
                     upfrontType: upfrontType2,
                     upfront,
-                      upfrontPaymentType: t.upfrontPaymentType
-                    });
+                    upfrontPaymentType: t.upfrontPaymentType
+                  });
                   if (upfrontType2 === 'CASH') {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType2 === 'CARD') {
@@ -470,22 +470,22 @@ const Hisobotlar = () => {
           const creditTx = Array.isArray(creditData?.transactions)
             ? creditData.transactions
             : Array.isArray(creditData)
-            ? creditData
-            : [];
+              ? creditData
+              : [];
           const installmentTx = Array.isArray(installmentData?.transactions)
             ? installmentData.transactions
             : Array.isArray(installmentData)
-            ? installmentData
-            : [];
+              ? installmentData
+              : [];
           const allCreditTx = [...creditTx, ...installmentTx];
 
           for (const t of allCreditTx) {
             if (!Array.isArray(t?.paymentSchedules)) continue;
             // Ensure branch filter matches if backend didn't filter
             if (
-              selectedBranchId && 
-              selectedBranchId !== 'null' && 
-              selectedBranchId !== 'undefined' && 
+              selectedBranchId &&
+              selectedBranchId !== 'null' &&
+              selectedBranchId !== 'undefined' &&
               selectedBranchId.trim() !== '' &&
               String(t.fromBranchId || t.branchId || "") !== String(selectedBranchId)
             ) {
@@ -520,8 +520,8 @@ const Hisobotlar = () => {
               }
             }
           }
-                 } catch (e) {
-           // If supplemental fetch fails, proceed with what we have
+        } catch (e) {
+          // If supplemental fetch fails, proceed with what we have
           console.warn("Supplemental credit/installment fetch failed", e);
         }
 
@@ -533,16 +533,16 @@ const Hisobotlar = () => {
           }
           dailyParams.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
           dailyParams.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
-          
+
           const dailyRepaymentsUrl = `https://suddocs.uz/daily-repayments/user/${currentUserId}?${dailyParams.toString()}`;
           console.log('Hisobotlar: Fetching daily repayments from:', dailyRepaymentsUrl);
-          
+
           const dailyRepaymentsRes = await fetch(dailyRepaymentsUrl, { headers });
-          
+
           if (dailyRepaymentsRes.ok) {
             const dailyRepayments = await dailyRepaymentsRes.json();
             console.log('Hisobotlar: Daily repayments response:', dailyRepayments);
-            
+
             for (const l of Array.isArray(dailyRepayments) ? dailyRepayments : []) {
               console.log('Processing daily repayment:', {
                 id: l.id,
@@ -551,15 +551,15 @@ const Hisobotlar = () => {
                 amount: l.amount,
                 transactionId: l.transactionId
               });
-              
+
               const ch = (l.channel || 'CASH').toUpperCase();
               agg.repaymentTotal += Number(l.amount || 0);
-            agg.repayments.push({
+              agg.repayments.push({
                 scheduleId: `daily-${l.id}`,
-              paidAt: l.paidAt,
-              amount: Number(l.amount || 0),
-              channel: ch,
-              transactionId: l.transactionId,
+                paidAt: l.paidAt,
+                amount: Number(l.amount || 0),
+                channel: ch,
+                transactionId: l.transactionId,
                 month: 'Кунлик',
                 customer: l.transaction?.customer || null,
                 paidBy: l.paidBy || { id: l.paidByUserId },
@@ -583,16 +583,16 @@ const Hisobotlar = () => {
           }
           params.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
           params.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
-          
+
           const creditRepaymentsUrl = `https://suddocs.uz/credit-repayments/user/${currentUserId}?${params.toString()}`;
           console.log('Hisobotlar: Fetching credit repayments from:', creditRepaymentsUrl);
-          
+
           const creditRepaymentsRes = await fetch(creditRepaymentsUrl, { headers });
-          
+
           if (creditRepaymentsRes.ok) {
             const creditRepayments = await creditRepaymentsRes.json();
             console.log('Hisobotlar: Credit repayments response:', creditRepayments);
-            
+
             for (const l of Array.isArray(creditRepayments) ? creditRepayments : []) {
               console.log('Processing credit repayment:', {
                 id: l.id,
@@ -601,7 +601,7 @@ const Hisobotlar = () => {
                 amount: l.amount,
                 transactionId: l.transactionId
               });
-              
+
               const ch = (l.channel || 'CASH').toUpperCase();
               agg.repaymentTotal += Number(l.amount || 0);
               agg.repayments.push({
@@ -673,15 +673,15 @@ const Hisobotlar = () => {
           upfrontCard: agg.upfrontCard,
           repaymentTotal: agg.repaymentTotal
         });
-        
+
         setCashierReport(agg);
 
-             } catch (e) {
+      } catch (e) {
         console.error("Cashier report error", e);
-         setCashierReport(null);
-       } finally {
-         setCashierLoading(false);
-       }
+        setCashierReport(null);
+      } finally {
+        setCashierLoading(false);
+      }
     };
     fetchCashier();
   }, [
@@ -751,14 +751,14 @@ const Hisobotlar = () => {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   }
 
-        return (
+  return (
     <div className="p-6 bg-gray-50 min-h-screen">
       {currentUserId && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-4">
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">
               Омбор — тўлиқ сотувлар
-             </h3>
+            </h3>
             <div className="flex items-center gap-2">
               <input
                 type="date"
@@ -789,15 +789,15 @@ const Hisobotlar = () => {
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Нақд</div>
                     <div className="font-semibold">
-                       {formatAmount(
+                      {formatAmount(
                         Number(cashierReport.cashTotal || 0) +                    // Cash sales
                         Number(cashierReport.upfrontCash || 0) +                  // Upfront payments in cash
                         (cashierReport.repayments || [])                          // Credit repayments in cash
                           .filter(r => (r.channel || "CASH").toUpperCase() === "CASH")
                           .reduce((s, r) => s + Number(r.amount || 0), 0) +
                         Math.max(0, defectivePlus) - Math.max(0, defectiveMinus)   // Defective log adjustments (returns subtract from cash)
-                       )}
-                     </div>
+                      )}
+                    </div>
                     <div className="mt-2 text-xs text-gray-500">
                       <div>💵 Нақд сотувлар: {formatAmount(cashierReport.cashTotal || 0)}</div>
                       <div>💰 Олдиндан тўловлар: {formatAmount(cashierReport.upfrontCash || 0)}</div>
@@ -807,19 +807,19 @@ const Hisobotlar = () => {
                           .reduce((s, r) => s + Number(r.amount || 0), 0)
                       )}</div>
                       <div>📊 Қайтариш тўловлар: {formatAmount(Math.max(0, defectivePlus) - Math.max(0, defectiveMinus))}</div>
-                     </div>
-                   </div>
+                    </div>
+                  </div>
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Карта</div>
                     <div className="font-semibold">
-                       {formatAmount(
+                      {formatAmount(
                         Number(cashierReport.cardTotal || 0) +                    // Card sales
                         Number(cashierReport.upfrontCard || 0) +                  // Upfront payments in card
                         (cashierReport.repayments || [])                          // Credit repayments in card
                           .filter(r => (r.channel || "CARD").toUpperCase() === "CARD")
                           .reduce((s, r) => s + Number(r.amount || 0), 0)
-                       )}
-                     </div>
+                      )}
+                    </div>
                     <div className="mt-2 text-xs text-gray-500">
                       <div>💳 Карта сотувлар: {formatAmount(cashierReport.cardTotal || 0)}</div>
                       <div>💰 Олдиндан тўловлар: {formatAmount(cashierReport.upfrontCard || 0)}</div>
@@ -828,8 +828,8 @@ const Hisobotlar = () => {
                           .filter(r => (r.channel || "CARD").toUpperCase() === "CARD")
                           .reduce((s, r) => s + Number(r.amount || 0), 0)
                       )}</div>
-                     </div>
-                   </div>
+                    </div>
+                  </div>
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Кредит</div>
                     <div className="font-semibold">
@@ -845,91 +845,91 @@ const Hisobotlar = () => {
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">
                       Олдиндан олинган
-                 </div>
+                    </div>
                     <div className="font-semibold">
                       {formatAmount(cashierReport.upfrontTotal)}
                     </div>
-                                         <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                       <div>
-                         <div className="text-xs">Нақд</div>
-                         <div className="font-semibold">
-                           {formatAmount(cashierReport.upfrontCash || 0)}
-                    </div>
-                  </div>
-                       <div>
-                         <div className="text-xs">Карта</div>
-                         <div className="font-semibold">
-                           {formatAmount(cashierReport.upfrontCard || 0)}
-                     </div>
-                   </div>
-                </div>
-
-                      </div>
-                  <div className="p-3 rounded border bg-purple-50">
-                    <div className="text-sm">Кредитдан тўланган</div>
-                    <div className="text-xl font-bold">
-                      {formatAmount(cashierReport.repaymentTotal || 0)}
-                      </div>
                     <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Нақд</div>
                         <div className="font-semibold">
-                          {formatAmount(
-                            (cashierReport.repayments || [])
-                              .filter(
-                                (r) =>
-                                  (r.channel || "CASH").toUpperCase() === "CASH"
-                              )
-                              .reduce((s, r) => s + Number(r.amount || 0), 0)
-                          )}
+                          {formatAmount(cashierReport.upfrontCash || 0)}
+                        </div>
                       </div>
-                    </div>
                       <div>
                         <div className="text-xs">Карта</div>
                         <div className="font-semibold">
-                          {formatAmount(
-                            (cashierReport.repayments || [])
-                              .filter(
-                                (r) =>
-                                  (r.channel || "CARD").toUpperCase() === "CARD"
-                              )
-                              .reduce((s, r) => s + Number(r.amount || 0), 0)
-                          )}
+                          {formatAmount(cashierReport.upfrontCard || 0)}
+                        </div>
                       </div>
                     </div>
-                      </div>
-                    <div className="mt-2 text-xs text-gray-600">
-                      💡 Нақд тўловлар "Топширадиган пул" га қўшилади
-                      </div>
-                    <div className="mt-1 text-xs text-blue-600">
-                      📊 Кунлик + Ойлик тўловлар
-                  </div>
-                </div>
 
-                                                          <div className="p-3 rounded border">
-                       <div className="text-sm text-gray-500">
-                         Топширадиган пул
+                  </div>
+                      <div className="p-3 rounded border bg-purple-50">
+                        <div className="text-sm">Кредитдан тўланган</div>
+                        <div className="text-xl font-bold">
+                          {formatAmount(cashierReport.repaymentTotal || 0)}
                         </div>
-                       <div className="font-semibold">
-                         {formatAmount(
-                           Number(cashierReport.cashTotal || 0) +                    // Cash sales
-                             (cashierReport.repayments || [])                       // Credit repayments in cash (both monthly and daily)
-                               .filter(
-                                 (r) =>
-                                   (r.channel || "CASH").toUpperCase() === "CASH"
-                               )
-                               .reduce((s, r) => s + Number(r.amount || 0), 0) +
-                           Number(cashierReport.upfrontCash || 0) +               // Upfront payments in CASH only
-                           Math.max(0, defectivePlus) - Math.max(0, defectiveMinus) // Defective log adjustments (returns reduce cash to hand over)
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <div className="text-xs">Нақд</div>
+                            <div className="font-semibold">
+                              {formatAmount(
+                                (cashierReport.repayments || [])
+                                  .filter(
+                                    (r) =>
+                                      (r.channel || "CASH").toUpperCase() === "CASH"
+                                  )
+                                  .reduce((s, r) => s + Number(r.amount || 0), 0)
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs">Карта</div>
+                            <div className="font-semibold">
+                              {formatAmount(
+                                (cashierReport.repayments || [])
+                                  .filter(
+                                    (r) =>
+                                      (r.channel || "CARD").toUpperCase() === "CARD"
+                                  )
+                                  .reduce((s, r) => s + Number(r.amount || 0), 0)
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-600">
+                          💡 Нақд тўловлар "Топширадиган пул" га қўшилади
+                        </div>
+                        <div className="mt-1 text-xs text-blue-600">
+                          📊 Кунлик + Ойлик тўловлар
+                        </div>
+                      </div>
+
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">
+                      Топширадиган пул
+                    </div>
+                    <div className="font-semibold">
+                      {formatAmount(
+                        Number(cashierReport.cashTotal || 0) +                    // Cash sales
+                        (cashierReport.repayments || [])                       // Credit repayments in cash (both monthly and daily)
+                          .filter(
+                            (r) =>
+                              (r.channel || "CASH").toUpperCase() === "CASH"
+                          )
+                          .reduce((s, r) => s + Number(r.amount || 0), 0) +
+                        Number(cashierReport.upfrontCash || 0) +               // Upfront payments in CASH only
+                        Math.max(0, defectivePlus) - Math.max(0, defectiveMinus) // Defective log adjustments (returns reduce cash to hand over)
                       )}
                     </div>
-                       <div className="mt-2 text-xs text-gray-500">
-                         <div>💡 Нақд сотувлар + Кредит тўловлар (нақд) + Олдиндан тўловлар (нақд) + Қайтариш тўловлар</div>
-                         <div className="mt-1 text-blue-600">⚠️ Карта тўловлар топширадиган пулга қўшилмайди</div>
-                         <div className="mt-1 text-green-600">✅ Кунлик + Ойлик тўловлар (нақд) қўшилади</div>
-          </div>
-        </div>
-              </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      <div>💡 Нақд сотувлар + Кредит тўловлар (нақд) + Олдиндан тўловлар (нақд) + Қайтариш тўловлар</div>
+                      <div className="mt-1 text-blue-600">⚠️ Карта тўловлар топширадиган пулга қўшилмайди</div>
+                      <div className="mt-1 text-green-600">✅ Кунлик + Ойлик тўловлар (нақд) қўшилади</div>
+                    </div>
+                  </div>
+                </div>
 
 
 
@@ -938,11 +938,11 @@ const Hisobotlar = () => {
                     <div className="mb-4">
                       <div className="text-sm font-semibold text-gray-700 mb-2">
                         Кредитдан тўловлар (oylar bo'yicha)
-               </div>
-               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
                               <th className="px-3 py-2 text-left">Ой</th>
                               <th className="px-3 py-2 text-left">
                                 Тўланган куни
@@ -952,15 +952,15 @@ const Hisobotlar = () => {
                                 Транзакция
                               </th>
                               <th className="px-3 py-2 text-left">Мижоз</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
                             {cashierReport.repayments.map((r, idx) => (
                               <tr key={idx} className="hover:bg-gray-50">
                                 <td className="px-3 py-2">{r.month}</td>
-                        <td className="px-3 py-2">
+                                <td className="px-3 py-2">
                                   {formatDate(r.paidAt)}
-                        </td>
+                                </td>
                                 <td className="px-3 py-2">
                                   {formatAmount(r.amount)}
                                 </td>
@@ -970,98 +970,98 @@ const Hisobotlar = () => {
                                 <td className="px-3 py-2">
                                   {r.customer?.fullName || "-"}
                                 </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-          </div>
-        </div>
-      )}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
-               <div className="overflow-x-auto">
+                <div className="overflow-x-auto">
                   <div className="text-xs text-gray-600 mb-2 p-2 bg-gray-50 rounded">
                     📊 Транзакциялар рўйхати: "Олдиндан тўлов" майдонида Кредит/Бўлиб тўлаш учун олдиндан тўланган сумма кўрсатилади
                   </div>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left">ID</th>
-                      <th className="px-3 py-2 text-left">Сана</th>
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">ID</th>
+                        <th className="px-3 py-2 text-left">Сана</th>
                         <th className="px-3 py-2 text-left">Тўлов тури</th>
-                                                 <th className="px-3 py-2 text-left">
-                           <div className="flex items-center gap-1">
-                             <span>Олдиндан тўлов</span>
-                             <div className="text-xs text-gray-400" title="Кредит/Бўлиб тўлаш учун олдиндан тўланган сумма">
-                               ℹ️
-                             </div>
-                           </div>
-                         </th>
+                        <th className="px-3 py-2 text-left">
+                          <div className="flex items-center gap-1">
+                            <span>Олдиндан тўлов</span>
+                            <div className="text-xs text-gray-400" title="Кредит/Бўлиб тўлаш учун олдиндан тўланган сумма">
+                              ℹ️
+                            </div>
+                          </div>
+                        </th>
                         <th className="px-3 py-2 text-left">Якуний</th>
                         <th className="px-3 py-2 text-left">Олдиндан тури</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
                       {(cashierReport.transactions || []).map((t) => (
                         <tr key={t.id} className="hover:bg-gray-50">
                           <td className="px-3 py-2">#{t.id}</td>
-                        <td className="px-3 py-2">
+                          <td className="px-3 py-2">
                             {formatDate(t.createdAt)}
                           </td>
                           <td className="px-3 py-2">
                             {getPaymentTypeLabel(t.paymentType)}
                           </td>
-                                                     <td className="px-3 py-2">
-                             {formatAmount(
-                               ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) 
-                                 ? Number(t.amountPaid || 0)  // For CREDIT/INSTALLMENT: show only amountPaid (avoid double-counting)
-                                 : Number(t.amountPaid || 0) + Number(t.downPayment || 0)  // For other types: show sum
-                             )}
-                        </td>
+                          <td className="px-3 py-2">
+                            {formatAmount(
+                              ['CREDIT', 'INSTALLMENT'].includes(t.paymentType)
+                                ? Number(t.amountPaid || 0)  // For CREDIT/INSTALLMENT: show only amountPaid (avoid double-counting)
+                                : Number(t.amountPaid || 0) + Number(t.downPayment || 0)  // For other types: show sum
+                            )}
+                          </td>
                           <td className="px-3 py-2">
                             {formatAmount(t.finalTotal)}
                           </td>
                           <td className="px-3 py-2">
-                                                          {['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ? 
-                                (t.upfrontPaymentType === 'CASH' ? 'Нақд' : 
-                                 t.upfrontPaymentType === 'CARD' ? 'Карта' : 'Номаълум') : 
-                                '-'}
+                            {['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ?
+                              (t.upfrontPaymentType === 'CASH' ? 'Нақд' :
+                                t.upfrontPaymentType === 'CARD' ? 'Карта' : 'Номаълум') :
+                              '-'}
                           </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50">
+                      <tr>
+                        <td colSpan={3} className="px-3 py-2 font-semibold text-right">
+                          Жами олдиндан тўловлар:
+                        </td>
+                        <td className="px-3 py-2 font-semibold">
+                          {formatAmount(
+                            (cashierReport.transactions || [])
+                              .filter(t => ['CREDIT', 'INSTALLMENT'].includes(t.paymentType))
+                              .reduce((sum, t) => sum + Number(t.amountPaid || 0), 0)
+                          )}
+                        </td>
+                        <td colSpan={2}></td>
                       </tr>
-                    ))}
-                  </tbody>
-                                         <tfoot className="bg-gray-50">
-                       <tr>
-                         <td colSpan={3} className="px-3 py-2 font-semibold text-right">
-                           Жами олдиндан тўловлар:
-                         </td>
-                         <td className="px-3 py-2 font-semibold">
-                           {formatAmount(
-                             (cashierReport.transactions || [])
-                               .filter(t => ['CREDIT', 'INSTALLMENT'].includes(t.paymentType))
-                               .reduce((sum, t) => sum + Number(t.amountPaid || 0), 0)
-                           )}
-                          </td>
-                         <td colSpan={2}></td>
-                       </tr>
-                       <tr>
-                         <td colSpan={3} className="px-3 py-2 font-semibold text-right">
-                           Жами тўланган (олдиндан + кредит):
-                         </td>
-                         <td className="px-3 py-2 font-semibold">
-                           {formatAmount(
-                             (cashierReport.transactions || [])
-                               .filter(t => ['CREDIT', 'INSTALLMENT'].includes(t.paymentType))
-                               .reduce((sum, t) => sum + Number(t.amountPaid || 0), 0) +
-                             (cashierReport.repaymentTotal || 0)
-                           )}
-                         </td>
-                         <td colSpan={2}></td>
-                       </tr>
-                     </tfoot>
-                 </table>
-              </div>
+                      <tr>
+                        <td colSpan={3} className="px-3 py-2 font-semibold text-right">
+                          Жами тўланган (олдиндан + кредит):
+                        </td>
+                        <td className="px-3 py-2 font-semibold">
+                          {formatAmount(
+                            (cashierReport.transactions || [])
+                              .filter(t => ['CREDIT', 'INSTALLMENT'].includes(t.paymentType))
+                              .reduce((sum, t) => sum + Number(t.amountPaid || 0), 0) +
+                            (cashierReport.repaymentTotal || 0)
+                          )}
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </>
-             )}
+            )}
           </div>
         </div>
       )}
@@ -1076,126 +1076,128 @@ const Hisobotlar = () => {
             Транзакциялар орқали кирим-чиқим маълумотлари
           </div>
         </div>
+
         <div className="p-6">
+          
           {statsLoading ? (
             <div className="text-center py-8">
               <div className="text-gray-500">Статистика юкланмоқда...</div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Income Section */}
-            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-lg font-semibold text-green-800">Кирим</h4>
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <ShoppingCart className="text-green-600" size={20} />
+              {/* Income Section */}
+              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-lg font-semibold text-green-800">Кирим</h4>
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <ShoppingCart className="text-green-600" size={20} />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-green-700">Нақд сотувлар:</span>
-                  <span className="font-semibold text-green-800">
-                    {formatAmount(cashierReport?.cashTotal || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-green-700">Карта сотувлар:</span>
-                  <span className="font-semibold text-green-800">
-                    {formatAmount(cashierReport?.cardTotal || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-green-700">Кредит сотувлар:</span>
-                  <span className="font-semibold text-green-800">
-                    {formatAmount(cashierReport?.creditTotal || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-green-700">Бўлиб тўлаш:</span>
-                  <span className="font-semibold text-green-800">
-                    {formatAmount(cashierReport?.installmentTotal || 0)}
-                  </span>
-                </div>
-                <div className="border-t border-green-200 pt-2 mt-2">
-                  <div className="flex justify-between text-base font-bold">
-                    <span className="text-green-800">Жами кирим:</span>
-                    <span className="text-green-800">
-                      {formatAmount(
-                        (cashierReport?.cashTotal || 0) +
-                        (cashierReport?.cardTotal || 0) +
-                        (cashierReport?.creditTotal || 0) +
-                        (cashierReport?.installmentTotal || 0)
-                      )}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-green-700">Нақд сотувлар:</span>
+                    <span className="font-semibold text-green-800">
+                      {formatAmount(cashierReport?.cashTotal || 0)}
                     </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-green-700">Карта сотувлар:</span>
+                    <span className="font-semibold text-green-800">
+                      {formatAmount(cashierReport?.cardTotal || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-green-700">Кредит сотувлар:</span>
+                    <span className="font-semibold text-green-800">
+                      {formatAmount(cashierReport?.creditTotal || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-green-700">Бўлиб тўлаш:</span>
+                    <span className="font-semibold text-green-800">
+                      {formatAmount(cashierReport?.installmentTotal || 0)}
+                    </span>
+                  </div>
+                  <div className="border-t border-green-200 pt-2 mt-2">
+                    <div className="flex justify-between text-base font-bold">
+                      <span className="text-green-800">Жами кирим:</span>
+                      <span className="text-green-800">
+                        {formatAmount(
+                          (cashierReport?.cashTotal || 0) +
+                          (cashierReport?.cardTotal || 0) +
+                          (cashierReport?.creditTotal || 0) +
+                          (cashierReport?.installmentTotal || 0)
+                        )}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Expenses Section */}
-            <div className="bg-red-50 rounded-lg p-4 border border-red-200">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-lg font-semibold text-red-800">Чиқим</h4>
-                <div className="p-2 bg-red-100 rounded-lg">
-                  <Package className="text-red-600" size={20} />
+              {/* Expenses Section */}
+              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-lg font-semibold text-red-800">Чиқим</h4>
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <Package className="text-red-600" size={20} />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-red-700">Маҳсулот сотиб олиш:</span>
-                  <span className="font-semibold text-red-800">
-                    {formatAmount(transactionStats?.totalPurchases || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-red-700">Бошқа харажатлар:</span>
-                  <span className="font-semibold text-red-800">
-                    {formatAmount(0)}
-                  </span>
-                </div>
-                <div className="border-t border-red-200 pt-2 mt-2">
-                  <div className="flex justify-between text-base font-bold">
-                    <span className="text-red-800">Жами чиқим:</span>
-                    <span className="text-red-800">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-red-700">Маҳсулот сотиб олиш:</span>
+                    <span className="font-semibold text-red-800">
                       {formatAmount(transactionStats?.totalPurchases || 0)}
                     </span>
                   </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-red-700">Бошқа харажатлар:</span>
+                    <span className="font-semibold text-red-800">
+                      {formatAmount(0)}
+                    </span>
+                  </div>
+                  <div className="border-t border-red-200 pt-2 mt-2">
+                    <div className="flex justify-between text-base font-bold">
+                      <span className="text-red-800">Жами чиқим:</span>
+                      <span className="text-red-800">
+                        {formatAmount(transactionStats?.totalPurchases || 0)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Transfers Section */}
-            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-lg font-semibold text-blue-800">Ўтказмалар</h4>
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Building2 className="text-blue-600" size={20} />
+              {/* Transfers Section */}
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-lg font-semibold text-blue-800">Ўтказмалар</h4>
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Building2 className="text-blue-600" size={20} />
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-blue-700">Филиаллар ароси:</span>
-                  <span className="font-semibold text-blue-800">
-                    {formatAmount(transactionStats?.totalTransfers || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-blue-700">Маҳсулот ўтказмалари:</span>
-                  <span className="font-semibold text-blue-800">
-                    {formatAmount(0)}
-                  </span>
-                </div>
-                <div className="border-t border-blue-200 pt-2 mt-2">
-                  <div className="flex justify-between text-base font-bold">
-                    <span className="text-blue-800">Жами ўтказмалар:</span>
-                    <span className="text-blue-800">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-700">Филиаллар ароси:</span>
+                    <span className="font-semibold text-blue-800">
                       {formatAmount(transactionStats?.totalTransfers || 0)}
                     </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-blue-700">Маҳсулот ўтказмалари:</span>
+                    <span className="font-semibold text-blue-800">
+                      {formatAmount(0)}
+                    </span>
+                  </div>
+                  <div className="border-t border-blue-200 pt-2 mt-2">
+                    <div className="flex justify-between text-base font-bold">
+                      <span className="text-blue-800">Жами ўтказмалар:</span>
+                      <span className="text-blue-800">
+                        {formatAmount(transactionStats?.totalTransfers || 0)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
           )}
           {/* Transaction Statistics Table */}
           <div className="mt-6">
@@ -1240,7 +1242,7 @@ const Hisobotlar = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-500">
-                      {cashierReport?.transactions?.[0]?.createdAt 
+                      {cashierReport?.transactions?.[0]?.createdAt
                         ? formatDate(cashierReport.transactions[0].createdAt)
                         : 'Номаълум'
                       }
@@ -1283,8 +1285,7 @@ const Hisobotlar = () => {
                 </tbody>
               </table>
             </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

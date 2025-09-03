@@ -1917,7 +1917,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
         {/* Product Sales Summary */}
         <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4">
           <h2 className="text-lg font-semibold mb-3">
-            Ҳисобот — содда кўриниш
+            Ҳисобот
           </h2>
           <div className="mb-6">
 
@@ -1927,7 +1927,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Cashiers List */}
                 <div className="bg-blue-50 rounded-lg p-4">
                   <h4 className="text-md font-semibold text-blue-800 mb-3 flex items-center gap-2">
                     <UserIcon size={18} />

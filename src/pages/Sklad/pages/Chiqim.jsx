@@ -53,8 +53,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
   const formatCurrency = (amount) =>
     amount != null && Number.isFinite(Number(amount))
-      ? new Intl.NumberFormat('uz-UZ').format(Math.floor(Number(amount))) + " so'm"
-      : "0 so'm";
+      ? new Intl.NumberFormat('uz-UZ').format(Math.floor(Number(amount))) + "$"
+      : "0$";
 
   const formatCurrencySom = (amount) => {
     if (amount != null && Number.isFinite(Number(amount))) {
