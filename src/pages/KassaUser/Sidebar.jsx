@@ -17,7 +17,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
   const navigate = useNavigate();
 
   const menuItems = [
-    { id: 'dashboard', label: 'Бошқарув панели', icon: BarChart3, path: '/kasir/dashboard' },
+    { id: 'dashboard', label: 'Хисобот', icon: BarChart3, path: '/kasir/dashboard' },
     { id: 'sales', label: 'Сотиш', icon: ShoppingCart, path: '/kasir/sales' },
     { id: 'defective', label: 'Брак/Қайтариш', icon: AlertTriangle, path: '/kasir/defective' },
     { id: 'returned', label: 'Қайтарилганлар', icon: RotateCcw, path: '/kasir/returned' },

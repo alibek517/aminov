@@ -1935,10 +1935,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       <span>Qolgan:</span>
                       <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.remaining)} so'm</span>
                     </div>
-                    <div class="total-row">
-                      <span>Oylik:</span>
-                      <span>${new Intl.NumberFormat('uz-UZ').format(receiptData.monthlyPayment)} so'm</span>
-                    </div>
+                    
                   ` : ''}
                 </div>
                 <div class="footer">

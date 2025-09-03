@@ -845,10 +845,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
               <div class="total-row">
                 <span>Qolgan:</span>
                 <span>${formatCurrencySom(transaction.remaining)}</span>
-              </div>
-              <div class="total-row">
-                <span>Oylik:</span>
-                <span>${formatCurrencySom(transaction.monthlyPayment)}</span>
               </div>` : ''}
           </div>
           <div class="footer">

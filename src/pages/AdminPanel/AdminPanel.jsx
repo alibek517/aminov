@@ -191,7 +191,7 @@ export default function AdminPanel() {
     { id: "geolocation", name: "Доставщиклар", icon: MapPin, path: "/admin/geolocation" },
     { id: "exchange-rates", name: "Валюталар", icon: DollarSign, path: "/admin/exchange-rates" },
     { id: "sotuvchilar", name: "Сотувчилар", icon: Users, path: "/admin/sotuvchilar" },
-    { id: "Tranzaksiyalar", name: "Транзаксияалар", icon: ArrowRightLeft , path: "/admin/tranzaksiyalar" },
+    { id: "tranzaksiyalar", name: "Транзаксияалар", icon: ArrowRightLeft , path: "/admin/tranzaksiyalar" },
   ];
 
   const handleLogoutConfirm = () => {

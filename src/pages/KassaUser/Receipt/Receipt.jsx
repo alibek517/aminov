@@ -199,10 +199,6 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
                       <span className="text-blue-600 font-medium block">Муддат:</span>
                       <div className="font-semibold">{transaction.days || 0} кун</div>
                     </div>
-                    <div>
-                      <span className="text-blue-600 font-medium block">Кунлик тўлов:</span>
-                      <div className="font-semibold">{formatAmountSom(transaction.monthlyPayment || 0)}</div>
-                    </div>
                   </>
                 ) : (
                   <>
@@ -311,12 +307,6 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
                   <span>Қолган (фоиз билан):</span>
                   <span>
                     {formatAmountSom(transaction.remaining || 0)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>{(transaction.paymentType === 'INSTALLMENT' && (transaction.termUnit === 'DAYS' || transaction.days)) ? 'Кунлик тўлов:' : 'Ойлик тўлов:'}</span>
-                  <span className="font-semibold">
-                    {formatAmountSom(transaction.monthlyPayment || 0)}
                   </span>
                 </div>
               </div>

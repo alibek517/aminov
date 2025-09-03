@@ -201,36 +201,64 @@ const Мижозлар = () => {
           termUnit: transaction.termUnit
         });
         
-        if (transaction.paymentSchedules && transaction.paymentSchedules.length > 0) {
+        if (Array.isArray(transaction.paymentSchedules) && transaction.paymentSchedules.length > 0) {
           allTransactions.push(...transaction.paymentSchedules.map(schedule => ({
             ...schedule,
             transaction: transaction,
             customer: transaction.customer,
-            isPaymentSchedule: true
+            isPaymentSchedule: true,
+            isVirtual: false
           })));
         } else {
-          // For daily installments or transactions without payment schedules
+          const downPayment = Number(transaction.downPayment || 0);
+          const baseAmount = Number(transaction.finalTotal || transaction.total || 0);
+          const initialCredit = baseAmount - downPayment;
           const calculatedRemaining = calculateTransactionRemaining(transaction);
-          
-          // For INSTALLMENT transactions, create monthly payment schedules
+
           if (transaction.paymentType === 'INSTALLMENT') {
             const months = (transaction.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || 1;
-            const monthlyPayment = calculatedRemaining / months;
-            
+            const monthlyPayment = initialCredit / months;
+
+            // Fetch credit repayments for this transaction
+            let repayments = [];
+            try {
+              const repRes = await axiosWithAuth.get(`/credit-repayments?transactionId=${transaction.id}`);
+              repayments = Array.isArray(repRes.data) ? repRes.data : [];
+            } catch (err) {
+              console.error(`Failed to fetch credit-repayments for tx ${transaction.id}:`, err);
+            }
+
+            // Group paid by month
+            const paidPerMonth = {};
+            repayments.forEach(rep => {
+              const m = rep.month;
+              if (m) {
+                paidPerMonth[m] = (paidPerMonth[m] || 0) + Number(rep.amount || 0);
+              }
+            });
+
+            // Create virtual schedules with fixed payments based on initial credit
+            let cumulativePayment = 0;
             for (let month = 1; month <= months; month++) {
+              const mStr = month.toString();
               const isLastMonth = month === months;
-              const monthPayment = isLastMonth ? calculatedRemaining - (monthlyPayment * (months - 1)) : monthlyPayment;
-              
+              const monthPayment = isLastMonth ? initialCredit - cumulativePayment : monthlyPayment;
+              cumulativePayment += monthPayment;
+
+              const paid = paidPerMonth[mStr] || 0;
+              const remaining = Math.max(0, monthPayment - paid);
+
               allTransactions.push({
                 id: `installment-${transaction.id}-${month}`,
                 transaction: transaction,
                 customer: transaction.customer,
                 isPaymentSchedule: true,
-                month: month.toString(),
+                isVirtual: true,
+                month: mStr,
                 payment: monthPayment,
-                paidAmount: 0,
-                remainingBalance: monthPayment,
-                isPaid: false,
+                paidAmount: paid,
+                remainingBalance: remaining,
+                isPaid: remaining <= 0,
                 paidAt: null,
                 paidChannel: null,
                 paidBy: null,
@@ -242,20 +270,28 @@ const Мижозлар = () => {
               transactionId: transaction.id,
               months: months,
               monthlyPayment: monthlyPayment,
-              totalRemaining: calculatedRemaining
+              initialCredit: initialCredit
             });
           } else {
-            // For other transactions without schedules
+            // For other transactions without schedules (single schedule)
+            const paid = Number(transaction.creditRepaymentAmount || 0);
+            const remaining = Math.max(0, initialCredit - paid);
+
             allTransactions.push({
               id: `transaction-${transaction.id}`,
               transaction: transaction,
               customer: transaction.customer,
               isPaymentSchedule: false,
-              payment: transaction.finalTotal,
-              paidAmount: transaction.amountPaid || 0,
-              remainingBalance: calculatedRemaining,
-              month: 1,
-              isPaid: calculatedRemaining <= 0
+              isVirtual: true,
+              payment: initialCredit,
+              paidAmount: paid,
+              remainingBalance: remaining,
+              month: '1',
+              isPaid: remaining <= 0,
+              paidAt: null,
+              paidChannel: null,
+              paidBy: null,
+              rating: null
             });
           }
           
@@ -297,8 +333,8 @@ const Мижозлар = () => {
     }
     // Guard: do not allow paying later months if previous months are not fully paid
     if (selectedSchedule.isPaymentSchedule && selectedSchedule.transaction?.termUnit !== 'DAYS') {
-      const allSchedules = selectedSchedule.transaction?.paymentSchedules || [];
-      const payable = isSchedulePayable(selectedSchedule, allSchedules, selectedSchedule.transaction?.termUnit);
+      const txSchedules = paymentSchedules.filter(ps => ps.transaction.id === selectedSchedule.transaction.id);
+      const payable = isSchedulePayable(selectedSchedule, txSchedules, selectedSchedule.transaction?.termUnit);
       if (!payable) {
         setNotification({ message: 'Илтимос, аввалги ой(лар)ни тўлиқ тўланг', type: 'error' });
         return;
@@ -329,8 +365,8 @@ const Мижозлар = () => {
 
       const transaction = selectedSchedule.transaction;
       
-      if (selectedSchedule.isPaymentSchedule) {
-        // For payment schedules, update the schedule directly
+      if (selectedSchedule.isPaymentSchedule && !selectedSchedule.isVirtual) {
+        // For real payment schedules, update the schedule directly
         const currentPaidAmount = selectedSchedule.paidAmount || 0;
         const newPaidAmount = currentPaidAmount + Number(paymentAmount);
         const isFullyPaid = newPaidAmount >= selectedSchedule.payment;
@@ -421,137 +457,60 @@ const Мижозлар = () => {
           }
         }
       } else {
-        // For transactions without payment schedules (including INSTALLMENT)
-        if (selectedSchedule.transaction.paymentType === 'INSTALLMENT') {
-          // Store payment log for INSTALLMENT transactions
-          try {
-            const creditRepaymentData = {
-              transactionId: selectedSchedule.transaction.id,
-              scheduleId: selectedSchedule.id,
-              amount: Number(paymentAmount),
-              channel: paymentChannel,
-              month: String(selectedSchedule.month), // Convert to string
-              monthNumber: Number(selectedSchedule.month), // Add numeric value
-              paidAt: new Date().toISOString(),
-              paidByUserId: Number(localStorage.getItem('userId')) || null,
-              branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
-            };
-            
-            await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
-            console.log('INSTALLMENT payment saved to backend:', creditRepaymentData);
-          } catch (error) {
-            console.error('Failed to save INSTALLMENT payment to backend:', error);
-          }
+        // For virtual schedules or transactions without schedules
+        let repaymentData = {
+          transactionId: selectedSchedule.transaction.id,
+          scheduleId: selectedSchedule.id,
+          amount: Number(paymentAmount),
+          channel: paymentChannel,
+          paidAt: new Date().toISOString(),
+          paidByUserId: Number(localStorage.getItem('userId')) || null,
+          branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
+        };
+
+        if (selectedSchedule.transaction.termUnit === 'DAYS') {
+          // Daily repayment (no month)
+          await axiosWithAuth.post(`${API_URL}/daily-repayments`, repaymentData);
+          console.log('Daily repayment saved to backend:', repaymentData);
         } else {
-          // Daily installment (no schedule): save to backend
-          try {
-            const dailyRepaymentData = {
-              transactionId: selectedSchedule.transaction.id,
-              amount: Number(paymentAmount),
-              channel: paymentChannel,
-              paidAt: new Date().toISOString(),
-              paidByUserId: Number(localStorage.getItem('userId')) || null,
-              branchId: selectedSchedule.transaction.fromBranchId || selectedSchedule.transaction.branchId || null,
-            };
-            
-            await axiosWithAuth.post(`${API_URL}/daily-repayments`, dailyRepaymentData);
-            console.log('Daily repayment saved to backend:', dailyRepaymentData);
-          } catch (error) {
-            console.error('Failed to save daily repayment to backend:', error);
-          }
+          // Credit repayment (with month)
+          repaymentData = {
+            ...repaymentData,
+            month: String(selectedSchedule.month),
+            monthNumber: Number(selectedSchedule.month),
+          };
+          await axiosWithAuth.post(`${API_URL}/credit-repayments`, repaymentData);
+          console.log('Credit/Installment payment saved to backend:', repaymentData);
         }
         
-        // For daily installments, we need to update the transaction's remaining balance
-        // This is the same logic as for regular transactions
-        const dailyCurrentRemaining = transaction.remainingBalance || transaction.finalTotal;
-        const dailyNewRemaining = Math.max(0, dailyCurrentRemaining - Number(paymentAmount));
+        // Update transaction remaining balance
+        const currentRemaining = transaction.remainingBalance || transaction.finalTotal;
+        const newRemaining = Math.max(0, currentRemaining - Number(paymentAmount));
         
-        console.log('Daily installment payment debug:', {
+        console.log('Payment debug:', {
           transactionId: transaction.id,
-          currentRemaining: dailyCurrentRemaining,
+          currentRemaining: currentRemaining,
           paymentAmount: Number(paymentAmount),
-          newRemaining: dailyNewRemaining,
+          newRemaining: newRemaining,
           termUnit: transaction.termUnit
         });
         
-        // Kunlik bo'lib to'lash uchun transaction ning remaining balance ni yangilash
-        const dailyTransactionUpdate = {
-          remainingBalance: dailyNewRemaining,
+        const transactionUpdate = {
+          remainingBalance: newRemaining,
           creditRepaymentAmount: (transaction.creditRepaymentAmount || 0) + Number(paymentAmount),
           lastRepaymentDate: new Date().toISOString()
         };
         
         try {
-          // Only update if transaction is not completed
           if (transaction.status !== 'COMPLETED' && transaction.status !== 'CANCELLED') {
-            await axiosWithAuth.put(`/transactions/${transaction.id}`, dailyTransactionUpdate);
-            console.log('Daily installment transaction updated successfully');
+            await axiosWithAuth.put(`/transactions/${transaction.id}`, transactionUpdate);
+            console.log('Transaction updated successfully');
           } else {
-            console.log(`Transaction ${transaction.id} is ${transaction.status}, skipping update. Daily repayment record created successfully.`);
+            console.log(`Transaction ${transaction.id} is ${transaction.status}, skipping update. Repayment record created successfully.`);
           }
         } catch (error) {
-          console.log('Failed to update daily installment transaction (this is normal for completed transactions):', error.message);
-          console.log('Daily repayment record was created successfully, transaction update is optional.');
+          console.error('Failed to update transaction:', error);
         }
-      }
-
-      // Update transaction with credit repayment tracking (NOT amountPaid)
-      // amountPaid should only be used for upfront payments, not for credit repayments
-      
-      // Calculate the new remaining balance correctly
-      let currentRemaining = transaction.remainingBalance || transaction.finalTotal;
-      let newRemaining = Math.max(0, currentRemaining - Number(paymentAmount));
-      
-      // Kunlik bo'lib to'lash uchun maxsus hisoblash
-      if (transaction.termUnit === 'DAYS' && !selectedSchedule.isPaymentSchedule) {
-        // Kunlik bo'lib to'lash uchun transaction ning remaining balance ni yangilash
-        currentRemaining = transaction.remainingBalance || transaction.finalTotal;
-        newRemaining = Math.max(0, currentRemaining - Number(paymentAmount));
-        
-        console.log('Daily installment payment calculation:', {
-          transactionId: transaction.id,
-          termUnit: transaction.termUnit,
-          currentRemaining: currentRemaining,
-          paymentAmount: Number(paymentAmount),
-          newRemaining: newRemaining
-        });
-      }
-      
-      console.log('Payment calculation debug:', {
-        transactionId: transaction.id,
-        currentRemaining: currentRemaining,
-        paymentAmount: Number(paymentAmount),
-        newRemaining: newRemaining,
-        transaction: {
-          finalTotal: transaction.finalTotal,
-          remainingBalance: transaction.remainingBalance,
-          amountPaid: transaction.amountPaid,
-          downPayment: transaction.downPayment,
-          termUnit: transaction.termUnit
-        }
-      });
-      
-      const transactionUpdate = {
-        // DO NOT update amountPaid for credit repayments - it's only for upfront payments
-        // amountPaid: currentTransactionPaid + Number(paymentAmount), // REMOVED
-        remainingBalance: newRemaining,
-        // Track credit repayments separately
-        creditRepaymentAmount: (transaction.creditRepaymentAmount || 0) + Number(paymentAmount),
-        lastRepaymentDate: new Date().toISOString()
-      };
-
-      try {
-        console.log('Updating transaction with:', transactionUpdate);
-        const response = await axiosWithAuth.put(`/transactions/${transaction.id}`, transactionUpdate);
-        console.log('Transaction updated successfully. Response:', response.data);
-      } catch (error) {
-        console.log('Янги майдонлар мавжуд эмас, асосий майдонлардан фойдаланилмоқда');
-        console.log('Fallback update with remainingBalance:', transactionUpdate.remainingBalance);
-        // Fallback: only update remaining balance
-        const fallbackResponse = await axiosWithAuth.put(`/transactions/${transaction.id}`, {
-          remainingBalance: transactionUpdate.remainingBalance
-        });
-        console.log('Fallback update response:', fallbackResponse.data);
       }
 
       console.log('Payment completed successfully. Reloading customer transactions...');
@@ -585,9 +544,9 @@ const Мижозлар = () => {
   };
 
   const getPaymentStatus = (schedule) => {
-    if (schedule.isPaid) return { text: 'Тўланган', color: 'text-green-600' };
-    if (schedule.paidAmount > 0) return { text: 'Қисман тўланган', color: 'text-yellow-600' };
-    return { text: 'Тўланмаган', color: 'text-red-600' };
+    if (schedule.isPaid) return { text: 'Тўланған', color: 'text-green-600' };
+    if (schedule.paidAmount > 0) return { text: 'Қисман тўланған', color: 'text-yellow-600' };
+    return { text: 'Тўланмаған', color: 'text-red-600' };
   };
 
   // Only allow paying month N when all previous months are fully paid
@@ -795,13 +754,14 @@ const Мижозлар = () => {
                         const isOpen = !!expandedTransactions[t.id];
                         const toggle = () => setExpandedTransactions(prev => ({ ...prev, [t.id]: !prev[t.id] }));
                         const productNames = (t.items || []).map(it => it.product?.name || it.name || '').join(', ');
+                        const productBarcode = (t.items || []).map(it => it.product?.barcode || it.barcode || '').join(', ');
                         const months = (t.items || []).map(it => Number(it.creditMonth || 0)).filter(Boolean)[0] || (Array.isArray(t.paymentSchedules) ? t.paymentSchedules.length : 0);
                         const percent = (t.items || []).map(it => (typeof it.creditPercent === 'number' ? Number(it.creditPercent) : null)).find(v => v != null);
                         // Also try to get interest rate from transaction level
                         const transactionInterestRate = t.interestRate || (percent ? percent * 100 : null);
 
 
-                        const schedules = Array.isArray(t.paymentSchedules) ? t.paymentSchedules : [];
+                        const schedules = paymentSchedules.filter(ps => ps.transaction.id === t.id);
                         const totalAmount = Number(t.finalTotal || 0);
                         const paidAmountCompact = calculateTransactionPaid(t);
                         const remainingCompact = calculateTransactionRemaining(t);
@@ -810,6 +770,7 @@ const Мижозлар = () => {
                             <button onClick={toggle} className="w-full text-left p-4 flex items-start justify-between">
                               <div>
                                 <div className="font-medium text-lg">{productNames || `#${t.id}`}</div>
+                                <small>{productBarcode || `#${t.id}`}</small>
                                 <div className="text-sm text-gray-600">
                                   {typeLabel(t.paymentType)} {
                                     t.termUnit === 'DAYS' 
@@ -878,7 +839,8 @@ const Мижозлар = () => {
                                           {schedules.sort((a, b) => (a.month || 0) - (b.month || 0)).map(sc => {
                                             const rem = Number(sc.payment || 0) - Number(sc.paidAmount || 0);
                                             const st = getPaymentStatus(sc);
-                                            const payable = isSchedulePayable(sc, schedules, t.termUnit);
+                                            const txSchedules = paymentSchedules.filter(ps => ps.transaction.id === sc.transaction.id);
+                                            const payable = isSchedulePayable(sc, txSchedules, t.termUnit);
                                             return (
                                               <tr key={sc.id} className="align-top">
                                                 <td className="px-2 py-1">
@@ -941,7 +903,7 @@ const Мижозлар = () => {
                                                 <td className="px-2 py-1">
                                                   {rem > 0 ? (
                                                     <button
-                                                      onClick={() => { if (!payable) return; setSelectedSchedule({ ...sc, transaction: t, isPaymentSchedule: true }); setPaymentAmount(rem.toString()); setShowPaymentModal(true); }}
+                                                      onClick={() => { if (!payable) return; setSelectedSchedule({ ...sc, transaction: t }); setPaymentAmount(rem.toString()); setShowPaymentModal(true); }}
                                                       disabled={!payable}
                                                       className={`px-3 py-1 rounded text-xs ${payable ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
                                                     >
