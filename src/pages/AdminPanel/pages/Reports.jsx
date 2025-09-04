@@ -5,6 +5,20 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
+const computeHandover = (summary) => {
+  if (!summary) return 0;
+  const cashTotal = Number(summary.cashTotal || 0);
+  const upfrontTotal = Number(summary.upfrontTotal || 0);
+  const defectivePlus = Number(summary.defectivePlus || 0);
+  const defectiveMinus = Number(summary.defectiveMinus || 0);
+  const repaymentsCash = Array.isArray(summary.repayments)
+    ? summary.repayments
+        .filter(r => (r.channel || 'CASH').toUpperCase() === 'CASH')
+        .reduce((s, r) => s + Number(r.amount || 0), 0)
+    : 0;
+  return cashTotal + repaymentsCash + upfrontTotal + (defectivePlus - defectiveMinus);
+};
+
 const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -45,11 +59,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
   const [selectedUser, setSelectedUser] = useState(null);
   const [userReport, setUserReport] = useState(null);
   const [userReportLoading, setUserReportLoading] = useState(false);
+  const [handoverByUserId, setHandoverByUserId] = useState({});
   const navigate = useNavigate();
 
   const BASE_URL = "https://suddocs.uz";
 
-  // Fetch users from backend
   const fetchUsers = useCallback(async () => {
     setUsersLoading(true);
     try {
@@ -93,9 +107,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       const usersData = await response.json();
       console.log("Fetched users:", usersData);
 
-      // Ensure usersData is an array
       const usersArray = Array.isArray(usersData) ? usersData : [];
-
       console.log("Users by role:", {
         CASHIER: usersArray.filter(u => u.role === 'CASHIER'),
         WAREHOUSE: usersArray.filter(u => u.role === 'WAREHOUSE'),
@@ -105,13 +117,12 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       setAllUsers(usersArray);
     } catch (error) {
       console.error("Error fetching users:", error.message);
-      // Don't show error toast for network issues, just log and set empty array
+      
       if (error.message.includes('fetch') || error.message.includes('Network')) {
         console.warn("Network error fetching users, using empty array");
         setAllUsers([]);
       } else {
         toast.error(error.message || "Фойдаланувчиларни олишда хатолик юз берди");
-        // Set empty array as fallback
         setAllUsers([]);
       }
     } finally {
@@ -1862,6 +1873,48 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
     );
   };
 
+  // Fetch per-user handover from backend cashier-reports endpoint
+  const fetchHandoverForUsers = useCallback(async (users) => {
+    try {
+      const token = localStorage.getItem("access_token");
+      if (!token) return;
+      const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+      const params = new URLSearchParams();
+      if (selectedBranchId) params.append('branchId', selectedBranchId);
+      if (filters.startDate) params.append('startDate', new Date(`${filters.startDate}T00:00:00`).toISOString());
+      if (filters.endDate) params.append('endDate', new Date(`${filters.endDate}T23:59:59`).toISOString());
+
+      const pairs = users.map(u => ({ id: u.id, url: `${BASE_URL}/cashier-reports/cashier/${u.id}?${params.toString()}` }));
+      const results = await Promise.all(pairs.map(async p => {
+        try {
+          const res = await fetch(p.url, { headers });
+          if (!res.ok) return { id: p.id, value: 0 };
+          const rep = await res.json();
+          const value = Number(rep.cashTotal || 0)
+            + Number(rep.upfrontTotal || 0)
+            + Number(rep.repaymentTotal || 0)
+            + (Number(rep.defectivePlus || 0) - Number(rep.defectiveMinus || 0));
+          return { id: p.id, value };
+        } catch {
+          return { id: p.id, value: 0 };
+        }
+      }));
+      const map = {};
+      for (const r of results) map[String(r.id)] = r.value;
+      setHandoverByUserId(map);
+    } catch {}
+  }, [selectedBranchId, filters.startDate, filters.endDate]);
+
+  // Update per-user handovers when users/date/branch change
+  useEffect(() => {
+    const visibleUsers = allUsers.filter(u => (!selectedBranchId || u.branchId === selectedBranchId) && (u.role === 'CASHIER' || u.role === 'WAREHOUSE'));
+    if (visibleUsers.length > 0) {
+      fetchHandoverForUsers(visibleUsers);
+    } else {
+      setHandoverByUserId({});
+    }
+  }, [allUsers, selectedBranchId, filters.startDate, filters.endDate, fetchHandoverForUsers]);
+
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="p-6 bg-gray-50 min-h-screen">
@@ -1947,21 +2000,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                                 <span className="text-sm font-medium text-gray-700">
                                   {getUserName(user)}
                                 </span>
-                                <span className="text-xs text-gray-500">ID: {user.id}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-green-600">
-                                  {cashierSummary ? formatAmount(
-                                    Number(cashierSummary.cashTotal || 0) +
-                                    Number(cashierSummary.upfrontTotal || 0) +
-                                    (Array.isArray(cashierSummary.repayments)
-                                      ? cashierSummary.repayments
-                                        .filter((r) => (r.channel || 'CASH').toUpperCase() === 'CASH')
-                                        .reduce((s, r) => s + Number(r.amount || 0), 0)
-                                      : 0) +
-                                    (Number(cashierSummary.defectivePlus || 0) - Number(cashierSummary.defectiveMinus || 0))
-                                  ) : formatAmount(0)}
-                                </span>
+                               
                                 <button
                                   onClick={() => {
                                     setSelectedUser(user);
@@ -2002,21 +2043,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                                 <span className="text-sm font-medium text-gray-700">
                                   {getUserName(user)}
                                 </span>
-                                <span className="text-xs text-gray-500">ID: {user.id}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-green-600">
-                                  {warehouseSummary ? formatAmount(
-                                    Number(warehouseSummary.cashTotal || 0) +
-                                    Number(warehouseSummary.upfrontTotal || 0) +
-                                    (Array.isArray(warehouseSummary.repayments)
-                                      ? warehouseSummary.repayments
-                                        .filter((r) => (r.channel || 'CASH').toUpperCase() === 'CASH')
-                                        .reduce((s, r) => s + Number(r.amount || 0), 0)
-                                      : 0) +
-                                    (Number(warehouseSummary.defectivePlus || 0) - Number(warehouseSummary.defectiveMinus || 0))
-                                  ) : formatAmount(0)}
-                                </span>
+                               
                                 <button
                                   onClick={() => {
                                     setSelectedUser(user);
@@ -3119,7 +3148,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                                     setShowDetails(true);
                                   }}
                                   className="text-blue-500 hover:text-blue-700"
-                                  title="Tafsilotlarni ko‘rish"
+                                  title="Tafsilotlarni ko'rish"
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>

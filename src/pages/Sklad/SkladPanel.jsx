@@ -59,12 +59,12 @@ function SkladPanel() {
   const location = useLocation();
 
   const navigation = [
+    { id: 'hisobotlar', name: 'Хисоботлар', icon: BarChart3, path: '/sklad/hisobotlar' },
     { id: 'chiqim', name: 'Чиким', icon: TrendingUp, path: '/sklad/chiqim' },
-    { id: 'tovarlar', name: 'Товарлар', icon: TrendingDown, path: '/sklad/tovarlar' },   // 🔥 yangi qo‘shildi
+    { id: 'tovarlar', name: 'Товарлар', icon: TrendingDown, path: '/sklad/tovarlar' },  
     { id: 'tovarlarroyxati', name: "Товарлар Руйхати", icon: Box, path: '/sklad/tovarlarroyxati' },
     { id: 'tovarlarniqaytarish', name: 'Товарларни қайтариш', icon: TrendingDown, path: '/sklad/tovarlarniqaytarish' },
     { id: 'qaytarilganlar', name: 'Қайтарилганлар', icon: TrendingDown, path: '/sklad/qaytarilganlar' },
-    { id: 'hisobotlar', name: 'Хисоботлар', icon: BarChart3, path: '/sklad/hisobotlar' },
     { id: 'customers', name: 'Кредит', icon: Users, path: '/sklad/customers' },
   ];
 

@@ -87,6 +87,14 @@ const Hisobotlar = () => {
     const todayStr = new Date().toLocaleDateString("en-CA");
     return { startDate: todayStr, endDate: todayStr };
   });
+  // Backend handover value for current user (Topshiraadigan pul)
+  const [handoverValue, setHandoverValue] = useState(null);
+  const [handoverLoading, setHandoverLoading] = useState(false);
+
+  // Local modal reports state
+  const [openReport, setOpenReport] = useState('purchase'); // default to Kirim
+  const [reportLoadingModal, setReportLoadingModal] = useState(false);
+  const [reportRows, setReportRows] = useState([]);
 
   const soldProducts = products
     .filter((product) => product.status === "SOLD")
@@ -216,6 +224,93 @@ const Hisobotlar = () => {
       setStatsLoading(false);
     }
   };
+
+  // Fetch handover (Topshiraadigan pul) for current user from backend
+  const fetchHandoverForCurrentUser = async () => {
+    try {
+      if (!token || !currentUserId) return;
+      setHandoverLoading(true);
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+      const params = new URLSearchParams();
+      if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
+        params.append('branchId', selectedBranchId);
+      }
+      if (reportDate.startDate) params.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
+      if (reportDate.endDate) params.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
+      const res = await fetch(`https://suddocs.uz/cashier-reports/cashier/${currentUserId}?${params.toString()}`, { headers });
+      if (!res.ok) {
+        setHandoverValue(null);
+        return;
+      }
+      const rep = await res.json();
+      const value = Number(rep.cashTotal || 0)
+        + Number(rep.upfrontTotal || 0)
+        + Number(rep.repaymentTotal || 0)
+        + (Number(rep.defectivePlus || 0) - Number(rep.defectiveMinus || 0));
+      setHandoverValue(value);
+    } catch (e) {
+      setHandoverValue(null);
+    } finally {
+      setHandoverLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHandoverForCurrentUser();
+  }, [currentUserId, selectedBranchId, reportDate.startDate, reportDate.endDate]);
+
+  // Fetch transactions by type for modal reports
+  const fetchTransactionsByType = async (kind) => {
+    if (!token) return;
+    setReportLoadingModal(true);
+    try {
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+      const params = new URLSearchParams();
+      if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
+        params.append('branchId', selectedBranchId);
+      }
+      if (reportDate.startDate) {
+        params.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
+      }
+      if (reportDate.endDate) {
+        params.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
+      }
+      params.append('limit', 'all');
+      params.append('type', kind === 'purchase' ? 'PURCHASE' : kind === 'sale' ? 'SALE' : 'TRANSFER');
+      const res = await fetch(`https://suddocs.uz/transactions?${params.toString()}`, { headers });
+      if (!res.ok) throw new Error('Server error');
+      const data = await res.json();
+      const rows = Array.isArray(data?.transactions) ? data.transactions : Array.isArray(data) ? data : [];
+      setReportRows(rows);
+    } catch (e) {
+      setReportRows([]);
+    } finally {
+      setReportLoadingModal(false);
+    }
+  };
+
+  const openReportModal = (kind) => {
+    setOpenReport(kind);
+    fetchTransactionsByType(kind);
+  };
+
+  const closeReportModal = () => {
+    setOpenReport(null);
+    setReportRows([]);
+  };
+
+  // Auto-fetch inline report when report type/date/branch change
+  useEffect(() => {
+    if (openReport) {
+      fetchTransactionsByType(openReport);
+    }
+  }, [openReport, reportDate.startDate, reportDate.endDate, selectedBranchId]);
 
   // Fetch cashier report for current user
   useEffect(() => {
@@ -752,6 +847,7 @@ const Hisobotlar = () => {
   }
 
   return (
+    <>
     <div className="p-6 bg-gray-50 min-h-screen">
       {currentUserId && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-4">
@@ -911,17 +1007,20 @@ const Hisobotlar = () => {
                       Топширадиган пул
                     </div>
                     <div className="font-semibold">
-                      {formatAmount(
-                        Number(cashierReport.cashTotal || 0) +                    // Cash sales
-                        (cashierReport.repayments || [])                       // Credit repayments in cash (both monthly and daily)
-                          .filter(
-                            (r) =>
-                              (r.channel || "CASH").toUpperCase() === "CASH"
-                          )
-                          .reduce((s, r) => s + Number(r.amount || 0), 0) +
-                        Number(cashierReport.upfrontCash || 0) +               // Upfront payments in CASH only
-                        Math.max(0, defectivePlus) - Math.max(0, defectiveMinus) // Defective log adjustments (returns reduce cash to hand over)
-                      )}
+                      {handoverLoading
+                        ? 'Юкланмоқда...'
+                        : formatAmount(
+                            handoverValue != null
+                              ? handoverValue
+                              : (
+                                  Number(cashierReport.cashTotal || 0) +
+                                  (cashierReport.repayments || [])
+                                    .filter((r) => (r.channel || "CASH").toUpperCase() === "CASH")
+                                    .reduce((s, r) => s + Number(r.amount || 0), 0) +
+                                  Number(cashierReport.upfrontCash || 0) +
+                                  Math.max(0, defectivePlus) - Math.max(0, defectiveMinus)
+                                )
+                          )}
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
                       <div>💡 Нақд сотувлар + Кредит тўловлар (нақд) + Олдиндан тўловлар (нақд) + Қайтариш тўловлар</div>
@@ -1086,209 +1185,125 @@ const Hisobotlar = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Income Section */}
-              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+              <div className="bg-green-50 rounded-lg p-4 border border-green-200 cursor-pointer hover:bg-green-100" onClick={() => openReportModal('sale')}>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-lg font-semibold text-green-800">Кирим</h4>
                   <div className="p-2 bg-green-100 rounded-lg">
                     <ShoppingCart className="text-green-600" size={20} />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-green-700">Нақд сотувлар:</span>
-                    <span className="font-semibold text-green-800">
-                      {formatAmount(cashierReport?.cashTotal || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-green-700">Карта сотувлар:</span>
-                    <span className="font-semibold text-green-800">
-                      {formatAmount(cashierReport?.cardTotal || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-green-700">Кредит сотувлар:</span>
-                    <span className="font-semibold text-green-800">
-                      {formatAmount(cashierReport?.creditTotal || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-green-700">Бўлиб тўлаш:</span>
-                    <span className="font-semibold text-green-800">
-                      {formatAmount(cashierReport?.installmentTotal || 0)}
-                    </span>
-                  </div>
-                  <div className="border-t border-green-200 pt-2 mt-2">
-                    <div className="flex justify-between text-base font-bold">
-                      <span className="text-green-800">Жами кирим:</span>
-                      <span className="text-green-800">
-                        {formatAmount(
-                          (cashierReport?.cashTotal || 0) +
-                          (cashierReport?.cardTotal || 0) +
-                          (cashierReport?.creditTotal || 0) +
-                          (cashierReport?.installmentTotal || 0)
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+
               </div>
 
               {/* Expenses Section */}
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+              <div className="bg-red-50 rounded-lg p-4 border border-red-200 cursor-pointer hover:bg-red-100" onClick={() => openReportModal('purchase')}>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-lg font-semibold text-red-800">Чиқим</h4>
                   <div className="p-2 bg-red-100 rounded-lg">
                     <Package className="text-red-600" size={20} />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-red-700">Маҳсулот сотиб олиш:</span>
-                    <span className="font-semibold text-red-800">
-                      {formatAmount(transactionStats?.totalPurchases || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-red-700">Бошқа харажатлар:</span>
-                    <span className="font-semibold text-red-800">
-                      {formatAmount(0)}
-                    </span>
-                  </div>
-                  <div className="border-t border-red-200 pt-2 mt-2">
-                    <div className="flex justify-between text-base font-bold">
-                      <span className="text-red-800">Жами чиқим:</span>
-                      <span className="text-red-800">
-                        {formatAmount(transactionStats?.totalPurchases || 0)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+
               </div>
 
               {/* Transfers Section */}
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 cursor-pointer hover:bg-blue-100" onClick={() => openReportModal('transfer')}>
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-lg font-semibold text-blue-800">Ўтказмалар</h4>
                   <div className="p-2 bg-blue-100 rounded-lg">
                     <Building2 className="text-blue-600" size={20} />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-blue-700">Филиаллар ароси:</span>
-                    <span className="font-semibold text-blue-800">
-                      {formatAmount(transactionStats?.totalTransfers || 0)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-blue-700">Маҳсулот ўтказмалари:</span>
-                    <span className="font-semibold text-blue-800">
-                      {formatAmount(0)}
-                    </span>
-                  </div>
-                  <div className="border-t border-blue-200 pt-2 mt-2">
-                    <div className="flex justify-between text-base font-bold">
-                      <span className="text-blue-800">Жами ўтказмалар:</span>
-                      <span className="text-blue-800">
-                        {formatAmount(transactionStats?.totalTransfers || 0)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+
               </div>
             </div>
           )}
-          {/* Transaction Statistics Table */}
-          <div className="mt-6">
-            <div className="text-sm font-semibold text-gray-700 mb-3">
-              Транзакциялар статистикаси
+
+          {openReport && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm font-semibold text-gray-700">
+                  {openReport === 'purchase' ? 'Кирим (PURCHASE) ҳисоботи' : openReport === 'sale' ? 'Чиқим (Сотувлар) ҳисоботи' : 'Ўтказмалар ҳисоботи'}
+                </div>
+                <div />
+              </div>
+              <div className="overflow-x-auto">
+                {reportLoadingModal ? (
+                  <div className="text-gray-500">Юкланмоқда...</div>
+                ) : reportRows.length === 0 ? (
+                  <div className="text-gray-500">Маълумот йўқ</div>
+                ) : (
+                  <table className="w-full text-sm border border-gray-200 rounded-lg">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">ID</th>
+                        <th className="px-3 py-2 text-left">Сана</th>
+                        {openReport === 'sale' ? (
+                          <th className="px-3 py-2 text-left">Мижоз</th>
+                        ) : null}
+                        {openReport === 'purchase' ? (
+                          <th className="px-3 py-2 text-left">Филиал</th>
+                        ) : null}
+                        {openReport === 'transfer' ? (
+                          <>
+                            <th className="px-3 py-2 text-left">Чиқарувчи филиал</th>
+                            <th className="px-3 py-2 text-left">Қабул қилувчи филиал</th>
+                          </>
+                        ) : null}
+                        <th className="px-3 py-2 text-left">Маҳсулотлар</th>
+                        <th className="px-3 py-2 text-left">Миқдор</th>
+                        <th className="px-3 py-2 text-left">Жами</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {reportRows.map((t) => (
+                        <tr key={t.id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2">#{t.id}</td>
+                          <td className="px-3 py-2">{formatDate(t.createdAt)}</td>
+                          {openReport === 'sale' && (
+                            <td className="px-3 py-2">{t.customer?.fullName || '-'}</td>
+                          )}
+                          {openReport === 'purchase' && (
+                            <td className="px-3 py-2">{t.fromBranch?.name || '-'}</td>
+                          )}
+                          {openReport === 'transfer' && (
+                            <>
+                              <td className="px-3 py-2">{t.fromBranch?.name || '-'}</td>
+                              <td className="px-3 py-2">{t.toBranch?.name || '-'}</td>
+                            </>
+                          )}
+                          <td className="px-3 py-2">
+                            {(t.items || []).map((it, idx) => (
+                              <div key={idx} className="text-xs text-gray-700">
+                                {(it.product?.name || it.name || '-')}
+                                {it.quantity != null ? ` × ${it.quantity}` : ''}
+                              </div>
+                            ))}
+                          </td>
+                          {(() => {
+                            const qty = (Array.isArray(t?.items) ? t.items : []).reduce((s, it) => s + (Number(it?.quantity) || 0), 0);
+                            const sign = openReport === 'sale' ? '-' : '+';
+                            const color = openReport === 'sale' ? 'text-red-600' : (openReport === 'purchase' ? 'text-green-700' : 'text-blue-700');
+                            return (
+                              <td className={`px-3 py-2 font-semibold ${color}`}>
+                                {sign}{qty}
+                              </td>
+                            );
+                          })()}
+                          <td className="px-3 py-2">{formatAmount(t.finalTotal || t.total || 0)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border border-gray-200 rounded-lg">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Транзакция тури
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Сони
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Жами сумма
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Охирги транзакция
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
-                        <span className="font-medium text-gray-900">Сотувлар</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-900">
-                      {cashierReport?.transactions?.length || 0}
-                    </td>
-                    <td className="px-4 py-3 text-gray-900">
-                      {formatAmount(
-                        (cashierReport?.cashTotal || 0) +
-                        (cashierReport?.cardTotal || 0) +
-                        (cashierReport?.creditTotal || 0) +
-                        (cashierReport?.installmentTotal || 0)
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {cashierReport?.transactions?.[0]?.createdAt
-                        ? formatDate(cashierReport.transactions[0].createdAt)
-                        : 'Номаълум'
-                      }
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <div className="w-3 h-3 bg-red-500 rounded-full mr-3"></div>
-                        <span className="font-medium text-gray-900">Харидлар</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-900">
-                      {transactionStats?.purchaseTransactions || 0}
-                    </td>
-                    <td className="px-4 py-3 text-gray-900">
-                      {formatAmount(transactionStats?.totalPurchases || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {statsLoading ? 'Юкланмоқда...' : 'Номаълум'}
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center">
-                        <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
-                        <span className="font-medium text-gray-900">Ўтказмалар</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-900">
-                      {transactionStats?.transferTransactions || 0}
-                    </td>
-                    <td className="px-4 py-3 text-gray-900">
-                      {formatAmount(transactionStats?.totalTransfers || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {statsLoading ? 'Юкланмоқда...' : 'Номаълум'}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
+
+    </>
   );
 };
 

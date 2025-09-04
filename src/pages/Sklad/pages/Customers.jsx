@@ -413,11 +413,15 @@ const Мижозлар = () => {
               scheduleId: selectedSchedule.id,
               amount: Number(paymentAmount),
               channel: paymentChannel,
-              month: selectedSchedule.month,
+              // Ensure month fields are provided for installment credit tracking
+              month: String(selectedSchedule.month),
+              monthNumber: Number(selectedSchedule.month),
               paidAt: new Date().toISOString(),
               paidByUserId: Number(localStorage.getItem('userId')) || null,
+              // Include branchId so branch-filtered reports can see this repayment
+              branchId: transaction.fromBranchId || transaction.branchId || null,
             };
-            
+
             await axiosWithAuth.post(`${API_URL}/credit-repayments`, creditRepaymentData);
             console.log('Payment log saved to backend:', creditRepaymentData);
           } catch (error) {

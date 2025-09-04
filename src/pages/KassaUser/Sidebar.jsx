@@ -21,7 +21,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
     { id: 'sales', label: 'Сотиш', icon: ShoppingCart, path: '/kasir/sales' },
     { id: 'defective', label: 'Брак/Қайтариш', icon: AlertTriangle, path: '/kasir/defective' },
     { id: 'returned', label: 'Қайтарилганлар', icon: RotateCcw, path: '/kasir/returned' },
-    { id: 'mijozlar', label: 'Мижозлар', icon: Users, path: '/kasir/mijozlar' },
+    { id: 'mijozlar', label: 'Кредит', icon: Users, path: '/kasir/mijozlar' },
     { id: 'sotuvchilar', label: 'Сотувчилар моаши', icon: Users, path: '/kasir/sotuvchilar' },
   ];
 
