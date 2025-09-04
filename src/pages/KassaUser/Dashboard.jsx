@@ -8,6 +8,9 @@ import {
   AlertTriangle,
   Building2,
   LayoutGrid,
+  Eye,
+  X as XIcon,
+  User as UserIcon,
 } from "lucide-react";
 
 const StatCard = ({
@@ -59,6 +62,10 @@ const Dashboard = () => {
     const todayStr = new Date().toLocaleDateString("en-CA");
     return { startDate: todayStr, endDate: todayStr };
   });
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
 
   const soldProducts = products
     .filter((product) => product.status === "SOLD")
@@ -321,6 +328,8 @@ const Dashboard = () => {
                 downPayment,
                 upfrontPaymentType: t.upfrontPaymentType,
                 soldByName: getUserName(t.soldBy) || getUserName(t.user) || "-",
+                customer: t.customer || null,
+                items: t.items || [],
               });
             }
           }
@@ -904,6 +913,7 @@ const Dashboard = () => {
                         </th>
                         <th className="px-3 py-2 text-left">Якуний</th>
                         <th className="px-3 py-2 text-left">Олдиндан тури</th>
+                        <th className="px-3 py-2 text-left">Кўриш</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -920,11 +930,21 @@ const Dashboard = () => {
                             {t.soldByName || "-"}
                           </td>
                           <td className="px-3 py-2">
-                            {formatAmount(
-                              ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) 
-                                ? Number(t.amountPaid || 0)  // For CREDIT/INSTALLMENT: show only amountPaid (avoid double-counting)
-                                : Number(t.amountPaid || 0) + Number(t.downPayment || 0)  // For other types: show sum
-                            )}
+                            <div>
+                              <div className="font-semibold">
+                                {formatAmount(
+                                  ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) 
+                                    ? Number(t.amountPaid || 0)  // For CREDIT/INSTALLMENT: show only amountPaid (avoid double-counting)
+                                    : Number(t.amountPaid || 0) + Number(t.downPayment || 0)  // For other types: show sum
+                                )}
+                              </div>
+                              {['CREDIT', 'INSTALLMENT'].includes(t.paymentType) && Number(t.amountPaid || 0) > 0 && (
+                                <div className="text-xs text-gray-500">
+                                  {t.upfrontPaymentType === 'CASH' ? '💵 Нақд' : 
+                                   t.upfrontPaymentType === 'CARD' ? '💳 Карта' : '❓ Номаълум'}
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2">
                             {formatAmount(t.finalTotal)}
@@ -934,6 +954,17 @@ const Dashboard = () => {
                               (t.upfrontPaymentType === 'CASH' ? 'Нақд' : 
                                t.upfrontPaymentType === 'CARD' ? 'Карта' : 'Номаълум') : 
                               '-'}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm"
+                              onClick={() => {
+                                setSelectedTransaction(t);
+                                setShowTransactionModal(true);
+                              }}
+                            >
+                              <Eye size={14} /> Кўриш
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -950,7 +981,7 @@ const Dashboard = () => {
                               .reduce((sum, t) => sum + Number(t.amountPaid || 0), 0)
                           )}
                         </td>
-                        <td colSpan={2}></td>
+                        <td colSpan={3}></td>
                       </tr>
                       <tr>
                         <td colSpan={4} className="px-3 py-2 font-semibold text-right">
@@ -964,13 +995,163 @@ const Dashboard = () => {
                             (cashierReport.repaymentTotal || 0)
                           )}
                         </td>
-                        <td colSpan={2}></td>
+                        <td colSpan={3}></td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Transaction Detail Modal */}
+      {showTransactionModal && selectedTransaction && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-[1000] flex items-center justify-center">
+          <div className="bg-white w-[90vw] h-[90vh] rounded-lg shadow-xl flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="text-lg font-semibold">
+                Транзакция #{selectedTransaction.id}
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-gray-600 hover:text-gray-800 flex items-center gap-1"
+                  onClick={() => {
+                    const c = selectedTransaction.customer || {};
+                    const merged = {
+                      ...c,
+                      address: c.address || selectedTransaction.deliveryAddress || c.address,
+                      deliveryAddress: selectedTransaction.deliveryAddress || c.deliveryAddress || c.address,
+                    };
+                    setSelectedCustomer(merged);
+                    setShowCustomerModal(true);
+                  }}
+                >
+                  <UserIcon size={16} /> Мижоз маълумоти
+                </button>
+                <button
+                  className="text-gray-500 hover:text-gray-700"
+                  onClick={() => {
+                    setShowTransactionModal(false);
+                    setSelectedTransaction(null);
+                  }}
+                >
+                  <XIcon size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 overflow-auto flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+                <div className="p-3 rounded border">
+                  <div className="text-sm text-gray-500">Тўлов тури</div>
+                  <div className="font-semibold">
+                    {getPaymentTypeLabel(selectedTransaction.paymentType)}
+                  </div>
+                </div>
+                <div className="p-3 rounded border">
+                  <div className="text-sm text-gray-500">Якуний</div>
+                  <div className="font-semibold">
+                    {formatAmount(selectedTransaction.finalTotal)}
+                  </div>
+                </div>
+              </div>              
+
+              {/* Sotilgan mahsulotlar */}
+              <div className="mb-4">
+                <h4 className="text-md font-semibold text-gray-700 mb-2">Сотилган маҳсулотлар</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Маҳсулот</th>
+                        <th className="px-3 py-2 text-left">Модель</th>
+                        <th className="px-3 py-2 text-left">Миқдор</th>
+                        <th className="px-3 py-2 text-left">Нарxи</th>
+                        <th className="px-3 py-2 text-left">Жами</th>
+                        <th className="px-3 py-2 text-left">Кредит/Бўлиб</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {(selectedTransaction.items || []).map((it, i) => (
+                        <tr key={`transaction-item-${it.productId || it.id || it.name || i}-${i}`} className="hover:bg-gray-50">
+                          <td className="px-3 py-2">{it.product?.name || it.name || "-"}</td>
+                          <td className="px-3 py-2">{it.product?.model || "-"}</td>
+                          <td className="px-3 py-2">{it.quantity}</td>
+                          <td className="px-3 py-2">{formatAmount(it.price)}</td>
+                          <td className="px-3 py-2">{formatAmount((Number(it.price) || 0) * (Number(it.quantity) || 0))}</td>
+                          <td className="px-3 py-2">
+                            {(() => {
+                              const isCreditOrInstallment = selectedTransaction.paymentType === 'CREDIT' || selectedTransaction.paymentType === 'INSTALLMENT';
+                              if (!isCreditOrInstallment) return '-';
+                              const pct = typeof selectedTransaction.interestRate === 'number'
+                                ? `${Number(selectedTransaction.interestRate).toFixed(0)}%`
+                                : (typeof it.creditPercent === 'number' ? `${(it.creditPercent * 100).toFixed(0)}%` : '0%');
+                              return pct;
+                            })()} 
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer details modal */}
+      {showCustomerModal && selectedCustomer && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-[10000] flex items-center justify-center">
+          <div className="bg-white w-[600px] max-w-[95vw] rounded-lg shadow-xl">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <h3 className="text-lg font-semibold">Мижоз маълумотлари</h3>
+              <button
+                className="text-gray-500 hover:text-gray-700"
+                onClick={() => {
+                  setShowCustomerModal(false);
+                  setSelectedCustomer(null);
+                }}
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-2 text-sm">
+              <p>
+                <span className="text-gray-600">Ф.И.Ш:</span>{" "}
+                <span className="font-medium">
+                  {selectedCustomer.fullName || "-"}
+                </span>
+              </p>
+              <p>
+                <span className="text-gray-600">Телефон:</span>{" "}
+                <span className="font-medium">
+                  {selectedCustomer.phone || selectedCustomer.phoneNumber || "-"}
+                </span>
+              </p>
+              <p>
+                <span className="text-gray-600">Паспорт:</span>{" "}
+                <span className="font-medium">
+                  {selectedCustomer.passportSeries || "-"}
+                </span>
+              </p>
+              <p>
+                <span className="text-gray-600">ЖШШИР:</span>{" "}
+                <span className="font-medium">
+                  {selectedCustomer.jshshir || "-"}
+                </span>
+              </p>
+              <p>
+                <span className="text-gray-600">Манзил:</span>{" "}
+                <span className="font-medium">
+                  {selectedCustomer.address ||
+                    selectedCustomer.deliveryAddress ||
+                    "-"}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
       )}

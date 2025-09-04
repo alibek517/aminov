@@ -39,41 +39,15 @@ const StatCard = ({
   </div>
 );
 
-const Hisobotlar = () => {
+const Dashboard = () => {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [branches, setBranches] = useState([]);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
   const token = localStorage.getItem("access_token");
-  const userRole = localStorage.getItem("userRole");
-  // Get selectedBranchId from localStorage, but handle null/undefined cases
-  const selectedBranchId = localStorage.getItem("branchId");
-
-  // Debug: Log the branch ID and user information
-  console.log('Hisobotlar: Debug info:', {
-    selectedBranchId,
-    selectedBranchIdType: typeof selectedBranchId,
-    userRole,
-    currentUserId: Number(localStorage.getItem("userId") || 0),
-    user: JSON.parse(localStorage.getItem("user") || "{}")
-  });
-
-  // Check if user has WAREHOUSE role
-  if (userRole !== "WAREHOUSE") {
-    return (
-      <div className="p-6 bg-gray-50 min-h-screen">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-          <div className="text-red-600 text-2xl font-bold mb-4">
-            Рухсат йўқ
-          </div>
-          <p className="text-gray-600">
-            Бу саҳифани кўриш учун WAREHOUSE роли керак
-          </p>
-        </div>
-      </div>
-    );
-  }
+  // Always get selectedBranchId from localStorage
+  const selectedBranchId = localStorage.getItem("selectedBranchId") || "";
 
   // Cashier report state (current user from localStorage)
   const currentUserId = Number(localStorage.getItem("userId")) || null;
@@ -81,18 +55,14 @@ const Hisobotlar = () => {
   const [cashierReport, setCashierReport] = useState(null);
   const [defectivePlus, setDefectivePlus] = useState(0);
   const [defectiveMinus, setDefectiveMinus] = useState(0);
-  const [transactionStats, setTransactionStats] = useState(null);
-  const [statsLoading, setStatsLoading] = useState(false);
   const [reportDate, setReportDate] = useState(() => {
     const todayStr = new Date().toLocaleDateString("en-CA");
     return { startDate: todayStr, endDate: todayStr };
   });
-  // Backend handover value for current user (Topshiraadigan pul)
-  const [handoverValue, setHandoverValue] = useState(null);
-  const [handoverLoading, setHandoverLoading] = useState(false);
 
-  // Local modal reports state
-  const [openReport, setOpenReport] = useState('purchase'); // default to Kirim
+  // Report modal state
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [openReport, setOpenReport] = useState(null);
   const [reportLoadingModal, setReportLoadingModal] = useState(false);
   const [reportRows, setReportRows] = useState([]);
 
@@ -115,7 +85,7 @@ const Hisobotlar = () => {
         "Content-Type": "application/json",
       };
 
-      const productsUrl = (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '')
+      const productsUrl = selectedBranchId
         ? `https://suddocs.uz/products?branchId=${selectedBranchId}`
         : "https://suddocs.uz/products";
 
@@ -153,11 +123,6 @@ const Hisobotlar = () => {
     }
   }, [token, navigate, selectedBranchId]);
 
-  // Fetch transaction statistics when component mounts or report date changes
-  useEffect(() => {
-    fetchTransactionStats();
-  }, [reportDate.startDate, reportDate.endDate, selectedBranchId]);
-
   // Helpers for cashier block
   const formatDate = (dateString) => {
     return dateString
@@ -189,128 +154,6 @@ const Hisobotlar = () => {
     if (!user) return "Йўқ";
     return `${user.firstName || ""} ${user.lastName || ""}`.trim() || "Йўқ";
   };
-
-  // Fetch transaction statistics for branches
-  const fetchTransactionStats = async () => {
-    if (!token) return;
-    setStatsLoading(true);
-    try {
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
-
-      const params = new URLSearchParams();
-      if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
-        params.append('branchId', selectedBranchId);
-      }
-      if (reportDate.startDate) {
-        params.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
-      }
-      if (reportDate.endDate) {
-        params.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
-      }
-
-      const res = await fetch(`https://suddocs.uz/transactions/statistics?${params.toString()}`, { headers });
-      if (!res.ok) throw new Error("Server error");
-      const data = await res.json();
-
-      console.log('Transaction statistics:', data);
-      setTransactionStats(data);
-    } catch (error) {
-      console.error('Failed to fetch transaction statistics:', error);
-      setTransactionStats(null);
-    } finally {
-      setStatsLoading(false);
-    }
-  };
-
-  // Fetch handover (Topshiraadigan pul) for current user from backend
-  const fetchHandoverForCurrentUser = async () => {
-    try {
-      if (!token || !currentUserId) return;
-      setHandoverLoading(true);
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
-      const params = new URLSearchParams();
-      if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
-        params.append('branchId', selectedBranchId);
-      }
-      if (reportDate.startDate) params.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
-      if (reportDate.endDate) params.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
-      const res = await fetch(`https://suddocs.uz/cashier-reports/cashier/${currentUserId}?${params.toString()}`, { headers });
-      if (!res.ok) {
-        setHandoverValue(null);
-        return;
-      }
-      const rep = await res.json();
-      const value = Number(rep.cashTotal || 0)
-        + Number(rep.upfrontTotal || 0)
-        + Number(rep.repaymentTotal || 0)
-        + (Number(rep.defectivePlus || 0) - Number(rep.defectiveMinus || 0));
-      setHandoverValue(value);
-    } catch (e) {
-      setHandoverValue(null);
-    } finally {
-      setHandoverLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchHandoverForCurrentUser();
-  }, [currentUserId, selectedBranchId, reportDate.startDate, reportDate.endDate]);
-
-  // Fetch transactions by type for modal reports
-  const fetchTransactionsByType = async (kind) => {
-    if (!token) return;
-    setReportLoadingModal(true);
-    try {
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
-      const params = new URLSearchParams();
-      if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
-        params.append('branchId', selectedBranchId);
-      }
-      if (reportDate.startDate) {
-        params.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
-      }
-      if (reportDate.endDate) {
-        params.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
-      }
-      params.append('limit', 'all');
-      params.append('type', kind === 'purchase' ? 'PURCHASE' : kind === 'sale' ? 'SALE' : 'TRANSFER');
-      const res = await fetch(`https://suddocs.uz/transactions?${params.toString()}`, { headers });
-      if (!res.ok) throw new Error('Server error');
-      const data = await res.json();
-      const rows = Array.isArray(data?.transactions) ? data.transactions : Array.isArray(data) ? data : [];
-      setReportRows(rows);
-    } catch (e) {
-      setReportRows([]);
-    } finally {
-      setReportLoadingModal(false);
-    }
-  };
-
-  const openReportModal = (kind) => {
-    setOpenReport(kind);
-    fetchTransactionsByType(kind);
-  };
-
-  const closeReportModal = () => {
-    setOpenReport(null);
-    setReportRows([]);
-  };
-
-  // Auto-fetch inline report when report type/date/branch change
-  useEffect(() => {
-    if (openReport) {
-      fetchTransactionsByType(openReport);
-    }
-  }, [openReport, reportDate.startDate, reportDate.endDate, selectedBranchId]);
 
   // Fetch cashier report for current user
   useEffect(() => {
@@ -534,9 +377,7 @@ const Hisobotlar = () => {
           };
           const urlBase = new URL(`https://suddocs.uz/transactions`);
           const baseParams = new URLSearchParams();
-          if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
-            baseParams.append("branchId", selectedBranchId);
-          }
+          if (selectedBranchId) baseParams.append("branchId", selectedBranchId);
           baseParams.append("limit", "all");
 
           const urls = [
@@ -579,9 +420,6 @@ const Hisobotlar = () => {
             // Ensure branch filter matches if backend didn't filter
             if (
               selectedBranchId &&
-              selectedBranchId !== 'null' &&
-              selectedBranchId !== 'undefined' &&
-              selectedBranchId.trim() !== '' &&
               String(t.fromBranchId || t.branchId || "") !== String(selectedBranchId)
             ) {
               continue;
@@ -622,31 +460,14 @@ const Hisobotlar = () => {
 
         // Include daily repayments from backend into cashierReport totals and list
         try {
-          const dailyParams = new URLSearchParams();
-          if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
-            dailyParams.append('branchId', selectedBranchId);
-          }
-          dailyParams.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
-          dailyParams.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
-
-          const dailyRepaymentsUrl = `https://suddocs.uz/daily-repayments/user/${currentUserId}?${dailyParams.toString()}`;
-          console.log('Hisobotlar: Fetching daily repayments from:', dailyRepaymentsUrl);
-
-          const dailyRepaymentsRes = await fetch(dailyRepaymentsUrl, { headers });
+          const dailyRepaymentsRes = await fetch(
+            `https://suddocs.uz/daily-repayments/cashier/${currentUserId}?branchId=${selectedBranchId}&startDate=${new Date(`${reportDate.startDate}T00:00:00`).toISOString()}&endDate=${new Date(`${reportDate.endDate}T23:59:59`).toISOString()}`,
+            { headers }
+          );
 
           if (dailyRepaymentsRes.ok) {
             const dailyRepayments = await dailyRepaymentsRes.json();
-            console.log('Hisobotlar: Daily repayments response:', dailyRepayments);
-
             for (const l of Array.isArray(dailyRepayments) ? dailyRepayments : []) {
-              console.log('Processing daily repayment:', {
-                id: l.id,
-                channel: l.channel,
-                channelType: typeof l.channel,
-                amount: l.amount,
-                transactionId: l.transactionId
-              });
-
               const ch = (l.channel || 'CASH').toUpperCase();
               agg.repaymentTotal += Number(l.amount || 0);
               agg.repayments.push({
@@ -672,31 +493,14 @@ const Hisobotlar = () => {
 
         // Include credit repayments from backend into cashierReport totals and list
         try {
-          const params = new URLSearchParams();
-          if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
-            params.append('branchId', selectedBranchId);
-          }
-          params.append('startDate', new Date(`${reportDate.startDate}T00:00:00`).toISOString());
-          params.append('endDate', new Date(`${reportDate.endDate}T23:59:59`).toISOString());
-
-          const creditRepaymentsUrl = `https://suddocs.uz/credit-repayments/user/${currentUserId}?${params.toString()}`;
-          console.log('Hisobotlar: Fetching credit repayments from:', creditRepaymentsUrl);
-
-          const creditRepaymentsRes = await fetch(creditRepaymentsUrl, { headers });
+          const creditRepaymentsRes = await fetch(
+            `https://suddocs.uz/credit-repayments/cashier/${currentUserId}?branchId=${selectedBranchId}&startDate=${new Date(`${reportDate.startDate}T00:00:00`).toISOString()}&endDate=${new Date(`${reportDate.endDate}T23:59:59`).toISOString()}`,
+            { headers }
+          );
 
           if (creditRepaymentsRes.ok) {
             const creditRepayments = await creditRepaymentsRes.json();
-            console.log('Hisobotlar: Credit repayments response:', creditRepayments);
-
             for (const l of Array.isArray(creditRepayments) ? creditRepayments : []) {
-              console.log('Processing credit repayment:', {
-                id: l.id,
-                channel: l.channel,
-                channelType: typeof l.channel,
-                amount: l.amount,
-                transactionId: l.transactionId
-              });
-
               const ch = (l.channel || 'CASH').toUpperCase();
               agg.repaymentTotal += Number(l.amount || 0);
               agg.repayments.push({
@@ -725,9 +529,7 @@ const Hisobotlar = () => {
         // Include defective logs (returns) for cash adjustments
         try {
           const params2 = new URLSearchParams();
-          if (selectedBranchId && selectedBranchId !== 'null' && selectedBranchId !== 'undefined' && selectedBranchId.trim() !== '') {
-            params2.append("branchId", selectedBranchId);
-          }
+          if (selectedBranchId) params2.append("branchId", selectedBranchId);
           // backend might not support date filters; fetch and filter client-side
           const resDef = await fetch(`https://suddocs.uz/defective-logs?${params2.toString()}`, { headers });
           let plus = 0;
@@ -787,6 +589,62 @@ const Hisobotlar = () => {
     selectedBranchId,
   ]);
 
+  // Function to open report modal and fetch data
+  const openReportModal = async (reportType) => {
+    setOpenReport(reportType);
+    setReportLoadingModal(true);
+    setReportRows([]);
+    
+    try {
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      };
+      
+      const params = new URLSearchParams();
+      if (selectedBranchId) params.append("branchId", selectedBranchId);
+      if (reportDate.startDate) {
+        params.append("startDate", new Date(`${reportDate.startDate}T00:00:00`).toISOString());
+      }
+      if (reportDate.endDate) {
+        params.append("endDate", new Date(`${reportDate.endDate}T23:59:59`).toISOString());
+      }
+      params.append("limit", "all");
+      
+      let endpoint = "";
+      switch (reportType) {
+        case "sale":
+          endpoint = "transactions";
+          params.append("type", "SALE");
+          break;
+        case "purchase":
+          endpoint = "transactions";
+          params.append("type", "PURCHASE");
+          break;
+        case "transfer":
+          endpoint = "transactions";
+          params.append("type", "TRANSFER");
+          break;
+        default:
+          return;
+      }
+      
+      const response = await fetch(`https://suddocs.uz/${endpoint}?${params.toString()}`, { headers });
+      if (response.ok) {
+        const data = await response.json();
+        const transactions = data.transactions || data || [];
+        setReportRows(Array.isArray(transactions) ? transactions : []);
+      } else {
+        setReportRows([]);
+      }
+    } catch (error) {
+      console.error("Error fetching report data:", error);
+      setReportRows([]);
+    } finally {
+      setReportLoadingModal(false);
+    }
+  };
+
   // Refresh dashboard when report date changes
   useEffect(() => {
     // This will trigger a re-fetch when report date changes
@@ -841,19 +699,15 @@ const Hisobotlar = () => {
     },
   ];
 
-  function formatPrice(number) {
-    const num = Math.floor(Number(number) || 0);
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  }
+
 
   return (
-    <>
     <div className="p-6 bg-gray-50 min-h-screen">
       {currentUserId && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-4">
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">
-              Омбор — тўлиқ сотувлар
+              Кассир — тўлиқ сотувлар
             </h3>
             <div className="flex items-center gap-2">
               <input
@@ -959,68 +813,64 @@ const Hisobotlar = () => {
                         </div>
                       </div>
                     </div>
-
                   </div>
-                      <div className="p-3 rounded border bg-purple-50">
-                        <div className="text-sm">Кредитдан тўланган</div>
-                        <div className="text-xl font-bold">
-                          {formatAmount(cashierReport.repaymentTotal || 0)}
-                        </div>
-                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                          <div>
-                            <div className="text-xs">Нақд</div>
-                            <div className="font-semibold">
-                              {formatAmount(
-                                (cashierReport.repayments || [])
-                                  .filter(
-                                    (r) =>
-                                      (r.channel || "CASH").toUpperCase() === "CASH"
-                                  )
-                                  .reduce((s, r) => s + Number(r.amount || 0), 0)
-                              )}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs">Карта</div>
-                            <div className="font-semibold">
-                              {formatAmount(
-                                (cashierReport.repayments || [])
-                                  .filter(
-                                    (r) =>
-                                      (r.channel || "CARD").toUpperCase() === "CARD"
-                                  )
-                                  .reduce((s, r) => s + Number(r.amount || 0), 0)
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-2 text-xs text-gray-600">
-                          💡 Нақд тўловлар "Топширадиган пул" га қўшилади
-                        </div>
-                        <div className="mt-1 text-xs text-blue-600">
-                          📊 Кунлик + Ойлик тўловлар
+                  <div className="p-3 rounded border bg-purple-50">
+                    <div className="text-sm">Кредитдан тўланган</div>
+                    <div className="text-xl font-bold">
+                      {formatAmount(cashierReport.repaymentTotal || 0)}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <div className="text-xs">Нақд</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (cashierReport.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "CASH").toUpperCase() === "CASH"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
                         </div>
                       </div>
+                      <div>
+                        <div className="text-xs">Карта</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (cashierReport.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "CARD").toUpperCase() === "CARD"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-gray-600">
+                      💡 Нақд тўловлар "Топширадиган пул" га қўшилади
+                    </div>
+                    <div className="mt-1 text-xs text-blue-600">
+                      📊 Кунлик + Ойлик тўловлар
+                    </div>
+                  </div>
 
                   <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">
                       Топширадиган пул
                     </div>
                     <div className="font-semibold">
-                      {handoverLoading
-                        ? 'Юкланмоқда...'
-                        : formatAmount(
-                            handoverValue != null
-                              ? handoverValue
-                              : (
-                                  Number(cashierReport.cashTotal || 0) +
-                                  (cashierReport.repayments || [])
-                                    .filter((r) => (r.channel || "CASH").toUpperCase() === "CASH")
-                                    .reduce((s, r) => s + Number(r.amount || 0), 0) +
-                                  Number(cashierReport.upfrontCash || 0) +
-                                  Math.max(0, defectivePlus) - Math.max(0, defectiveMinus)
-                                )
-                          )}
+                      {formatAmount(
+                        Number(cashierReport.cashTotal || 0) +                    // Cash sales
+                        (cashierReport.repayments || [])                       // Credit repayments in cash (both monthly and daily)
+                          .filter(
+                            (r) =>
+                              (r.channel || "CASH").toUpperCase() === "CASH"
+                          )
+                          .reduce((s, r) => s + Number(r.amount || 0), 0) +
+                        Number(cashierReport.upfrontCash || 0) +               // Upfront payments in CASH only
+                        Math.max(0, defectivePlus) - Math.max(0, defectiveMinus) // Defective log adjustments (returns reduce cash to hand over)
+                      )}
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
                       <div>💡 Нақд сотувлар + Кредит тўловлар (нақд) + Олдиндан тўловлар (нақд) + Қайтариш тўловлар</div>
@@ -1051,11 +901,15 @@ const Hisobotlar = () => {
                                 Транзакция
                               </th>
                               <th className="px-3 py-2 text-left">Мижоз</th>
+                              <th className="px-3 py-2 text-left">
+                                Қабул қилган
+                              </th>
+                              <th className="px-3 py-2 text-left">Сотган</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200">
                             {cashierReport.repayments.map((r, idx) => (
-                              <tr key={idx} className="hover:bg-gray-50">
+                              <tr key={`cashier-repayment-${r.scheduleId || r.transactionId || r.paidAt || idx}-${idx}`} className="hover:bg-gray-50">
                                 <td className="px-3 py-2">{r.month}</td>
                                 <td className="px-3 py-2">
                                   {formatDate(r.paidAt)}
@@ -1068,6 +922,18 @@ const Hisobotlar = () => {
                                 </td>
                                 <td className="px-3 py-2">
                                   {r.customer?.fullName || "-"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.paidBy
+                                    ? `${r.paidBy.firstName || ""} ${r.paidBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {r.soldBy
+                                    ? `${r.soldBy.firstName || ""} ${r.soldBy.lastName || ""
+                                      }`.trim()
+                                    : "-"}
                                 </td>
                               </tr>
                             ))}
@@ -1087,6 +953,7 @@ const Hisobotlar = () => {
                         <th className="px-3 py-2 text-left">ID</th>
                         <th className="px-3 py-2 text-left">Сана</th>
                         <th className="px-3 py-2 text-left">Тўлов тури</th>
+                        <th className="px-3 py-2 text-left">Сотган</th>
                         <th className="px-3 py-2 text-left">
                           <div className="flex items-center gap-1">
                             <span>Олдиндан тўлов</span>
@@ -1110,6 +977,9 @@ const Hisobotlar = () => {
                             {getPaymentTypeLabel(t.paymentType)}
                           </td>
                           <td className="px-3 py-2">
+                            {t.soldByName || "-"}
+                          </td>
+                          <td className="px-3 py-2">
                             {formatAmount(
                               ['CREDIT', 'INSTALLMENT'].includes(t.paymentType)
                                 ? Number(t.amountPaid || 0)  // For CREDIT/INSTALLMENT: show only amountPaid (avoid double-counting)
@@ -1130,7 +1000,7 @@ const Hisobotlar = () => {
                     </tbody>
                     <tfoot className="bg-gray-50">
                       <tr>
-                        <td colSpan={3} className="px-3 py-2 font-semibold text-right">
+                        <td colSpan={4} className="px-3 py-2 font-semibold text-right">
                           Жами олдиндан тўловлар:
                         </td>
                         <td className="px-3 py-2 font-semibold">
@@ -1143,7 +1013,7 @@ const Hisobotlar = () => {
                         <td colSpan={2}></td>
                       </tr>
                       <tr>
-                        <td colSpan={3} className="px-3 py-2 font-semibold text-right">
+                        <td colSpan={4} className="px-3 py-2 font-semibold text-right">
                           Жами тўланган (олдиндан + кредит):
                         </td>
                         <td className="px-3 py-2 font-semibold">
@@ -1162,149 +1032,146 @@ const Hisobotlar = () => {
               </>
             )}
           </div>
-        </div>
-      )}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-6">
+            <div className="p-6 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Филиаллар бўйича кирим-чиқим
+              </h3>
+              <div className="text-sm text-gray-600 mt-1">
+                Транзакциялар орқали кирим-чиқим маълумотлари
+              </div>
+            </div>
 
-      {/* Branch Income and Expenses Section */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-6">
-        <div className="p-6 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Филиаллар бўйича кирим-чиқим
-          </h3>
-          <div className="text-sm text-gray-600 mt-1">
-            Транзакциялар орқали кирим-чиқим маълумотлари
+            <div className="p-6">
+
+              {statsLoading ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-500">Статистика юкланмоқда...</div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Income Section */}
+                  <div className="bg-green-50 rounded-lg p-4 border border-green-200 cursor-pointer hover:bg-green-100" onClick={() => openReportModal('sale')}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-lg font-semibold text-green-800">Кирим</h4>
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <ShoppingCart className="text-green-600" size={20} />
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Expenses Section */}
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-200 cursor-pointer hover:bg-red-100" onClick={() => openReportModal('purchase')}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-lg font-semibold text-red-800">Чиқим</h4>
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Package className="text-red-600" size={20} />
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Transfers Section */}
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 cursor-pointer hover:bg-blue-100" onClick={() => openReportModal('transfer')}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-lg font-semibold text-blue-800">Ўтказмалар</h4>
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <Building2 className="text-blue-600" size={20} />
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              )}
+
+              {openReport && (
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-semibold text-gray-700">
+                      {openReport === 'purchase' ? 'Кирим (PURCHASE) ҳисоботи' : openReport === 'sale' ? 'Чиқим (Сотувлар) ҳисоботи' : 'Ўтказмалар ҳисоботи'}
+                    </div>
+                    <div />
+                  </div>
+                  <div className="overflow-x-auto">
+                    {reportLoadingModal ? (
+                      <div className="text-gray-500">Юкланмоқда...</div>
+                    ) : reportRows.length === 0 ? (
+                      <div className="text-gray-500">Маълумот йўқ</div>
+                    ) : (
+                      <table className="w-full text-sm border border-gray-200 rounded-lg">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left">ID</th>
+                            <th className="px-3 py-2 text-left">Сана</th>
+                            {openReport === 'sale' ? (
+                              <th className="px-3 py-2 text-left">Мижоз</th>
+                            ) : null}
+                            {openReport === 'purchase' ? (
+                              <th className="px-3 py-2 text-left">Филиал</th>
+                            ) : null}
+                            {openReport === 'transfer' ? (
+                              <>
+                                <th className="px-3 py-2 text-left">Чиқарувчи филиал</th>
+                                <th className="px-3 py-2 text-left">Қабул қилувчи филиал</th>
+                              </>
+                            ) : null}
+                            <th className="px-3 py-2 text-left">Маҳсулотлар</th>
+                            <th className="px-3 py-2 text-left">Миқдор</th>
+                            <th className="px-3 py-2 text-left">Жами</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {reportRows.map((t) => (
+                            <tr key={t.id} className="hover:bg-gray-50">
+                              <td className="px-3 py-2">#{t.id}</td>
+                              <td className="px-3 py-2">{formatDate(t.createdAt)}</td>
+                              {openReport === 'sale' && (
+                                <td className="px-3 py-2">{t.customer?.fullName || '-'}</td>
+                              )}
+                              {openReport === 'purchase' && (
+                                <td className="px-3 py-2">{t.fromBranch?.name || '-'}</td>
+                              )}
+                              {openReport === 'transfer' && (
+                                <>
+                                  <td className="px-3 py-2">{t.fromBranch?.name || '-'}</td>
+                                  <td className="px-3 py-2">{t.toBranch?.name || '-'}</td>
+                                </>
+                              )}
+                              <td className="px-3 py-2">
+                                {(t.items || []).map((it, idx) => (
+                                  <div key={idx} className="text-xs text-gray-700">
+                                    {(it.product?.name || it.name || '-')}
+                                    {it.quantity != null ? ` × ${it.quantity}` : ''}
+                                  </div>
+                                ))}
+                              </td>
+                              {(() => {
+                                const qty = (Array.isArray(t?.items) ? t.items : []).reduce((s, it) => s + (Number(it?.quantity) || 0), 0);
+                                const sign = openReport === 'sale' ? '-' : '+';
+                                const color = openReport === 'sale' ? 'text-red-600' : (openReport === 'purchase' ? 'text-green-700' : 'text-blue-700');
+                                return (
+                                  <td className={`px-3 py-2 font-semibold ${color}`}>
+                                    {sign}{qty}
+                                  </td>
+                                );
+                              })()}
+                              <td className="px-3 py-2">{formatAmount(t.finalTotal || t.total || 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="p-6">
-          
-          {statsLoading ? (
-            <div className="text-center py-8">
-              <div className="text-gray-500">Статистика юкланмоқда...</div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Income Section */}
-              <div className="bg-green-50 rounded-lg p-4 border border-green-200 cursor-pointer hover:bg-green-100" onClick={() => openReportModal('sale')}>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-lg font-semibold text-green-800">Кирим</h4>
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <ShoppingCart className="text-green-600" size={20} />
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Expenses Section */}
-              <div className="bg-red-50 rounded-lg p-4 border border-red-200 cursor-pointer hover:bg-red-100" onClick={() => openReportModal('purchase')}>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-lg font-semibold text-red-800">Чиқим</h4>
-                  <div className="p-2 bg-red-100 rounded-lg">
-                    <Package className="text-red-600" size={20} />
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Transfers Section */}
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 cursor-pointer hover:bg-blue-100" onClick={() => openReportModal('transfer')}>
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-lg font-semibold text-blue-800">Ўтказмалар</h4>
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Building2 className="text-blue-600" size={20} />
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          )}
-
-          {openReport && (
-            <div className="mt-6">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-semibold text-gray-700">
-                  {openReport === 'purchase' ? 'Кирим (PURCHASE) ҳисоботи' : openReport === 'sale' ? 'Чиқим (Сотувлар) ҳисоботи' : 'Ўтказмалар ҳисоботи'}
-                </div>
-                <div />
-              </div>
-              <div className="overflow-x-auto">
-                {reportLoadingModal ? (
-                  <div className="text-gray-500">Юкланмоқда...</div>
-                ) : reportRows.length === 0 ? (
-                  <div className="text-gray-500">Маълумот йўқ</div>
-                ) : (
-                  <table className="w-full text-sm border border-gray-200 rounded-lg">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left">ID</th>
-                        <th className="px-3 py-2 text-left">Сана</th>
-                        {openReport === 'sale' ? (
-                          <th className="px-3 py-2 text-left">Мижоз</th>
-                        ) : null}
-                        {openReport === 'purchase' ? (
-                          <th className="px-3 py-2 text-left">Филиал</th>
-                        ) : null}
-                        {openReport === 'transfer' ? (
-                          <>
-                            <th className="px-3 py-2 text-left">Чиқарувчи филиал</th>
-                            <th className="px-3 py-2 text-left">Қабул қилувчи филиал</th>
-                          </>
-                        ) : null}
-                        <th className="px-3 py-2 text-left">Маҳсулотлар</th>
-                        <th className="px-3 py-2 text-left">Миқдор</th>
-                        <th className="px-3 py-2 text-left">Жами</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {reportRows.map((t) => (
-                        <tr key={t.id} className="hover:bg-gray-50">
-                          <td className="px-3 py-2">#{t.id}</td>
-                          <td className="px-3 py-2">{formatDate(t.createdAt)}</td>
-                          {openReport === 'sale' && (
-                            <td className="px-3 py-2">{t.customer?.fullName || '-'}</td>
-                          )}
-                          {openReport === 'purchase' && (
-                            <td className="px-3 py-2">{t.fromBranch?.name || '-'}</td>
-                          )}
-                          {openReport === 'transfer' && (
-                            <>
-                              <td className="px-3 py-2">{t.fromBranch?.name || '-'}</td>
-                              <td className="px-3 py-2">{t.toBranch?.name || '-'}</td>
-                            </>
-                          )}
-                          <td className="px-3 py-2">
-                            {(t.items || []).map((it, idx) => (
-                              <div key={idx} className="text-xs text-gray-700">
-                                {(it.product?.name || it.name || '-')}
-                                {it.quantity != null ? ` × ${it.quantity}` : ''}
-                              </div>
-                            ))}
-                          </td>
-                          {(() => {
-                            const qty = (Array.isArray(t?.items) ? t.items : []).reduce((s, it) => s + (Number(it?.quantity) || 0), 0);
-                            const sign = openReport === 'sale' ? '-' : '+';
-                            const color = openReport === 'sale' ? 'text-red-600' : (openReport === 'purchase' ? 'text-green-700' : 'text-blue-700');
-                            return (
-                              <td className={`px-3 py-2 font-semibold ${color}`}>
-                                {sign}{qty}
-                              </td>
-                            );
-                          })()}
-                          <td className="px-3 py-2">{formatAmount(t.finalTotal || t.total || 0)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      )}
     </div>
-
-    </>
   );
 };
 
-export default Hisobotlar;
+export default Dashboard;
