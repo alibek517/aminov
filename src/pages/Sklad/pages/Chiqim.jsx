@@ -25,7 +25,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Customer sales modal state
   const [showCustomerSalesModal, setShowCustomerSalesModal] = useState(false);
   const [customerPaid, setCustomerPaid] = useState('0');
@@ -151,13 +151,13 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
   const handleBranchChange = (branchId) => {
     const storedBranchId = localStorage.getItem('branchId');
     const isOwnBranch = branchId === storedBranchId;
-    
+
     setSelectedBranchId(branchId);
     setProducts([]);
     setSelectedItems([]);
     setIsOmbor(isOwnBranch);
     setOperationType(isOwnBranch ? 'SALE' : 'TRANSFER');
-    
+
     if (branchId) {
       setTimeout(() => {
         loadData();
@@ -179,12 +179,12 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           setSelectedBranchId(storedBranchId);
           setIsOmbor(true);
           setOperationType('SALE');
-                 } else {
-           // Branch not found notification removed
-         }
-             } catch (err) {
-         console.error('Fetch branches error:', err);
-       }
+        } else {
+          // Branch not found notification removed
+        }
+      } catch (err) {
+        console.error('Fetch branches error:', err);
+      }
     };
     fetchBranchesAndSetBranch();
     fetchExchangeRate();
@@ -336,7 +336,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         maxQuantity: product.quantity,
       },
     ]);
- 
+
   };
 
   const updateItem = (index, field, value) => {
@@ -344,9 +344,9 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       const newItems = prev.map((item, i) =>
         i === index
           ? {
-              ...item,
-              [field]: value,
-            }
+            ...item,
+            [field]: value,
+          }
           : item,
       );
       return newItems;
@@ -426,7 +426,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       const termCount = isDays ? Number(daysCount) : Number(months);
       const interestRateValue = Number(interestRate) / 100 || 0;
-      
+
       // Correct calculation logic: subtract upfront payment first, then calculate interest on remaining amount
       const upfrontPayment = Number(customerPaid) || 0;
       const remainingPrincipal = Math.max(0, baseTotal - upfrontPayment);
@@ -504,7 +504,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       } else if (Number(item.quantity) > item.maxQuantity) {
         newErrors[`quantity_${index}`] = `Maksimal miqdor: ${item.maxQuantity} dona`;
       }
-      
+
       // Check custom price if available, otherwise check default price
       const customPrice = priceInputValues[`${item.id}_${index}`];
       if (customPrice) {
@@ -534,7 +534,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
     if (operationType === 'SALE' && (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT')) {
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       const termCount = isDays ? Number(daysCount) : Number(months);
-      
+
       if (paymentType === 'INSTALLMENT' && termUnit === 'DAYS') {
         // For daily installments, validate days count
         if (
@@ -558,11 +558,11 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           newErrors.months = 'Oylar soni 1 dan 24 gacha butun son bo\'lishi kerak';
         }
       }
-      
+
       if (!interestRate || isNaN(interestRate) || Number(interestRate) < 0) {
         newErrors.interestRate = "Foiz 0 dan katta yoki teng bo'lishi kerak";
       }
-      
+
       // Only require passport and JSHSHIR for monthly installments, not daily ones
       if (!isDays) {
         if (!passportSeries.trim()) newErrors.passportSeries = 'Passport seriyasi kiritilishi shart';
@@ -586,11 +586,10 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
     const confirmMessage =
       operationType === 'TRANSFER'
-        ? `Haqiqatan ham ${branches.find((b) => b.id === Number(selectedBranchId))?.name} filialidan ${
-            branches.find((b) => b.id === Number(toBranch))?.name
-          } filialiga ${selectedItems
-            .map((item) => `${item.name} (${formatQuantity(item.quantity)})`)
-            .join(', ')} ko'chirmoqchimisiz?`
+        ? `Haqiqatan ham ${branches.find((b) => b.id === Number(selectedBranchId))?.name} filialidan ${branches.find((b) => b.id === Number(toBranch))?.name
+        } filialiga ${selectedItems
+          .map((item) => `${item.name} (${formatQuantity(item.quantity)})`)
+          .join(', ')} ko'chirmoqchimisiz?`
         : `Haqiqatan ham ushbu mahsulotlarni mijozga sotmoqchimisiz?`;
 
     if (!window.confirm(confirmMessage)) {
@@ -608,7 +607,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       const termCount = isDays ? Number(daysCount) : Number(months);
       const interestRateValue = Number(interestRate) / 100 || 0;
-      
+
       // Correct calculation logic: subtract upfront payment first, then calculate interest on remaining amount
       const upfrontPayment = Number(downPayment) || 0;
       const remainingPrincipal = Math.max(0, baseTotal - upfrontPayment);
@@ -730,10 +729,10 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
   const handleReceiptPrint = async () => {
     if (isPrinting) return; // Prevent multiple submissions
-    
+
     const transaction = buildTransactionFromReceiptData();
     if (!transaction) return;
-    
+
     setIsPrinting(true); // Start loading
 
     const formatDateLocal = (dateString) => {
@@ -825,12 +824,12 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           <div class="products">
             <h4>MAHSULOTLAR</h4>
             ${transaction.items
-              .map((item) => `
+        .map((item) => `
               <div class="product-row">
                 <span>${item.name} x${item.quantity}</span>
                 <span>${formatCurrencySom(Number(item.quantity) * Number(item.priceInSom))}</span>
               </div>`)
-              .join('')}
+        .join('')}
           </div>
           <div class="total">
             <div class="total-row">
@@ -847,9 +846,18 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                 <span>${formatCurrencySom(transaction.remaining)}</span>
               </div>` : ''}
           </div>
-          <div class="footer">
-            <p>Tashrifingiz uchun rahmat!</p>
-          </div>
+           <div class="total-row">
+                    <span>Telefon:</span>
+                    <small>+998 98 800 66 66</small>
+                  </div>
+                </div>
+                <div>
+                  <p>Tashrifingiz uchun rahmat!</p>
+                </div>
+                <div class="footer">
+                  <p>.</p>
+                </div>
+                
         </body>
       </html>`;
 
@@ -859,99 +867,99 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
     win.document.close();
     win.focus();
 
-            setTimeout(async () => {
-          try {
-            if (operationType === 'SALE') {
-              // Get data from receiptData if available (customer sales modal), otherwise use form data (main cart modal)
-              const baseTotal = receiptData ? receiptData.totalInSom : selectedItems.reduce((sum, item, index) => {
-                const customPrice = priceInputValues[`${item.id}_${index}`];
-                const displayPrice = customPrice ? Number(customPrice) : Number(item.marketPrice) * Number(exchangeRate);
-                return sum + Number(item.quantity) * Number(displayPrice);
-              }, 0);
-              
-              const isDays = receiptData ? receiptData.termUnit === 'DAYS' : (paymentType === 'INSTALLMENT' && termUnit === 'DAYS');
-              const termCount = receiptData ? (receiptData.days || receiptData.months) : (isDays ? Number(daysCount) : Number(months));
-              const interestRateValue = receiptData ? Number(receiptData.interestRate) / 100 : Number(interestRate) / 100;
-              
-              // Correct calculation logic: subtract upfront payment first, then calculate interest on remaining amount
-              const upfrontPayment = receiptData ? Number(receiptData.paid) : Number(downPayment) || 0;
-              const remainingPrincipal = Math.max(0, baseTotal - upfrontPayment);
-              const interestAmount = remainingPrincipal * interestRateValue;
-              const remainingWithInterest = remainingPrincipal + interestAmount;
-              const finalTotal = upfrontPayment + remainingWithInterest;
-              const monthlyPayment = termCount > 0 && remainingWithInterest > 0 ? remainingWithInterest / termCount : 0;
+    setTimeout(async () => {
+      try {
+        if (operationType === 'SALE') {
+          // Get data from receiptData if available (customer sales modal), otherwise use form data (main cart modal)
+          const baseTotal = receiptData ? receiptData.totalInSom : selectedItems.reduce((sum, item, index) => {
+            const customPrice = priceInputValues[`${item.id}_${index}`];
+            const displayPrice = customPrice ? Number(customPrice) : Number(item.marketPrice) * Number(exchangeRate);
+            return sum + Number(item.quantity) * Number(displayPrice);
+          }, 0);
 
-              const somTotal = baseTotal;
-              const somFinalTotal = finalTotal;
-              const somPaid = upfrontPayment;
-              const somRemaining = remainingWithInterest;
+          const isDays = receiptData ? receiptData.termUnit === 'DAYS' : (paymentType === 'INSTALLMENT' && termUnit === 'DAYS');
+          const termCount = receiptData ? (receiptData.days || receiptData.months) : (isDays ? Number(daysCount) : Number(months));
+          const interestRateValue = receiptData ? Number(receiptData.interestRate) / 100 : Number(interestRate) / 100;
 
-                        const payload = {
-                type: 'SALE',
-                status: 'PENDING',
-                total: somTotal,
-                finalTotal: somFinalTotal,
-                downPayment: somPaid, // Upfront payment
-                amountPaid: somPaid, // Amount already paid
-                userId: Number(localStorage.getItem('userId')),
-                remainingBalance: somRemaining,
-                paymentType: receiptData ? receiptData.paymentType : (paymentType === 'INSTALLMENT' ? 'CREDIT' : paymentType),
-                deliveryType: receiptData ? receiptData.deliveryType : (paymentType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP'),
-                deliveryAddress:
-                  receiptData ? receiptData.deliveryAddress : (
-                    (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' || paymentType === 'DELIVERY')
-                      ? deliveryAddress || undefined
-                      : undefined
-                  ),
-                upfrontPaymentType: receiptData ? receiptData.upfrontPaymentType : upfrontPaymentMethod,
-                termUnit: isDays ? 'DAYS' : 'MONTHS', // Add term unit
-                customer: {
-                  fullName: receiptData ? receiptData.customer.fullName : `${firstName} ${lastName}`.trim(),
-                  phone: receiptData ? receiptData.customer.phone : phone.replace(/\s+/g, ''),
-                  passportSeries: receiptData ? receiptData.customer.passportSeries : passportSeries || undefined,
-                  jshshir: receiptData ? receiptData.customer.jshshir : jshshir || undefined,
-                  address: receiptData ? receiptData.customer.address : deliveryAddress || undefined,
-                },
-                fromBranchId: Number(selectedBranchId),
-                soldByUserId: Number(localStorage.getItem('userId')),
-                items: receiptData ? receiptData.items.map(item => ({
-                  productId: item.id,
-                  productName: item.name,
-                  quantity: Number(item.quantity),
-                  price: Number(item.priceInSom),
-                  total: Number(item.quantity) * Number(item.priceInSom),
-                  ...(receiptData.paymentType === 'CREDIT' || receiptData.paymentType === 'INSTALLMENT'
-                    ? { 
-                        creditMonth: termCount, 
-                        creditPercent: interestRateValue, 
-                        monthlyPayment: monthlyPayment,
-                        termUnit: isDays ? 'DAYS' : 'MONTHS'
-                      }
-                    : {}),
-                })) : selectedItems.map((item, index) => {
-                  const customPrice = priceInputValues[`${item.id}_${index}`];
-                  const displayPrice = customPrice ? Number(customPrice) : Number(item.marketPrice) * Number(exchangeRate);
-                  return {
-                    productId: item.id,
-                    productName: item.name,
-                    quantity: Number(item.quantity),
-                    price: displayPrice,
-                    total: Number(item.quantity) * displayPrice,
-                    ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT'
-                      ? { 
-                          creditMonth: termCount, 
-                          creditPercent: interestRateValue, 
-                          monthlyPayment: monthlyPayment,
-                          termUnit: isDays ? 'DAYS' : 'MONTHS'
-                        }
-                      : {}),
-                  };
-                }),
+          // Correct calculation logic: subtract upfront payment first, then calculate interest on remaining amount
+          const upfrontPayment = receiptData ? Number(receiptData.paid) : Number(downPayment) || 0;
+          const remainingPrincipal = Math.max(0, baseTotal - upfrontPayment);
+          const interestAmount = remainingPrincipal * interestRateValue;
+          const remainingWithInterest = remainingPrincipal + interestAmount;
+          const finalTotal = upfrontPayment + remainingWithInterest;
+          const monthlyPayment = termCount > 0 && remainingWithInterest > 0 ? remainingWithInterest / termCount : 0;
+
+          const somTotal = baseTotal;
+          const somFinalTotal = finalTotal;
+          const somPaid = upfrontPayment;
+          const somRemaining = remainingWithInterest;
+
+          const payload = {
+            type: 'SALE',
+            status: 'PENDING',
+            total: somTotal,
+            finalTotal: somFinalTotal,
+            downPayment: somPaid, // Upfront payment
+            amountPaid: somPaid, // Amount already paid
+            userId: Number(localStorage.getItem('userId')),
+            remainingBalance: somRemaining,
+            paymentType: receiptData ? receiptData.paymentType : (paymentType === 'INSTALLMENT' ? 'CREDIT' : paymentType),
+            deliveryType: receiptData ? receiptData.deliveryType : (paymentType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP'),
+            deliveryAddress:
+              receiptData ? receiptData.deliveryAddress : (
+                (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT' || paymentType === 'DELIVERY')
+                  ? deliveryAddress || undefined
+                  : undefined
+              ),
+            upfrontPaymentType: receiptData ? receiptData.upfrontPaymentType : upfrontPaymentMethod,
+            termUnit: isDays ? 'DAYS' : 'MONTHS', // Add term unit
+            customer: {
+              fullName: receiptData ? receiptData.customer.fullName : `${firstName} ${lastName}`.trim(),
+              phone: receiptData ? receiptData.customer.phone : phone.replace(/\s+/g, ''),
+              passportSeries: receiptData ? receiptData.customer.passportSeries : passportSeries || undefined,
+              jshshir: receiptData ? receiptData.customer.jshshir : jshshir || undefined,
+              address: receiptData ? receiptData.customer.address : deliveryAddress || undefined,
+            },
+            fromBranchId: Number(selectedBranchId),
+            soldByUserId: Number(localStorage.getItem('userId')),
+            items: receiptData ? receiptData.items.map(item => ({
+              productId: item.id,
+              productName: item.name,
+              quantity: Number(item.quantity),
+              price: Number(item.priceInSom),
+              total: Number(item.quantity) * Number(item.priceInSom),
+              ...(receiptData.paymentType === 'CREDIT' || receiptData.paymentType === 'INSTALLMENT'
+                ? {
+                  creditMonth: termCount,
+                  creditPercent: interestRateValue,
+                  monthlyPayment: monthlyPayment,
+                  termUnit: isDays ? 'DAYS' : 'MONTHS'
+                }
+                : {}),
+            })) : selectedItems.map((item, index) => {
+              const customPrice = priceInputValues[`${item.id}_${index}`];
+              const displayPrice = customPrice ? Number(customPrice) : Number(item.marketPrice) * Number(exchangeRate);
+              return {
+                productId: item.id,
+                productName: item.name,
+                quantity: Number(item.quantity),
+                price: displayPrice,
+                total: Number(item.quantity) * displayPrice,
+                ...(paymentType === 'CREDIT' || paymentType === 'INSTALLMENT'
+                  ? {
+                    creditMonth: termCount,
+                    creditPercent: interestRateValue,
+                    monthlyPayment: monthlyPayment,
+                    termUnit: isDays ? 'DAYS' : 'MONTHS'
+                  }
+                  : {}),
               };
+            }),
+          };
 
           // Debug log the payload being sent to backend
           console.log('Sending to backend:', payload);
-          
+
           const response = await axiosWithAuth({
             method: 'post',
             url: `${API_URL}/transactions`,
@@ -963,18 +971,18 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
         win.print();
         setReceiptPrinted(true);
-                setTimeout(() => {
+        setTimeout(() => {
           win.close();
           resetToInitialState();
           completeSale();
           setIsPrinting(false); // Reset loading state
         }, 1000);
-              } catch (err) {
-          console.error('Error submitting sale before print:', err);
-          win.close();
-          resetToInitialState();
-          setIsPrinting(false); // Reset loading state on error
-        }
+      } catch (err) {
+        console.error('Error submitting sale before print:', err);
+        win.close();
+        resetToInitialState();
+        setIsPrinting(false); // Reset loading state on error
+      }
     }, 500);
 
     win.onafterprint = () => {
@@ -1060,9 +1068,9 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
     const remainingWithInterest = remainingPrincipal + interestAmount;   // Qolgan + foiz
     const totalWithInterest = upfrontPayment + remainingWithInterest;    // Oldindan to'lov + qolgan (foiz bilan)
     const change = upfrontPayment > baseTotal ? upfrontPayment - baseTotal : 0; // Qaytim (agar oldindan to'lov asosiy summani oshirsa)
-    
+
     let periodicPayment, schedule;
-    
+
     if (isDays) {
       // Kunlik bo'lib to'lash uchun: mijoz kunlar ichida qolgan summani to'lab ketishi kerak
       // Faqat 1 ta to'lov yaratiladi, lekin mijoz bu kunlar ichida to'lab ketishi kerak
@@ -1090,11 +1098,11 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       }
     }
 
-    return { 
-      totalWithInterest, 
+    return {
+      totalWithInterest,
       monthlyPayment: periodicPayment, // Oylik yoki kunlik to'lov
-      schedule, 
-      change, 
+      schedule,
+      change,
       remaining: remainingWithInterest,
       baseTotal,
       upfrontPayment,
@@ -1114,7 +1122,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
   const paymentSchedule = calculatePaymentSchedule();
   const { totalWithInterest, monthlyPayment, schedule, change, remaining } = paymentSchedule;
-  
+
   // Debug logging for payment calculations
   useEffect(() => {
     if (['CREDIT', 'INSTALLMENT'].includes(paymentType) && paymentSchedule.baseTotal > 0) {
@@ -1136,7 +1144,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
     <div className="p-6 bg-gray-50 min-h-screen">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Чиқим</h1>
 
-      
+
 
       <div className="flex items-center gap-4 mb-4">
         <div className="w-full max-w-xs">
@@ -1153,7 +1161,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
             ))}
           </select>
         </div>
-
         <button
           onClick={() => setShowCartModal(true)}
           className="relative bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition-all duration-200"
@@ -1260,46 +1267,44 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                     <div className="overflow-x-auto mb-6">
                       <table className="w-full border border-gray-200">
                         <thead>
-                                                     <tr className="bg-gray-50">
-                             <th className="p-3 text-left font-medium">№</th>
-                             <th className="p-3 text-left font-medium">Маҳсулот</th>
-                             <th className="p-3 text-left font-medium">Нарх (сўм)</th>
-                             <th className="p-3 text-left font-medium">Миқдор</th>
-                             <th className="p-3 text-left font-medium">Жами</th>
-                           </tr>
+                          <tr className="bg-gray-50">
+                            <th className="p-3 text-left font-medium">№</th>
+                            <th className="p-3 text-left font-medium">Маҳсулот</th>
+                            <th className="p-3 text-left font-medium">Нарх (сўм)</th>
+                            <th className="p-3 text-left font-medium">Миқдор</th>
+                            <th className="p-3 text-left font-medium">Жами</th>
+                          </tr>
                         </thead>
                         <tbody>
                           {selectedItems.map((item, index) => (
                             <tr key={index} className="border-t border-gray-200">
                               <td className="p-3">{index + 1}</td>
                               <td className="p-3">{item.name}</td>
-                                                             <td className="p-3">
-                                 <div className="space-y-2">
-                                   <input
-                                     type="text"
-                                     value={Math.floor(Number(item.marketPrice) * Number(exchangeRate)) || ''}
-                                     onChange={(e) => onPriceSomChangeDirect(index, e)}
-                                     className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                       errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'
-                                     }`}
-                                     placeholder="0"
-                                   />
-                                   <div className="text-xs text-gray-500">
-                                     {Math.floor(Number(item.marketPrice))} USD
-                                   </div>
-                                   {errors[`price_${index}`] && (
-                                     <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
-                                   )}
-                                 </div>
-                               </td>
+                              <td className="p-3">
+                                <div className="space-y-2">
+                                  <input
+                                    type="text"
+                                    value={Math.floor(Number(item.marketPrice) * Number(exchangeRate)) || ''}
+                                    onChange={(e) => onPriceSomChangeDirect(index, e)}
+                                    className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'
+                                      }`}
+                                    placeholder="0"
+                                  />
+                                  <div className="text-xs text-gray-500">
+                                    {Math.floor(Number(item.marketPrice))} USD
+                                  </div>
+                                  {errors[`price_${index}`] && (
+                                    <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
+                                  )}
+                                </div>
+                              </td>
                               <td className="p-3">
                                 <input
                                   type="number"
                                   value={item.quantity}
                                   onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                                  className={`w-20 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                    errors[`quantity_${index}`] ? 'border-red-500' : 'border-gray-300'
-                                  }`}
+                                  className={`w-20 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`quantity_${index}`] ? 'border-red-500' : 'border-gray-300'
+                                    }`}
                                   min="1"
                                   max={item.maxQuantity}
                                   step="1"
@@ -1333,15 +1338,15 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                     <div className="mb-4">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Амал тури</label>
                       <div className="flex gap-2">
-                      <select
-                        value={operationType}
-                        onChange={(e) => setOperationType(e.target.value)}
+                        <select
+                          value={operationType}
+                          onChange={(e) => setOperationType(e.target.value)}
                           className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
-                        disabled={!isOmbor}
-                      >
-                        <option value="SALE">Мижозга сотиш</option>
-                        <option value="TRANSFER">Филиалга ўтказиш</option>
-                      </select>
+                          disabled={!isOmbor}
+                        >
+                          <option value="SALE">Мижозга сотиш</option>
+                          <option value="TRANSFER">Филиалга ўтказиш</option>
+                        </select>
 
                       </div>
                     </div>
@@ -1352,9 +1357,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                         <select
                           value={toBranch}
                           onChange={(e) => setToBranch(e.target.value)}
-                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                            errors.toBranch ? 'border-red-500' : 'border-gray-300'
-                          }`}
+                          className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.toBranch ? 'border-red-500' : 'border-gray-300'
+                            }`}
                         >
                           <option value="">Танланг</option>
                           {branches
@@ -1381,9 +1385,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                   <input
                                     value={firstName}
                                     onChange={(e) => setFirstName(e.target.value)}
-                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                      errors.firstName ? 'border-red-500' : 'border-gray-300'
-                                    }`}
+                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.firstName ? 'border-red-500' : 'border-gray-300'
+                                      }`}
                                   />
                                   {errors.firstName && (
                                     <span className="text-red-500 text-xs">{errors.firstName}</span>
@@ -1394,9 +1397,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                   <input
                                     value={lastName}
                                     onChange={(e) => setLastName(e.target.value)}
-                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                      errors.lastName ? 'border-red-500' : 'border-gray-300'
-                                    }`}
+                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.lastName ? 'border-red-500' : 'border-gray-300'
+                                      }`}
                                   />
                                   {errors.lastName && (
                                     <span className="text-red-500 text-xs">{errors.lastName}</span>
@@ -1407,9 +1409,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                   <input
                                     value={phone}
                                     onChange={(e) => setPhone(e.target.value)}
-                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                      errors.phone ? 'border-red-500' : 'border-gray-300'
-                                    }`}
+                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.phone ? 'border-red-500' : 'border-gray-300'
+                                      }`}
                                   />
                                   {errors.phone && <span className="text-red-500 text-xs">{errors.phone}</span>}
                                 </div>
@@ -1435,9 +1436,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                   value={deliveryAddress}
                                   onChange={(e) => setDeliveryAddress(e.target.value)}
                                   placeholder="Тўлиқ манзилни киритинг..."
-                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                    errors.deliveryAddress ? 'border-red-500' : 'border-gray-300'
-                                  }`}
+                                  className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.deliveryAddress ? 'border-red-500' : 'border-gray-300'
+                                    }`}
                                   rows="3"
                                 />
                                 {errors.deliveryAddress && (
@@ -1456,9 +1456,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                               <select
                                 value={paymentType}
                                 onChange={(e) => setPaymentType(e.target.value)}
-                                className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                  errors.paymentType ? 'border-red-500' : 'border-gray-300'
-                                }`}
+                                className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.paymentType ? 'border-red-500' : 'border-gray-300'
+                                  }`}
                               >
                                 <option value="">Танланг</option>
                                 <option value="CASH">Нақд</option>
@@ -1511,9 +1510,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                         value={passportSeries}
                                         onChange={(e) => setPassportSeries(e.target.value)}
                                         placeholder="AA 1234567"
-                                        className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                          errors.passportSeries ? 'border-red-500' : 'border-gray-300'
-                                        }`}
+                                        className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.passportSeries ? 'border-red-500' : 'border-gray-300'
+                                          }`}
                                       />
                                       {errors.passportSeries && (
                                         <span className="text-red-500 text-xs">{errors.passportSeries}</span>
@@ -1526,9 +1524,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                         value={jshshir}
                                         onChange={(e) => setJshshir(e.target.value)}
                                         placeholder="1234567890123456"
-                                        className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                          errors.jshshir ? 'border-red-500' : 'border-gray-300'
-                                        }`}
+                                        className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.jshshir ? 'border-red-500' : 'border-gray-300'
+                                          }`}
                                         maxLength={16}
                                       />
                                       {errors.jshshir && (
@@ -1543,9 +1540,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                         type="number"
                                         value={months}
                                         onChange={(e) => setMonths(e.target.value)}
-                                        className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                          errors.months ? 'border-red-500' : 'border-gray-300'
-                                        }`}
+                                        className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.months ? 'border-red-500' : 'border-gray-300'
+                                          }`}
                                         min="1"
                                         max="24"
                                         step="1"
@@ -1562,9 +1558,8 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                     type="number"
                                     value={interestRate}
                                     onChange={(e) => setInterestRate(e.target.value)}
-                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                      errors.interestRate ? 'border-red-500' : 'border-gray-300'
-                                    }`}
+                                    className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'
+                                      }`}
                                     step="0.01"
                                     min="0"
                                   />
@@ -1681,7 +1676,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                         disabled={submitting || !isOmbor}
                         className="flex-1 bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors font-medium"
                       >
-                        {submitting ? 'Юкланмоқда...' : 'Амални амалга ошириш'}
+                        {submitting ? 'Юкланмоқда...' : 'Сотишни амалга ошириш'}
                       </button>
                       <button
                         onClick={clearCart}
@@ -1735,26 +1730,25 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                   showPrintWarning={true}
                 />
 
-                                 <div className="p-4 border-t bg-yellow-50">
-                   <button
-                     onClick={handleReceiptPrint}
-                     disabled={isPrinting}
-                     className={`w-full py-3 px-4 rounded-lg transition-colors font-medium ${
-                       isPrinting 
-                         ? 'bg-gray-400 cursor-not-allowed' 
-                         : 'bg-blue-500 hover:bg-blue-600 text-white'
-                     }`}
-                   >
-                     {isPrinting ? (
-                       <>
-                         <div className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
-                         Юкланмоқда...
-                       </>
-                     ) : (
-                       '🖨️ Чекни чоп етиш ва сотишни якунлаш'
-                     )}
-                   </button>
-                 </div>
+                <div className="p-4 border-t bg-yellow-50">
+                  <button
+                    onClick={handleReceiptPrint}
+                    disabled={isPrinting}
+                    className={`w-full py-3 px-4 rounded-lg transition-colors font-medium ${isPrinting
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600 text-white'
+                      }`}
+                  >
+                    {isPrinting ? (
+                      <>
+                        <div className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
+                        Юкланмоқда...
+                      </>
+                    ) : (
+                      '🖨️ Чекни чоп етиш ва сотишни якунлаш'
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1788,27 +1782,27 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                       {selectedItems.map((item, index) => (
                         <tr key={index} className="border-t border-gray-200">
                           <td className="p-3">{item.name}</td>
-                                                     <td className="p-3">
-                             <input
-                               type="number"
-                               value={priceInputValues[`${item.id}_${index}`] || Math.floor(Number(item.marketPrice) * Number(exchangeRate))}
-                               onChange={(e) => {
-                                 const inputValue = e.target.value;
-                                 const itemKey = `${item.id}_${index}`;
-                                 setPriceInputValues(prev => ({
-                                   ...prev,
-                                   [itemKey]: inputValue
-                                 }));
-                               }}
-                               className={`w-40 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
-                               min="0"
-                               step="1"
-                               placeholder="Нарх (сом)"
-                             />
-                             {errors[`price_${index}`] && (
-                               <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
-                             )}
-                           </td>
+                          <td className="p-3">
+                            <input
+                              type="number"
+                              value={priceInputValues[`${item.id}_${index}`] || Math.floor(Number(item.marketPrice) * Number(exchangeRate))}
+                              onChange={(e) => {
+                                const inputValue = e.target.value;
+                                const itemKey = `${item.id}_${index}`;
+                                setPriceInputValues(prev => ({
+                                  ...prev,
+                                  [itemKey]: inputValue
+                                }));
+                              }}
+                              className={`w-40 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'}`}
+                              min="0"
+                              step="1"
+                              placeholder="Нарх (сом)"
+                            />
+                            {errors[`price_${index}`] && (
+                              <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
+                            )}
+                          </td>
                           <td className="p-3">
                             <input
                               type="number"
@@ -2067,58 +2061,58 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                 <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                   <h4 className="text-md font-semibold mb-3">Жами</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                                         <div className="bg-white p-3 rounded border">
-                       <div className="text-gray-600 text-xs mb-1">Асосий сумма:</div>
-                       <div className="font-medium text-blue-600 break-words text-sm">{(() => {
-                         let total = 0;
-                         selectedItems.forEach((item, index) => {
-                           const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.floor(Number(item.marketPrice) * Number(exchangeRate));
-                           const quantity = Number(item.quantity);
-                           total += quantity * Number(displayPrice);
-                         });
-                         return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
-                       })()}</div>
-                     </div>
-                                         {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
-                       <>
-                         <div className="bg-white p-3 rounded border">
-                           <div className="text-gray-600 text-xs mb-1">Олдиндан тўлов:</div>
-                           <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0))} сом</div>
-                         </div>
-                         <div className="bg-white p-3 rounded border">
-                           <div className="text-gray-600 text-xs mb-1">Қолган (фоиз билан):</div>
-                           <div className="font-medium text-red-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().remaining)} сом</div>
-                         </div>
-                         <div className="bg-white p-3 rounded border">
-                           <div className="text-gray-600 text-xs mb-1">Умумий (фоиз билан):</div>
-                           <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().totalWithInterest)} сом</div>
-                         </div>
-                         <div className="bg-white p-3 rounded border">
-                           <div className="text-gray-600 text-xs mb-1">
-                             {calculatePaymentSchedule().isDays ? 'Кунлик тўлов (1 та тўлов):' : 'Ойлик тўлов:'}
-                           </div>
-                           <div className="font-medium text-blue-600 break-words text-sm">
-                             {new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().monthlyPayment)} сом
-                           </div>
-                           {calculatePaymentSchedule().isDays && (
-                             <div className="text-xs text-gray-500 mt-1">
-                               {calculatePaymentSchedule().daysCount} кун ичида тўлаш керак (1 та тўлов)
-                             </div>
-                           )}
-                         </div>
-                       </>
-                     )}
+                    <div className="bg-white p-3 rounded border">
+                      <div className="text-gray-600 text-xs mb-1">Асосий сумма:</div>
+                      <div className="font-medium text-blue-600 break-words text-sm">{(() => {
+                        let total = 0;
+                        selectedItems.forEach((item, index) => {
+                          const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.floor(Number(item.marketPrice) * Number(exchangeRate));
+                          const quantity = Number(item.quantity);
+                          total += quantity * Number(displayPrice);
+                        });
+                        return new Intl.NumberFormat('uz-UZ').format(total) + ' сом';
+                      })()}</div>
+                    </div>
+                    {['CREDIT', 'INSTALLMENT'].includes(paymentType) && (
+                      <>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Олдиндан тўлов:</div>
+                          <div className="font-medium text-purple-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format((Number(customerPaid) || 0))} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Қолган (фоиз билан):</div>
+                          <div className="font-medium text-red-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().remaining)} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">Умумий (фоиз билан):</div>
+                          <div className="font-medium text-green-600 break-words text-sm">{new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().totalWithInterest)} сом</div>
+                        </div>
+                        <div className="bg-white p-3 rounded border">
+                          <div className="text-gray-600 text-xs mb-1">
+                            {calculatePaymentSchedule().isDays ? 'Кунлик тўлов (1 та тўлов):' : 'Ойлик тўлов:'}
+                          </div>
+                          <div className="font-medium text-blue-600 break-words text-sm">
+                            {new Intl.NumberFormat('uz-UZ').format(calculatePaymentSchedule().monthlyPayment)} сом
+                          </div>
+                          {calculatePaymentSchedule().isDays && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {calculatePaymentSchedule().daysCount} кун ичида тўлаш керак (1 та тўлов)
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
                 <div className="mt-6 flex gap-3">
-                                     <button
-                     onClick={processCustomerSale}
-                     disabled={submitting}
-                     className="flex-1 bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors font-medium"
-                   >
-                     {submitting ? 'Юкланмоқда...' : 'Сотишни амалга ошириш'}
-                   </button>
+                  <button
+                    onClick={processCustomerSale}
+                    disabled={submitting}
+                    className="flex-1 bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 disabled:bg-gray-400 transition-colors font-medium"
+                  >
+                    {submitting ? 'Юкланмоқда...' : 'Сотишни амалга ошириш'}
+                  </button>
                   <button
                     onClick={closeCustomerSalesModal}
                     className="flex-1 bg-gray-200 text-gray-700 p-3 rounded-lg hover:bg-gray-300 transition-colors"

@@ -7,6 +7,8 @@
 // import Menyu from './pages/KassaUser/Menyu';
 // import Logout from './pages/Chiqish/logout';
 // import Dastafka from './pages/Dastafka/DeliveryPanel';
+// import Sotuv from './pages/Sotuv/Korish';
+
 
 
 // function App() {
@@ -63,7 +65,7 @@
 //     try {
 //       // Try to use a more reliable CORS proxy or handle the request differently
 //       // For now, we'll use a fallback approach that doesn't require external API calls
-      
+
 //       // Option 1: Try direct fetch (might work in some environments)
 //       try {
 //         const response = await fetch(
@@ -75,7 +77,7 @@
 //             }
 //           }
 //         );
-        
+
 //         if (response.ok) {
 //           const data = await response.json();
 //           if (data && data.display_name) {
@@ -85,12 +87,12 @@
 //       } catch (corsError) {
 //         console.log('Direct fetch failed due to CORS, using fallback');
 //       }
-      
+
 //       // Option 2: Fallback - return formatted coordinates
 //       const lat = latitude.toFixed(6);
 //       const lon = longitude.toFixed(6);
 //       return `Koordinatalar: ${lat}, ${lon}`;
-      
+
 //     } catch (error) {
 //       console.error('Address lookup error:', error);
 //       // Final fallback to coordinates
@@ -120,7 +122,7 @@
 //           console.log('App.jsx: Profile data:', data);
 //           setRole(savedRole);
 //           setToken(savedToken);
-          
+
 //           initializeSocket(savedToken);
 //         })
 //         .catch((error) => {
@@ -144,7 +146,7 @@
 //     }
 
 //     console.log('Initializing socket connection...');
-    
+
 //     const socketIo = io('https://suddocs.uz/', {
 //       path: '/socket.io',
 //       auth: { token: userToken },
@@ -160,9 +162,9 @@
 //     socketIo.on('connect', () => {
 //       console.log('Socket connected successfully');
 //       setSocket(socketIo);
-      
+
 //       requestLocationAndSend(socketIo);
-      
+
 //       const locationInterval = setInterval(() => {
 //         updateLocationPeriodically(socketIo);
 //       }, 30000);
@@ -193,12 +195,12 @@
 //       console.log('Requesting location permission...');
 //       const location = await getCurrentLocation();
 //       const address = await getAddressFromCoordinates(location.latitude, location.longitude);
-      
+
 //       console.log('Location obtained:', { ...location, address });
-      
+
 //       setLocationPermission('granted');
 //       setLocationError('');
-      
+
 //       if (socketConnection && socketConnection.connected) {
 //         socketConnection.emit('updateLocation', {
 //           latitude: location.latitude,
@@ -206,14 +208,14 @@
 //           address: address,
 //           isOnline: true
 //         });
-        
+
 //         console.log('Location sent to backend');
 //       }
 //     } catch (error) {
 //       console.error('Location error:', error);
 //       setLocationPermission('denied');
 //       setLocationError(error.message);
-      
+
 //       if (socketConnection && socketConnection.connected) {
 //         socketConnection.emit('updateLocation', {
 //           latitude: 41.3111,
@@ -221,7 +223,7 @@
 //           address: 'Toshkent, O\'zbekiston (Default)',
 //           isOnline: true
 //         });
-        
+
 //         console.log('Default location sent to backend');
 //       }
 //     }
@@ -233,14 +235,14 @@
 //     try {
 //       const location = await getCurrentLocation();
 //       const address = await getAddressFromCoordinates(location.latitude, location.longitude);
-      
+
 //       socketConnection.emit('updateLocation', {
 //         latitude: location.latitude,
 //         longitude: location.longitude,
 //         address: address,
 //         isOnline: true
 //       });
-      
+
 //       console.log('Location updated periodically');
 //     } catch (error) {
 //       console.log('Periodic location update failed:', error.message);
@@ -282,7 +284,7 @@
 //     return () => {
 //       window.removeEventListener('beforeunload', handleBeforeUnload);
 //       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      
+
 //       if (socket) {
 //         socket.disconnect();
 //       }
@@ -362,7 +364,7 @@
 //           <small></small>
 //         </div>
 //       )}
-      
+
 //       {locationPermission === 'granted' && (
 //         <div> </div>
 //       )}
@@ -401,6 +403,14 @@
 //             </PrivateRoute>
 //           }
 //         />
+{/* <Route
+path="/sotuv/*"
+element={
+  <PrivateRoute allowedRoles={['MARKETING']}>
+    <Sotuv token={token} />
+  </PrivateRoute>
+}
+/> */}
 //         <Route path="/logout" element={<Logout />} />
 //         <Route path="*" element={<Navigate to="/" replace />} />
 //       </Routes>
@@ -549,7 +559,7 @@ function App() {
             </PrivateRoute>
           }
         />
-<Route
+        <Route
           path="/sotuv/*"
           element={
             <PrivateRoute allowedRoles={['MARKETING']}>

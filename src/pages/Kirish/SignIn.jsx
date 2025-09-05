@@ -59,6 +59,9 @@ const SignIn = () => {
       case 'AUDITOR':
         navigate('/dastafka', { replace: true });
         break;
+        case 'MARKETING':
+        navigate('/sotuv', { replace: true });
+        break;
       default:
         navigate('/', { replace: true });
     }

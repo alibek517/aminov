@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { BarChart3, ShoppingCart, AlertTriangle, Package, LogOut, Users, Ban, Menu, X, RotateCcw } from 'lucide-react';
 import Logout from '../Chiqish/logout';
-import { formatAmount, formatCurrency } from '../../utils/currencyFormat'; 
+import { formatAmount, formatCurrency } from '../../utils/currencyFormat';
 
 const Sidebar = ({ token, socket, locationPermission, locationError, children }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -25,7 +25,6 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
     { id: 'sotuvchilar', label: 'Сотувчилар моаши', icon: Users, path: '/kasir/sotuvchilar' },
   ];
 
-  // Fetch branches from API
   const fetchWithAuth = async (url, options = {}) => {
     if (!token) {
       navigate('/login');
@@ -151,6 +150,9 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userName = user.fullName || user.name || user.username || 'Фойдаланувчи';
   const userRole = localStorage.getItem('userRole') || 'Кассир';
+  // Get branch name from branches array based on selectedBranchId
+  const selectedBranch = branches.find(branch => branch.id.toString() === selectedBranchId);
+  const userBranchName = selectedBranch ? selectedBranch.name : (user.branch || 'nomalum');
   const initials = userName
     .split(' ')
     .map(word => word.charAt(0))
@@ -161,35 +163,34 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
   return (
     <div className="flex h-screen bg-gray-50 w-full">
       <div
-        className={`${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 text-white flex flex-col`}
+        className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          } fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 text-white flex flex-col`}
         style={{ backgroundColor: '#00020F' }}
       >
-                 <div className="p-4 lg:p-6">
-          <img 
-            src="/Baner_Zippy.png" 
-            alt="Zippy логотипи" 
-            className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125" 
+        <div className="p-4 lg:p-6">
+          <img
+            src="/Baner_Zippy.png"
+            alt="Zippy логотипи"
+            className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125"
           />
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden mt-3 p-2 rounded-md text-gray-300 hover:text-white"
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)',position:'absolute',top:'10px',right:'10px' }}
+            style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', position: 'absolute', top: '10px', right: '10px' }}
           >
             <X size={20} />
           </button>
           <hr className="my-2" />
-          <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-            <img style={{borderRadius:"50%",width:'60px'}} src="/AminovHolding.jpg" alt="" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <img style={{ borderRadius: "50%", width: '60px' }} src="/AminovHolding.jpg" alt="" />
             <div>
-            <h1 className="text-xl font-bold text-white">Аминов</h1>
-            <p className="text-sm text-gray-400">Савдо тизими</p>
+              <h1 className="text-xl font-bold text-white">Аминов</h1>
+              <p className="text-sm text-gray-400">Савдо тизими</p>
             </div>
           </div>
         </div>
 
-                 <nav className="flex-1 p-3 lg:p-4">
+        <nav className="flex-1 p-3 lg:p-4">
           <ul className="space-y-2">
             {menuItems.map((item) => (
               <li key={item.id}>
@@ -197,10 +198,9 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
                   to={item.path}
                   onClick={() => setSidebarOpen(false)}
                   className={({ isActive }) =>
-                    `w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${
-                      isActive
-                        ? 'bg-gradient-to-r from-[#1178f8]/20 to-[#1178f8]/10 text-[#1178f8] border border-[#1178f8]/30 shadow-lg shadow-[#1178f8]/20'
-                        : 'text-gray-300 hover:bg-white/5 hover:text-white hover:shadow-md'
+                    `w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${isActive
+                      ? 'bg-gradient-to-r from-[#1178f8]/20 to-[#1178f8]/10 text-[#1178f8] border border-[#1178f8]/30 shadow-lg shadow-[#1178f8]/20'
+                      : 'text-gray-300 hover:bg-white/5 hover:text-white hover:shadow-md'
                     }`
                   }
                 >
@@ -212,7 +212,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
           </ul>
         </nav>
 
-                 <div className="p-3 lg:p-4 absolute bottom-0 left-0 right-0">
+        <div className="p-3 lg:p-4 absolute bottom-0 left-0 right-0">
           <button
             onClick={() => setShowLogoutModal(true)}
             className="w-full flex items-center space-x-3 px-4 py-2 text-gray-300 hover:bg-red-500/10 hover:text-red-400 rounded-lg transition-all duration-200 hover:border-red-500/20 border border-transparent"
@@ -230,7 +230,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
         />
       )}
 
-             <div className="flex-1 flex flex-col overflow-hidden w-full">
+      <div className="flex-1 flex flex-col overflow-hidden w-full">
         <header className="bg-white shadow-sm">
           <div className="flex flex-wrap justify-between items-center px-4 lg:px-6 py-3 gap-y-2">
             <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
@@ -240,7 +240,6 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
               >
                 <Menu size={20} />
               </button>
-              
             </div>
 
             <div className="flex items-center space-x-4 w-full justify-end lg:w-auto">
@@ -266,6 +265,9 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
                     </p>
                     <p className="text-xxs text-gray-600">
                       {userRole === "CASHIER" ? "Кассир" : (userRole || "Кассир")}
+                    </p>
+                    <p className="text-xxs text-gray-600">
+                      {userBranchName}
                     </p>
                   </div>
                 </div>

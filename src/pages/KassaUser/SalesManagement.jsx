@@ -81,9 +81,9 @@ const SalesManagement = () => {
     const remainingWithInterest = remainingPrincipal + interestAmount;   // Qolgan + foiz
     const totalWithInterest = upfrontPayment + remainingWithInterest;    // Oldindan to'lov + qolgan (foiz bilan)
     const change = upfrontPayment > baseTotal ? upfrontPayment - baseTotal : 0; // Qaytim (agar oldindan to'lov asosiy summani oshirsa)
-    
+
     let periodicPayment, schedule;
-    
+
     if (isDays) {
       // Kunlik bo'lib to'lash uchun: mijoz kunlar ichida qolgan summani to'lab ketishi kerak
       // Faqat 1 ta to'lov yaratiladi, lekin mijoz bu kunlar ichida to'lab ketishi kerak
@@ -113,11 +113,11 @@ const SalesManagement = () => {
       }
     }
 
-    return { 
-      totalWithInterest, 
+    return {
+      totalWithInterest,
       monthlyPayment: periodicPayment, // Oylik yoki kunlik to'lov
-      schedule, 
-      change, 
+      schedule,
+      change,
       remaining: remainingWithInterest,
       baseTotal,
       upfrontPayment,
@@ -542,7 +542,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       const m = isDays ? Number(daysCount) : Number(months);
       const rate = Number(interestRate) / 100 || 0;
-      
+
       // To'g'ri hisoblash: oldindan to'lovni ayirib, keyin foiz qo'shish
       const upfrontPayment = Number(customerPaid) || 0;
       const remainingPrincipal = Math.max(0, baseTotal - upfrontPayment);
@@ -1197,7 +1197,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           )}
                         </div>
                       </>
-                      
+
                     )}
                   </div>
                 </div>
@@ -1669,58 +1669,58 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       const soldByUserId = rd.seller?.id ? Number(rd.seller.id) : Number(selectedUserId);
                       if (!soldByUserId || isNaN(soldByUserId)) throw new Error("Сотувчи ID топилмади");
 
-                            const payload = {
-        type: 'SALE',
-        status: 'PENDING',
-        total: Number(rd.totalInSom ?? computedBaseTotal) || 0,
-        finalTotal: Number(rd.finalTotalInSom ?? rd.totalInSom ?? computedBaseTotal) || 0,
-        amountPaid: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
-          ? Number(rd.paid || 0)  // Oldindan to'lov miqdori
-          : Number(rd.paid || 0),
-        downPayment: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
-          ? Number(rd.paid || 0)  // Oldindan to'lov miqdori
-          : 0,
-        userId: userId,
-        remainingBalance: Number(rd.remaining || 0) || 0,  // Qolgan summa (foiz bilan)
-        paymentType: rd.paymentType,
-        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
-          ? rd.upfrontPaymentType
-          : rd.paymentType,
-        termUnit: rd.termUnit || 'MONTHS',
-        // Kunlik bo'lib to'lash uchun kunlar sonini yuborish
-        days: rd.termUnit === 'DAYS' ? Number(rd.days || 0) : 0,
-        months: rd.termUnit === 'MONTHS' ? Number(rd.months || 0) : 0,
-        deliveryMethod: rd.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
-        deliveryAddress:
-          rd.deliveryType === 'DELIVERY' || rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
-            ? rd.deliveryAddress || rd.customer?.address || ''
-            : '',
-        customer: {
-          fullName: (rd.customer?.fullName || `${rd.customer?.firstName || ''} ${rd.customer?.lastName || ''}`).trim() || 'Номаълум',
-          phone: (rd.customer?.phone || '').replace(/\s+/g, '') || '',
-          passportSeries: rd.customer?.passportSeries || '',
-          jshshir: rd.customer?.jshshir || '',
-          address: rd.customer?.address || rd.deliveryAddress || '',
-        },
-        fromBranchId: fromBranchId,
-        soldByUserId: soldByUserId,
-        items: rd.items.map((item) => ({
-          productId: item.id || 0,
-          productName: item.name || 'Номаълум маҳсулот',
-          quantity: Number(item.quantity) || 0,
-          price: Number(item.sellingPrice ?? item.price) || 0,
-          sellingPrice: Number(item.sellingPrice ?? item.price) || 0,
-          originalPrice: Number(item.originalPrice ?? item.price) || 0,
-          total: Number(item.quantity || 0) * Number(item.sellingPrice ?? item.price) || 0,
-          ...(rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
-            ? {
-              creditMonth: rd.termUnit === 'DAYS' ? Number(rd.days || 0) : Number(rd.months || 0),
-              creditPercent: Number(rd.interestRate || 0) / 100 || 0,
-              monthlyPayment: Number(rd.monthlyPayment || 0) || 0,
-            }
-            : {}),
-        })),
-      };
+                      const payload = {
+                        type: 'SALE',
+                        status: 'PENDING',
+                        total: Number(rd.totalInSom ?? computedBaseTotal) || 0,
+                        finalTotal: Number(rd.finalTotalInSom ?? rd.totalInSom ?? computedBaseTotal) || 0,
+                        amountPaid: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+                          ? Number(rd.paid || 0)  // Oldindan to'lov miqdori
+                          : Number(rd.paid || 0),
+                        downPayment: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+                          ? Number(rd.paid || 0)  // Oldindan to'lov miqdori
+                          : 0,
+                        userId: userId,
+                        remainingBalance: Number(rd.remaining || 0) || 0,  // Qolgan summa (foiz bilan)
+                        paymentType: rd.paymentType,
+                        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
+                          ? rd.upfrontPaymentType
+                          : rd.paymentType,
+                        termUnit: rd.termUnit || 'MONTHS',
+                        // Kunlik bo'lib to'lash uchun kunlar sonini yuborish
+                        days: rd.termUnit === 'DAYS' ? Number(rd.days || 0) : 0,
+                        months: rd.termUnit === 'MONTHS' ? Number(rd.months || 0) : 0,
+                        deliveryMethod: rd.deliveryType === 'DELIVERY' ? 'DELIVERY' : 'PICKUP',
+                        deliveryAddress:
+                          rd.deliveryType === 'DELIVERY' || rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
+                            ? rd.deliveryAddress || rd.customer?.address || ''
+                            : '',
+                        customer: {
+                          fullName: (rd.customer?.fullName || `${rd.customer?.firstName || ''} ${rd.customer?.lastName || ''}`).trim() || 'Номаълум',
+                          phone: (rd.customer?.phone || '').replace(/\s+/g, '') || '',
+                          passportSeries: rd.customer?.passportSeries || '',
+                          jshshir: rd.customer?.jshshir || '',
+                          address: rd.customer?.address || rd.deliveryAddress || '',
+                        },
+                        fromBranchId: fromBranchId,
+                        soldByUserId: soldByUserId,
+                        items: rd.items.map((item) => ({
+                          productId: item.id || 0,
+                          productName: item.name || 'Номаълум маҳсулот',
+                          quantity: Number(item.quantity) || 0,
+                          price: Number(item.sellingPrice ?? item.price) || 0,
+                          sellingPrice: Number(item.sellingPrice ?? item.price) || 0,
+                          originalPrice: Number(item.originalPrice ?? item.price) || 0,
+                          total: Number(item.quantity || 0) * Number(item.sellingPrice ?? item.price) || 0,
+                          ...(rd.paymentType === 'CREDIT' || rd.paymentType === 'INSTALLMENT'
+                            ? {
+                              creditMonth: rd.termUnit === 'DAYS' ? Number(rd.days || 0) : Number(rd.months || 0),
+                              creditPercent: Number(rd.interestRate || 0) / 100 || 0,
+                              monthlyPayment: Number(rd.monthlyPayment || 0) || 0,
+                            }
+                            : {}),
+                        })),
+                      };
 
                       console.log('Sending payload to API:', JSON.stringify(payload, null, 2));
                       console.log('Payload upfrontPaymentType:', payload.upfrontPaymentType);
@@ -1937,10 +1937,18 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     </div>
                     
                   ` : ''}
+                  <div class="total-row">
+                    <span>Telefon:</span>
+                    <small>+998 98 800 66 66</small>
+                  </div>
                 </div>
-                <div class="footer">
+                <div>
                   <p>Tashrifingiz uchun rahmat!</p>
                 </div>
+                <div class="footer">
+                  <p>.</p>
+                </div>
+                
               </body>
               </html>
             `;

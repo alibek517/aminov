@@ -22,7 +22,6 @@ function Korish() {
         return savedBranchId || '';
     });
 
-    // Tema: dark (#00020F) yoki light
     const [theme, setTheme] = useState(() => {
         const savedTheme = localStorage.getItem('theme');
         return savedTheme === 'dark' ? 'dark' : 'light';
