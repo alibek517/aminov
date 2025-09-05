@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Filter, RefreshCw } from 'lucide-react';
 import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 
-const Sales = ({ selectedBranchId: propSelectedBranchId }) => {
+const Sales = ({ branchId: propbranchId }) => {
   const navigate = useNavigate();
   const [sales, setSales] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedBranchId, setSelectedBranchId] = useState(
-    propSelectedBranchId || localStorage.getItem('selectedBranchId') || ''
+  const [branchId, setbranchId] = useState(
+    propbranchId || localStorage.getItem('branchId') || ''
   );
 
   const fetchWithAuth = async (url, options = {}) => {
@@ -38,7 +38,7 @@ const Sales = ({ selectedBranchId: propSelectedBranchId }) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      if (selectedBranchId) params.append('branchId', selectedBranchId);
+      if (branchId) params.append('branchId', branchId);
       const res = await fetchWithAuth(`https://suddocs.uz/transactions?type=SALE&${params.toString()}`);
       const data = await res.json();
       setSales(Array.isArray(data) ? data : []);
@@ -53,12 +53,12 @@ const Sales = ({ selectedBranchId: propSelectedBranchId }) => {
   useEffect(() => {
     loadSales();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBranchId]);
+  }, [branchId]);
 
   useEffect(() => {
     const onStorage = (e) => {
-      if (e.key === 'selectedBranchId') {
-        setSelectedBranchId(e.newValue || '');
+      if (e.key === 'branchId') {
+        setbranchId(e.newValue || '');
       }
     };
     window.addEventListener('storage', onStorage);

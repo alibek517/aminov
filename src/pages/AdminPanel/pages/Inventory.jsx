@@ -535,10 +535,11 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
     .receipt { width: 3in; height: 4in; padding: 0.1in; box-sizing: border-box; }
     .center { text-align: center; }
-    .shop { font-size: 14px; font-weight: 700; margin: 0 0 6px; }
-    .name { font-size: 12px; font-weight: 600; margin: 0 0 4px; }
-    .price { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
-    .barcode { margin-top: 6px; }
+    .shop { font-size: 25px; font-weight: 700; margin: 0 0 6px; }
+    .name { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+    .price { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
+    .barcode { margin-top: 6px;}
+    .oq { color: #fff;}
     @media print { .no-print { display: none !important; } }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
@@ -548,14 +549,15 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
       <div class="center shop">${(prevShopName || '').replace(/</g,'&lt;')}</div>
       <div class="center name">${nameLine.replace(/</g,'&lt;')}</div>
       <div class="center price">${somPrice.replace(/</g,'&lt;')}</div>
-      <div class="center barcode">
+      <div class="center barcode ">
         <svg id="barcode"></svg>
       </div>
+      <p class="oq">.</p>
     </div>
     <script>
       try {
         JsBarcode('#barcode', ${JSON.stringify(String(selectedBarcodeProduct.barcode))}, {
-          format: 'CODE128', width: 2, height: 60, displayValue: true, fontSize: 12, textMargin: 2, margin: 0
+          format: 'CODE128', width: 2, height: 60, displayValue: true, fontSize: 20, textMargin: 2, margin: 0
         });
       } catch (e) {}
       window.print();

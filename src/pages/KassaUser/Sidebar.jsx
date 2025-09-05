@@ -7,10 +7,13 @@ import { formatAmount, formatCurrency } from '../../utils/currencyFormat';
 const Sidebar = ({ token, socket, locationPermission, locationError, children }) => {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedBranchId, setSelectedBranchId] = useState(() => {
-    return localStorage.getItem('selectedBranchId') || '';
+  const [branchId, setbranchId] = useState(() => {
+    return localStorage.getItem('branchId') || '';
   });
-  const [branches, setBranches] = useState([{ id: '', name: 'Барча филиаллар' }]);
+  const branch = localStorage.getItem('branchId')
+  // Initialize with empty array to avoid showing incomplete data
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(true);
   const [error, setError] = useState(null);
   const [exchangeRate, setExchangeRate] = useState(0);
   const [exchangeRateLoading, setExchangeRateLoading] = useState(false);
@@ -43,7 +46,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
       localStorage.removeItem('userRole');
       localStorage.removeItem('user');
       localStorage.removeItem('userId');
-      localStorage.removeItem('selectedBranchId');
+      localStorage.removeItem('branchId');
       navigate('/login');
       throw new Error('Рухсатсиз: Сессия муддати тугади. Илтимос, қайтадан киринг.');
     }
@@ -58,19 +61,52 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
   useEffect(() => {
     const fetchBranches = async () => {
       try {
+        setBranchesLoading(true);
         const response = await fetchWithAuth('https://suddocs.uz/branches');
         const data = await response.json();
-        setBranches([{ id: '', name: 'Барча филиаллар' }, ...data]);
-        if (selectedBranchId && !data.some((branch) => branch.id.toString() === selectedBranchId)) {
-          setSelectedBranchId('');
-          localStorage.setItem('selectedBranchId', '');
+        
+        // Create current branch object with proper data
+        const currentBranch = data.find(b => b.id.toString() === branch);
+        const currentBranchData = currentBranch || { 
+          id: branch, 
+          name: 'Жорий филиал' // Better fallback than empty string
+        };
+        
+        // Set branches with current branch first, then others
+        const allBranches = [currentBranchData, ...data.filter(b => b.id.toString() !== branch)];
+        setBranches(allBranches);
+        
+        // Set default selected branch if none is selected
+        if (!branchId) {
+          setbranchId(branch);
+          localStorage.setItem('branchId', branch);
+        }
+        
+        // Validate selected branch exists
+        if (branchId && !allBranches.some((branch) => branch.id.toString() === branchId)) {
+          setbranchId(branch);
+          localStorage.setItem('branchId', branch);
         }
       } catch (err) {
+        console.error('Филиалларни юклашда хатолик:', err);
         setError(err.message);
+        // Fallback branch data
+        setBranches([{ id: branch, name: 'Асосий филиал' }]);
+        if (!branchId) {
+          setbranchId(branch);
+          localStorage.setItem('branchId', branch);
+        }
+      } finally {
+        setBranchesLoading(false);
       }
     };
 
-    fetchBranches();
+    if (branch) {
+      fetchBranches();
+    } else {
+      setBranchesLoading(false);
+    }
+    
     const onVisibility = () => {
       if (!document.hidden) fetchExchangeRate();
     };
@@ -80,15 +116,15 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [selectedBranchId, navigate, token]);
+  }, [navigate, token, branch]);
 
   // Save selected branch to localStorage
   useEffect(() => {
-    localStorage.setItem('selectedBranchId', selectedBranchId);
+    localStorage.setItem('branchId', branchId);
 
     const handleStorageChange = (e) => {
-      if (e.key === 'selectedBranchId') {
-        setSelectedBranchId(e.newValue || '');
+      if (e.key === 'branchId') {
+        setbranchId(e.newValue || '');
       }
     };
 
@@ -97,13 +133,13 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
     return () => {
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [selectedBranchId]);
+  }, [branchId]);
 
   const handleLogoutConfirm = () => {
     localStorage.removeItem('userRole');
     localStorage.removeItem('user');
     localStorage.removeItem('userId');
-    localStorage.removeItem('selectedBranchId');
+    localStorage.removeItem('branchId');
     localStorage.removeItem('access_token');
     if (socket) {
       socket.disconnect();
@@ -116,7 +152,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
   };
 
   const handleBranchChange = (e) => {
-    setSelectedBranchId(e.target.value);
+    setbranchId(e.target.value);
   };
 
   const fetchExchangeRate = async () => {
@@ -141,6 +177,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
         if (rate > 0) setExchangeRate(rate);
       }
     } catch (e) {
+      console.error('Валюта курсини олишда хатолик:', e);
     } finally {
       setExchangeRateLoading(false);
     }
@@ -150,9 +187,31 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const userName = user.fullName || user.name || user.username || 'Фойдаланувчи';
   const userRole = localStorage.getItem('userRole') || 'Кассир';
-  // Get branch name from branches array based on selectedBranchId
-  const selectedBranch = branches.find(branch => branch.id.toString() === selectedBranchId);
-  const userBranchName = selectedBranch ? selectedBranch.name : (user.branch || 'nomalum');
+  
+  // Get branch name with better fallback logic
+  const getBranchName = () => {
+    if (branchesLoading) return 'Юкланмоқда...';
+    
+    const selectedBranch = branches.find(branch => branch.id.toString() === branchId);
+    if (selectedBranch && selectedBranch.name && selectedBranch.name.trim()) {
+      return selectedBranch.name;
+    }
+    
+    // Fallback to user branch name
+    if (user.branchName && user.branchName.trim()) {
+      return user.branchName;
+    }
+    
+    if (user.branch && user.branch.trim() && user.branch !== 'nomalum') {
+      return user.branch;
+    }
+    
+    // Last resort fallback
+    return 'Филиал номи аниқланмади';
+  };
+  
+  const userBranchName = getBranchName();
+  
   const initials = userName
     .split(' ')
     .map(word => word.charAt(0))
@@ -246,7 +305,11 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
               <div className="text-right mr-4">
                 <div className="text-sm text-gray-600">Валюта курси:</div>
                 <div className="text-lg font-semibold text-blue-600 flex items-center gap-2 justify-end">
-                  1 USD = {exchangeRate.toLocaleString('uz-UZ')} сўм
+                  {exchangeRateLoading ? (
+                    <span className="text-sm">Юкланмоқда...</span>
+                  ) : (
+                    <>1 USD = {exchangeRate.toLocaleString('uz-UZ')} сўм</>
+                  )}
                 </div>
               </div>
               <div className="flex items-center">
@@ -266,7 +329,7 @@ const Sidebar = ({ token, socket, locationPermission, locationError, children })
                     <p className="text-xxs text-gray-600">
                       {userRole === "CASHIER" ? "Кассир" : (userRole || "Кассир")}
                     </p>
-                    <p className="text-xxs text-gray-600">
+                    <p className="text-xxs text-gray-600" title={userBranchName}>
                       {userBranchName}
                     </p>
                   </div>
