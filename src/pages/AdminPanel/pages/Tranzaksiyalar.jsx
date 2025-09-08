@@ -3,9 +3,6 @@ import { Trash2, Search, BarChart, Eye, Calendar, User, Package, Building } from
 import * as XLSX from 'xlsx';
 import './Tranzaksiyalar.css';
 
-// ... (rest of the imports and code remain unchanged)
-
-// The rest of the file is identical to the previous version, except for the import line above
 const translatePaymentType = (type) => {
     const map = {
         CASH: 'Нақд тўлов',
@@ -129,7 +126,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
         const matchesSearch =
             !searchTerm ||
             (t.customer?.fullName?.toLowerCase().includes(lowerSearch) ||
-                t.items.some((item) => item.product.name.toLowerCase().includes(lowerSearch)));
+                t.items.some((item) => item.product?.name?.toLowerCase()?.includes(lowerSearch) ?? false));
         const hasReturnedItems = !t.items.some((item) => item.status === 'RETURNED');
 
         return matchesBranch && matchesPayment && matchesDate && matchesSearch && hasReturnedItems;
@@ -160,7 +157,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
             ID: t.id,
             Мижоз: t.customer?.fullName || 'Номаълум',
             Маҳсулотлар: t.items
-                .map((i) => `${i.product.name} (${i.product.model}) x ${i.quantity}`)
+                .map((i) => `${i.product?.name || 'Unknown'} (${i.product?.model || '-'}) x ${i.quantity}`)
                 .join(', '),
             'Умумий нарх': t.finalTotal,
             'Тўлов усули': translatePaymentType(t.paymentType),
@@ -241,10 +238,10 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                     {transaction.items.map((item, idx) => (
                                         <tr key={idx} className="hover:bg-gray-50">
                                             <td className="px-4 py-3">
-                                                <div className="font-medium text-gray-900">{item.product.name}</div>
+                                                <div className="font-medium text-gray-900">{item.product?.name || 'Unknown'}</div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="text-gray-900">{item.product.model}</div>
+                                                <div className="text-gray-900">{item.product?.model || '-'}</div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -442,12 +439,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                 </select>
                             </div>
                             <div className="flex items-center gap-4">
-                                <div className="text-sm text-gray-600 flex items-center gap-2">
-                                    <BarChart size={16} /> Кунлик: <b>{daily.toLocaleString('uz-Cyrl-UZ')} сўм</b>
-                                </div>
-                                <div className="text-sm text-gray-600 flex items-center gap-2">
-                                    <BarChart size={16} /> Ойлик: <b>{monthly.toLocaleString('uz-Cyrl-UZ')} сўм</b>
-                                </div>
+                            
                                 <button onClick={exportToExcel} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                                     Excel экспорт
                                 </button>
@@ -503,7 +495,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                                 <td className="px-4 py-4">
                                                     {t.items.map((item) => (
                                                         <div key={item.id} className="text-sm text-gray-900">
-                                                            <strong>{item.product.name}</strong> — {item.product.model}
+                                                            <strong>{item.product?.name || 'Unknown'}</strong> — {item.product?.model || '-'}
                                                         </div>
                                                     ))}
                                                 </td>
