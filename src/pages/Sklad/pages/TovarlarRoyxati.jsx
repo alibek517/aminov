@@ -127,7 +127,8 @@ const TovarlarRoyxati = () => {
     closeBarcodeModal();
     const productName = selectedBarcodeProduct.name || '';
     const productModel = selectedBarcodeProduct.model ? ` ${selectedBarcodeProduct.model}` : '';
-    const nameLine = `${productName}${productModel}`.trim();
+    const nameLine = `${productName}`.trim();
+    const modalLine = `${productModel}`.trim();
     const usdPrice = selectedBarcodeProduct.marketPrice ?? selectedBarcodeProduct.price ?? 0;
     const somPrice = usdPrice >= 0 ? new Intl.NumberFormat('uz-UZ').format(usdPrice * exchangeRate) + " сўм" : '';
 
@@ -137,33 +138,37 @@ const TovarlarRoyxati = () => {
   <meta charset="utf-8" />
   <title>Chek</title>
   <style>
-    @page { size: 3in 4in; margin: 0; }
+    @page { size: landscape; margin: 0; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; }
-    .receipt { width: 3in; height: 4in; padding: 0.1in; box-sizing: border-box; }
+    .receipt { width: 4in; height: 3in; padding: 0.1in; box-sizing: border-box; }
     .center { text-align: center; }
-    .shop { font-size: 25px; font-weight: 700; margin: 0 0 6px; }
-    .name { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
-    .price { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
+    .shop { font-size: 15px; font-weight: 700; }
+    .name { font-size: 16px; font-weight: 600; }
+    .modal { font-size: 10px; font-weight: 500; }
+    .price { font-size: 16px; font-weight: 700; }
     .barcode { margin-top: 6px;}
     .oq { color: #fff;}
+    .text {text-align: center; margin-top: 4px;width: 60%;}
     @media print { .no-print { display: none !important; } }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   </head>
   <body>
     <div class="receipt">
-      <div class="center shop">${(prevShopName || '').replace(/</g,'&lt;')}</div>
-      <div class="center name">${nameLine.replace(/</g,'&lt;')}</div>
-      <div class="center price">${somPrice.replace(/</g,'&lt;')}</div>
-      <div class="center barcode ">
+    <div class="text">
+      <div class="shop">${(prevShopName || '').replace(/</g,'&lt;')}</div>
+      <div class="name">${nameLine.replace(/</g,'&lt;')}</div>
+      <div class="modal">${modalLine.replace(/</g,'&lt;')}</div>
+      <div class="price">${somPrice.replace(/</g,'&lt;')}</div>
+      </div>
+      <div class="barcode">
         <svg id="barcode"></svg>
       </div>
-      <p class="oq">.</p>
     </div>
     <script>
       try {
         JsBarcode('#barcode', ${JSON.stringify(String(selectedBarcodeProduct.barcode))}, {
-          format: 'CODE128', width: 2, height: 60, displayValue: true, fontSize: 20, textMargin: 2, margin: 0
+          format: 'CODE128', width: 2, height: 60, displayValue: true, fontSize: 20, margin: 0
         });
       } catch (e) {}
       window.print();
