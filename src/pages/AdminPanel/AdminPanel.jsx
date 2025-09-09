@@ -26,8 +26,8 @@ import Debts from "./pages/Debts";
 import Branches from "./pages/Branches";
 import ExchangeRates from "./pages/ExchangeRates";
 import Logout from "../Chiqish/logout";
-import Sotuvchilar from "./pages/Sotuvchilar";
 import Tranzaksiyalar from "./pages/Tranzaksiyalar";
+import Sotuvchilar from "./pages/Sotuvchilar";
 
 export default function AdminPanel() {
   const location = useLocation();
@@ -54,7 +54,12 @@ export default function AdminPanel() {
       setActiveTab("inventory");
     } else {
       const currentTab = location.pathname.split("/").pop().toLowerCase() || "inventory";
-      setActiveTab(currentTab);
+      // Keep reports highlighted when viewing sotuvchilar page
+      if (currentTab === 'sotuvchilar') {
+        setActiveTab('reports');
+      } else {
+        setActiveTab(currentTab);
+      }
     }
   }, [location.pathname, navigate]);
 
@@ -190,8 +195,7 @@ export default function AdminPanel() {
     { id: "reports", name: "Ҳисобот", icon: TrendingUp, path: "/admin/reports" },
     { id: "geolocation", name: "Доставщиклар", icon: MapPin, path: "/admin/geolocation" },
     { id: "exchange-rates", name: "Валюталар", icon: DollarSign, path: "/admin/exchange-rates" },
-    { id: "sotuvchilar", name: "Сотувчилар", icon: Users, path: "/admin/sotuvchilar" },
-    { id: "tranzaksiyalar", name: "Транзаксияалар", icon: ArrowRightLeft , path: "/admin/tranzaksiyalar" },
+    { id: "tranzaksiyalar", name: "Транзаксияалар", icon: ArrowRightLeft, path: "/admin/tranzaksiyalar" },
   ];
 
   const handleLogoutConfirm = () => {
@@ -260,10 +264,10 @@ export default function AdminPanel() {
         );
       case "exchange-rates":
         return <ExchangeRates selectedBranchId={selectedBranchId} />;
-        case "sotuvchilar":
-          return <Sotuvchilar selectedBranchId={selectedBranchId} />;
-          case "tranzaksiyalar":
-          return <Tranzaksiyalar selectedBranchId={selectedBranchId} />;
+      case "sotuvchilar":
+        return <Sotuvchilar selectedBranchId={selectedBranchId} />;
+      case "tranzaksiyalar":
+        return <Tranzaksiyalar selectedBranchId={selectedBranchId} />;
       default:
         return <Inventory selectedBranchId={selectedBranchId} />;
     }
@@ -287,30 +291,29 @@ export default function AdminPanel() {
   return (
     <div className="flex h-screen bg-gray-50 w-full">
       <div
-        className={`${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 text-white flex flex-col`}
+        className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          } fixed inset-y-0 left-0 z-50 w-64 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 text-white flex flex-col`}
         style={{ backgroundColor: '#00020F' }}
       >
         <div className="p-4 lg:p-6">
-          <img 
-            src="/Baner_Zippy.png" 
-            alt="Zippy логотипи" 
-            className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125" 
+          <img
+            src="/Baner_Zippy.png"
+            alt="Zippy логотипи"
+            className="object-contain filter brightness-110 contrast-110 transition-all duration-300 hover:scale-105 hover:brightness-125"
           />
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden mt-3 p-2 rounded-md text-gray-300 hover:text-white"
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)',position:'absolute',top:'10px',right:'10px' }}
+            style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', position: 'absolute', top: '10px', right: '10px' }}
           >
             <X size={20} />
           </button>
           <hr className="my-2" />
-          <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-            <img style={{borderRadius:"50%",width:'60px'}} src="/AminovHolding.jpg" alt="" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <img style={{ borderRadius: "50%", width: '60px' }} src="/AminovHolding.jpg" alt="" />
             <div>
-            <h1 className="text-xl font-bold text-white">Аминов</h1>
-            <p className="text-sm text-gray-400">Бошқарма Тизими</p>
+              <h1 className="text-xl font-bold text-white">Аминов</h1>
+              <p className="text-sm text-gray-400">Бошқарма Тизими</p>
             </div>
           </div>
         </div>
@@ -328,11 +331,10 @@ export default function AdminPanel() {
                       setSidebarOpen(false);
                       navigate(item.path);
                     }}
-                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${
-                      isActive
+                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-all duration-200 ${isActive
                         ? 'bg-gradient-to-r from-[#1178f8]/20 to-[#1178f8]/10 text-[#1178f8] border border-[#1178f8]/30 shadow-lg shadow-[#1178f8]/20'
                         : 'text-gray-300 hover:bg-white/5 hover:text-white hover:shadow-md'
-                    }`}
+                      }`}
                   >
                     <Icon className="w-5 h-5" />
                     <span className="font-medium">{item.name}</span>
@@ -394,7 +396,7 @@ export default function AdminPanel() {
                 <div className="text-lg font-semibold text-blue-600 flex items-center gap-2 justify-end">
                   1 USD = {exchangeRate.toLocaleString('uz-UZ')} сўм
                 </div>
-               
+
               </div>
               <div className="flex items-center">
                 <div
@@ -423,6 +425,24 @@ export default function AdminPanel() {
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 lg:p-6 w-full">
           <div className="w-full h-full min-h-0">
             {renderContent()}
+            {location.pathname.endsWith('/admin/sotuvchilar') && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-lg shadow-xl overflow-auto relative">
+                  <div className="sticky top-0 bg-white border-b px-4 py-3 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Сотувчилар маоши</h3>
+                    <button
+                      onClick={() => navigate('/admin/reports')}
+                      className="px-3 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200"
+                    >
+                      ← Ҳисоботга қайтиш
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    <Sotuvchilar selectedBranchId={selectedBranchId} />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </div>

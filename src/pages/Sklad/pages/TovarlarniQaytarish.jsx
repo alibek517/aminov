@@ -335,7 +335,6 @@ const DefectiveManagement = () => {
         handledByUserId: Number(localStorage.getItem('userId')) || undefined,
       };
       
-      console.log('Submitting return payload:', JSON.stringify(body, null, 2));
       let res = await fetch(unifiedEndpoint, {
         method: 'POST',
         headers: authHeaders(),
@@ -344,7 +343,6 @@ const DefectiveManagement = () => {
       
       if (res.status === 404) {
         const legacy = `${API_URL}/defective-logs/return`;
-        console.log(`Falling back to legacy endpoint: ${legacy}`);
         res = await fetch(legacy, {
           method: 'POST',
           headers: authHeaders(),
@@ -364,9 +362,7 @@ const DefectiveManagement = () => {
         }
         throw new Error(`API Error: ${errMsg} (Status: ${res.status})`);
       }
-  
-      console.log('Return operation completed successfully');
-
+   
       const qtyDelta = Number(qty) || 0;
       const nowIso = new Date().toISOString();
       
@@ -406,14 +402,13 @@ const DefectiveManagement = () => {
       setTimeout(() => {
         fetchSoldTransactions();
       }, 1000);
-  
+   
       const summaryMessage = `${qtyDelta} дона маҳсулот қайтарилди. Кассадан ${formatCurrency(safeCashAmount)} олинди.`;
       
       setNotification({ message: summaryMessage, type: 'success' });
       setShowModal(false);
       await fetchDefectiveLogs();
     } catch (e) {
-      console.error('API Error:', e.message, e);
       setNotification({ message: `Хатолик: ${e.message || 'Сервер хатоси'}`, type: 'error' });
     } finally {
       setLoading(false);

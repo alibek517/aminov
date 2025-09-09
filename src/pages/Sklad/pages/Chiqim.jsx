@@ -113,11 +113,9 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         if (response.data?.length > 0 && response.data[0]?.rate) {
           setExchangeRate(Number(response.data[0].rate));
         } else {
-          console.warn('No exchange rates found in response');
         }
       }
     } catch (error) {
-      console.error('Failed to fetch exchange rate:', error);
     }
   };
 
@@ -183,7 +181,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           // Branch not found notification removed
         }
       } catch (err) {
-        console.error('Fetch branches error:', err);
       }
     };
     fetchBranchesAndSetBranch();
@@ -235,7 +232,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         })),
       );
     } catch (err) {
-      console.error('Load products error:', err);
     } finally {
       setLoading(false);
     }
@@ -264,7 +260,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           setCurrentUser(response.data);
         }
       } catch (error) {
-        console.error('Error loading current user:', error);
       }
     };
     loadCurrentUser();
@@ -290,7 +285,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       const combined = [...sales, ...transfers].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       setTransferHistory(combined);
     } catch (error) {
-      console.error('Error loading transfer history:', error);
     }
   };
 
@@ -313,7 +307,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         }
       }
     } catch (error) {
-      console.error('Error loading pending transfers:', error);
     }
   };
 
@@ -479,7 +472,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       setShowReceiptModal(true);
       setShowCustomerSalesModal(false);
     } catch (error) {
-      console.error('Error processing sale:', error);
     } finally {
       setSubmitting(false);
     }
@@ -683,7 +675,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         setShowCartModal(false);
       }
     } catch (err) {
-      console.error('Submit error:', err);
     } finally {
       setSubmitting(false);
     }
@@ -978,7 +969,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           setIsPrinting(false); // Reset loading state
         }, 1000);
       } catch (err) {
-        console.error('Error submitting sale before print:', err);
         win.close();
         resetToInitialState();
         setIsPrinting(false); // Reset loading state on error
@@ -1018,7 +1008,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
         data: { status: 'COMPLETED' },
       });
     } catch (error) {
-      console.error('Error completing sale:', error);
     }
   };
 
@@ -1034,7 +1023,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
             url: `${API_URL}/transactions/${pendingTransaction.id}`,
           });
         } catch (error) {
-          console.error('Error cancelling transaction:', error);
         }
       }
     }
@@ -1126,17 +1114,6 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
   // Debug logging for payment calculations
   useEffect(() => {
     if (['CREDIT', 'INSTALLMENT'].includes(paymentType) && paymentSchedule.baseTotal > 0) {
-      console.log('Payment Calculation Debug:', {
-        baseTotal: paymentSchedule.baseTotal,
-        upfrontPayment: paymentSchedule.upfrontPayment,
-        remainingPrincipal: paymentSchedule.remainingPrincipal,
-        interestAmount: paymentSchedule.interestAmount,
-        remainingWithInterest: paymentSchedule.remainingWithInterest,
-        totalWithInterest: paymentSchedule.totalWithInterest,
-        monthlyPayment: paymentSchedule.monthlyPayment,
-        termCount: paymentSchedule.termCount,
-        isDays: paymentSchedule.isDays
-      });
     }
   }, [paymentType, paymentSchedule]);
 

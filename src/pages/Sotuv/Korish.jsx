@@ -77,7 +77,6 @@ function Korish() {
                 if (savedBranchId && list.some(b => b.id === savedBranchId)) {
                     setSelectedBranch(savedBranchId);
                 } else if (!selectedBranch && list.length > 0) {
-                    console.log("Birinchi filial tanlanmadi.");
                 }
             } catch (err) {
                 setError(err.message);
@@ -113,7 +112,6 @@ function Korish() {
                 const data = await res.json();
                 setExchangeRates(Array.isArray(data) ? data : data.data || []);
             } catch (err) {
-                console.error('Kurslar olinmadi:', err);
             }
         };
         fetchRates();

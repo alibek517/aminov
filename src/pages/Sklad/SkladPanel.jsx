@@ -91,22 +91,18 @@ function SkladPanel() {
 
     const fetchBranches = async () => {
       try {
-        console.log('Fetching branches with token:', token ? 'Token exists' : 'No token');
         const response = await fetch('https://suddocs.uz/branches', {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
         });
-        console.log('Branches response status:', response.status);
         if (!response.ok) throw new Error(`Failed to fetch branches: ${response.status}`);
         const data = await response.json();
-        console.log('Branches data:', data);
         const branchesArray = Array.isArray(data) ? data : (data.branches || []);
         setBranches(branchesArray);
         setError(null);
       } catch (err) {
-        console.error('Error fetching branches:', err);
         setBranches([]);
         setError(err.message || 'Failed to fetch branches');
       }

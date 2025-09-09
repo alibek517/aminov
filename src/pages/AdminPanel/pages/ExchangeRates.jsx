@@ -46,11 +46,11 @@ const ExchangeRates = () => {
           'Content-Type': 'application/json',
         },
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch exchange rates');
       }
-      
+
       const data = await response.json();
       setExchangeRates(data);
     } catch (error) {
@@ -68,7 +68,7 @@ const ExchangeRates = () => {
           'Content-Type': 'application/json',
         },
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setBranches(data);
@@ -80,14 +80,14 @@ const ExchangeRates = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     try {
-      const url = editingRate 
+      const url = editingRate
         ? `${API_URL}/currency-exchange-rates/${editingRate.id}`
         : `${API_URL}/currency-exchange-rates`;
-      
+
       const method = editingRate ? 'PATCH' : 'POST';
-      
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -100,16 +100,16 @@ const ExchangeRates = () => {
           branchId: formData.branchId ? parseInt(formData.branchId) : null,
         }),
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to save exchange rate');
       }
-      
-      setNotification({ 
-        message: `Курс ${editingRate ? 'янгиланди' : 'яратилди'}`, 
-        type: 'success' 
+
+      setNotification({
+        message: `Курс ${editingRate ? 'янгиланди' : 'яратилди'}`,
+        type: 'success'
       });
-      
+
       resetForm();
       fetchExchangeRates();
     } catch (error) {
@@ -134,7 +134,7 @@ const ExchangeRates = () => {
       setExchangeRates((prev) =>
         prev.map((r) => ({ ...r, isActive: r.id === rate.id }))
       );
-      
+
       setNotification({ message: 'Faol kurs belgilandi', type: 'success' });
     } catch (e) {
       setNotification({ message: e.message || 'Faol kursni belgilashda xatolik', type: 'error' });
@@ -157,7 +157,7 @@ const ExchangeRates = () => {
     if (!window.confirm('Курсни ўчиришни тасдиқлайсизми?')) {
       return;
     }
-    
+
     try {
       const response = await fetch(`${API_URL}/currency-exchange-rates/${id}`, {
         method: 'DELETE',
@@ -166,11 +166,11 @@ const ExchangeRates = () => {
           'Content-Type': 'application/json',
         },
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to delete exchange rate');
       }
-      
+
       setNotification({ message: 'Курс ўчирилди', type: 'success' });
       fetchExchangeRates();
     } catch (error) {
@@ -201,13 +201,12 @@ const ExchangeRates = () => {
           <h1 className="text-2xl font-bold text-gray-900">Валюта курслари</h1>
           <p className="text-gray-600 mt-1">Доллар ва сўм курсларини бошқариш</p>
         </div>
-    
+
       </div>
 
       {notification && (
-        <div className={`p-4 rounded mb-4 ${
-          notification.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-        }`}>
+        <div className={`p-4 rounded mb-4 ${notification.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+          }`}>
           {notification.message}
           <button className="ml-4 text-sm underline" onClick={() => setNotification(null)}>
             Ёпиш
@@ -220,75 +219,27 @@ const ExchangeRates = () => {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             {editingRate ? 'Курсни таҳрирлаш' : 'Янги курс қўшиш'}
           </h2>
-          
+
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Қайси валютадан
-                </label>
-                <select
-                  value={formData.fromCurrency}
-                  onChange={(e) => setFormData({ ...formData, fromCurrency: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
-                >
-                  <option value="USD">USD - Доллар</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Қайси валютага
-                </label>
-                <select
-                  value={formData.toCurrency}
-                  onChange={(e) => setFormData({ ...formData, toCurrency: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
-                >
-                  <option value="UZS">UZS - Сўм</option>
-                </select>
-              </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Курс (1 {formData.fromCurrency} = ? {formData.toCurrency})
+              </label>
+              <input
+                type="number"
+                step="0"
+                value={formData.rate}
+                onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
+                className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Масалан: 12500"
+                required
+              />
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Курс (1 {formData.fromCurrency} = ? {formData.toCurrency})
-                </label>
-                <input
-                  type="number"
-                  step="0"
-                  value={formData.rate}
-                  onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Масалан: 12500"
-                  required
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Филиал
-                </label>
-                <select
-                  value={formData.branchId}
-                  onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Барча филиаллар учун</option>
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            
-            
-            
+
+
+
+
             <div className="flex gap-3">
               <button
                 type="submit"
@@ -320,7 +271,7 @@ const ExchangeRates = () => {
             </button>
           </div>
         </div>
-        
+
         {loading ? (
           <div className="п-6 text-center text-gray-600">Юкланмоқда...</div>
         ) : (
@@ -334,7 +285,7 @@ const ExchangeRates = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Курс
                   </th>
-                 
+
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Ҳолат
                   </th>
@@ -362,13 +313,12 @@ const ExchangeRates = () => {
                         1 {rate.fromCurrency} = {formatCurrency(rate.rate)} {rate.toCurrency}
                       </span>
                     </td>
-                   
+
                     <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        rate.isActive 
-                          ? 'bg-green-100 text-green-800' 
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${rate.isActive
+                          ? 'bg-green-100 text-green-800'
                           : 'bg-red-100 text-red-800'
-                      }`}>
+                        }`}>
                         {rate.isActive ? 'Фаол' : 'Фаол эмас'}
                       </span>
                     </td>
@@ -384,14 +334,14 @@ const ExchangeRates = () => {
                         >
                           <Edit size={16} />
                         </button>
-                        
+
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            
+
             {exchangeRates.length === 0 && (
               <div className="p-6 text-center text-gray-500">
                 Ҳеч қандай курс топилмади

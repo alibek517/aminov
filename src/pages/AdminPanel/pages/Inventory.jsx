@@ -215,14 +215,12 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
         ]);
 
         // rate already set in state above
-        console.log('Products Data:', productsData); // Log to inspect the structure
         setProducts((productsData || []).map((p) => updateProductStatus(p)));
         setCategories(categoriesData);
         setBranches(branchesData);
 
         // rate was already handled above
       } catch (error) {
-        console.error('Error loading data:', error);
         toast.danger('Маълумотларни юклашда хатолик юз берди: ' + error.message);
       } finally {
         setIsLoading(false);
@@ -358,7 +356,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
       resetForm();
       toast.success(`${newProduct.name} маҳсулоти муваффақиятли қўшилди!`);
     } catch (error) {
-      console.error('Error adding product:', error);
       toast.danger('Маҳсулот қўшишда хатолик юз берди: ' + error.message);
     }
   };
@@ -394,7 +391,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
       resetForm();
       toast.success(`${updatedProduct.name} маҳсулоти муваффақиятли янгиланди!`);
     } catch (error) {
-      console.error('Error updating product:', error);
       toast.danger('Маҳсулотни янгилашда хатолик юз берди: ' + error.message);
     }
   };
@@ -408,7 +404,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
         setProducts(products.filter((p) => p.id !== productId));
         toast.success('Маҳсулот муваффақиятли ўчирилди!');
       } catch (error) {
-        console.error('Error deleting product:', error);
         toast.danger('Маҳсулотни ўчиришда хатолик юз берди: ' + error.message);
       }
     }
@@ -448,7 +443,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
       setSelectedProductIds([]);
       toast.success(`Танланган ${selectedProductIds.length} маҳсулот ўчирилди`);
     } catch (error) {
-      console.error('Bulk delete error:', error);
       toast.error("Маҳсулотларни ўчиришда хатолик");
     }
   };
@@ -460,7 +454,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
       const updatedProducts = await response.json();
       setProducts(updatedProducts.map((product) => updateProductStatus(product)));
     } catch (error) {
-      console.error('Error refreshing products:', error);
       toast.danger('Маҳсулотларни янгилашда хатолик юз берди: ' + error.message);
     } finally {
       setIsLoading(false);
@@ -643,7 +636,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
       toast.success('Категория қўшилди');
       closeCreateCategory();
     } catch (e) {
-      console.error(e);
       toast.error(e.message || 'Категория қўшишда хатолик');
     } finally {
       setCreatingCategory(false);

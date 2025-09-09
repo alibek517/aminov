@@ -13,6 +13,12 @@ const Мижозлар = () => {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentChannel, setPaymentChannel] = useState('CASH');
   const [paymentRating, setPaymentRating] = useState('YAXSHI');
+  // Edit modal state for already-paid schedules
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editSchedule, setEditSchedule] = useState(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editChannel, setEditChannel] = useState('CASH');
+  const [editRating, setEditRating] = useState('YAXSHI');
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   useEffect(() => {
@@ -533,6 +539,40 @@ const Мижозлар = () => {
     }
   };
 
+  const handleEditSave = async () => {
+    if (!editSchedule) return;
+    if (Number(editAmount) < 0) return;
+    try {
+      setLoading(true);
+      const axiosWithAuth = axios.create({
+        baseURL: API_URL,
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      // Update schedule fields: paidAmount, paidChannel, rating
+      const updateBody = {
+        paidAmount: Number(editAmount),
+        paidChannel: editChannel,
+        rating: editRating,
+      };
+      await axiosWithAuth.put(`/payment-schedules/${editSchedule.id}`, updateBody);
+      setNotification({ message: 'Тўланган маълумотлар тўғриланди', type: 'success' });
+      setShowEditModal(false);
+      setEditSchedule(null);
+      try { localStorage.setItem('schedules_updated', String(Date.now())); } catch {}
+      // refresh current customer txs
+      if (selectedCustomer) {
+        await loadCustomerTransactions(selectedCustomer.id);
+      }
+    } catch (e) {
+      setNotification({ message: 'Сақлашда хатолик', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatDate = (date) => {
     if (!date) return "Номаълум";
     const parsedDate = new Date(date);
@@ -828,7 +868,7 @@ const Мижозлар = () => {
                                             <th className="px-2 py-1 text-left">Қолган</th>
                                             <th className="px-2 py-1 text-left">Ҳолат</th>
                                             <th className="px-2 py-1 text-left">Тўланған куни</th>
-                                            <th className="px-2 py-1 text-left">Канал</th>
+                                            <th className="px-2 py-1 text-left">Тўлов усули</th>
                                             <th className="px-2 py-1 text-left">Қабул қилған</th>
                                             <th className="px-2 py-1 text-left">Баҳо</th>
                                             <th className="px-2 py-1 text-left">Тўлов вақти</th>
@@ -901,17 +941,33 @@ const Мижозлар = () => {
                                                   })()}
                                                 </td>
                                                 <td className="px-2 py-1">
-                                                  {rem > 0 ? (
-                                                    <button
-                                                      onClick={() => { if (!payable) return; setSelectedSchedule({ ...sc, transaction: t }); setPaymentAmount(rem.toString()); setShowPaymentModal(true); }}
-                                                      disabled={!payable}
-                                                      className={`px-3 py-1 rounded text-xs ${payable ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
-                                                    >
-                                                      Тўлаш
-                                                    </button>
-                                                  ) : (
-                                                    <span className="text-xs text-gray-400">—</span>
-                                                  )}
+                                                  <div className="flex items-center gap-2">
+                                                    {rem > 0 ? (
+                                                      <button
+                                                        onClick={() => { if (!payable) return; setSelectedSchedule({ ...sc, transaction: t }); setPaymentAmount(rem.toString()); setShowPaymentModal(true); }}
+                                                        disabled={!payable}
+                                                        className={`px-3 py-1 rounded text-xs ${payable ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                                                      >
+                                                        Тўлаш
+                                                      </button>
+                                                    ) : (
+                                                      <span className="text-xs text-gray-400">—</span>
+                                                    )}
+                                                    {Number(sc.paidAmount || 0) > 0 && (
+                                                      <button
+                                                        onClick={() => {
+                                                          setEditSchedule({ ...sc, transaction: t });
+                                                          setEditAmount(String(Number(sc.paidAmount || 0)));
+                                                          setEditChannel(sc.paidChannel || 'CASH');
+                                                          setEditRating(sc.rating || 'YAXSHI');
+                                                          setShowEditModal(true);
+                                                        }}
+                                                        className="px-3 py-1 rounded text-xs bg-amber-500 text-white hover:bg-amber-600"
+                                                      >
+                                                        Таҳрирлаш
+                                                      </button>
+                                                    )}
+                                                  </div>
                                                 </td>
                                               </tr>
                                             );
@@ -1069,6 +1125,59 @@ const Мижозлар = () => {
               <div className="flex justify-end space-x-3">
                 <button onClick={() => { setShowPaymentModal(false); setSelectedSchedule(null); setPaymentAmount(''); setPaymentChannel('CASH'); }} className="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Бекор қилиш</button>
                 <button onClick={handlePayment} disabled={loading || !paymentAmount || Number(paymentAmount) <= 0} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50">{loading ? 'Жараёнда...' : 'Кредит Тўлови Қилиш'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEditModal && editSchedule && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Тўланганни таҳрирлаш</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Миқдор</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Тўлов усули</label>
+                <div className="flex items-center gap-6 text-sm">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="editChannel" value="CASH" checked={editChannel === 'CASH'} onChange={() => setEditChannel('CASH')} />
+                    <span>Нақд</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="editChannel" value="CARD" checked={editChannel === 'CARD'} onChange={() => setEditChannel('CARD')} />
+                    <span>Карта</span>
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Баҳо</label>
+                <div className="flex items-center gap-6 text-sm">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="editRating" value="YAXSHI" checked={editRating === 'YAXSHI'} onChange={() => setEditRating('YAXSHI')} />
+                    <span className="text-green-600 font-medium">Яхши</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="editRating" value="YOMON" checked={editRating === 'YOMON'} onChange={() => setEditRating('YOMON')} />
+                    <span className="text-red-600 font-medium">Ёмон</span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => { setShowEditModal(false); setEditSchedule(null); }} className="px-4 py-2 text-gray-600 hover:text-gray-800 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Бекор</button>
+                <button onClick={handleEditSave} disabled={loading} className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-50">Сақлаш</button>
               </div>
             </div>
           </div>

@@ -121,7 +121,6 @@ const Dashboard = () => {
       setBranches(branchData);
       setError(null);
     } catch (err) {
-      console.error("Fetch error:", err);
       setError(err.message || "Маълумотларни олишда хатолик юз берди");
     }
   };
@@ -198,15 +197,11 @@ const Dashboard = () => {
         const data = await res.json();
         const transactions = data.transactions || data || [];
         
-        // Debug: Log the raw transactions data
-        console.log('Raw transactions from API:', transactions.slice(0, 3)); // Show first 3 transactions
-        
         // Filter transactions for current user to see what we're working with
         const userTransactions = transactions.filter(t => 
           t.type === 'SALE' && 
           (t.soldBy?.id === currentUserId || t.user?.id === currentUserId)
         );
-        console.log('User transactions:', userTransactions.slice(0, 3));
 
         const startBound = reportDate.startDate
           ? new Date(`${reportDate.startDate}T00:00:00`)
@@ -242,38 +237,15 @@ const Dashboard = () => {
               t.soldBy?.id === currentUserId ||
               t.user?.id === currentUserId
             ) {
-              // Debug: Log each transaction being processed
-              console.log('Processing transaction:', {
-                id: t.id,
-                type: t.type,
-                paymentType: t.paymentType,
-                amountPaid: t.amountPaid,
-                downPayment: t.downPayment,
-                upfrontPaymentType: t.upfrontPaymentType,
-                finalTotal: t.finalTotal,
-                total: t.total
-              });
               const final = Number(t.finalTotal || t.total || 0);
               const amountPaid = Number(t.amountPaid || 0);
               const downPayment = Number(t.downPayment || 0);
-                             // For CREDIT/INSTALLMENT, upfront payment is stored in amountPaid
+               // For CREDIT/INSTALLMENT, upfront payment is stored in amountPaid
                // For other payment types, upfront is 0
                // NOTE: amountPaid contains ONLY the upfront payment, not credit repayments
                // Credit repayments are tracked separately in creditRepaymentAmount field
                const upfront = ['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ? amountPaid : 0;
-              
-              // Debug logging for upfront payments
-              if (['CREDIT', 'INSTALLMENT'].includes(t.paymentType) && upfront > 0) {
-                console.log('Upfront payment found:', {
-                  transactionId: t.id,
-                  paymentType: t.paymentType,
-                  amountPaid,
-                  downPayment,
-                  upfront,
-                  upfrontPaymentType: t.upfrontPaymentType
-                });
-              }
-              
+               
               switch (t.paymentType) {
                 case "CASH":
                   agg.cashTotal += final;
@@ -286,12 +258,6 @@ const Dashboard = () => {
                   agg.upfrontTotal += upfront;
                   // Track upfront payment by type
                   const upfrontType = t.upfrontPaymentType || 'CASH';
-                  console.log('Processing upfront payment:', {
-                    transactionId: t.id,
-                    upfrontType,
-                    upfront,
-                    upfrontPaymentType: t.upfrontPaymentType
-                  });
                   if (upfrontType === 'CASH') {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType === 'CARD') {
@@ -303,12 +269,6 @@ const Dashboard = () => {
                   agg.upfrontTotal += upfront;
                   // Track upfront payment by type
                   const upfrontType2 = t.upfrontPaymentType || 'CASH';
-                  console.log('Processing installment upfront payment:', {
-                    transactionId: t.id,
-                    upfrontType: upfrontType2,
-                    upfront,
-                    upfrontPaymentType: t.upfrontPaymentType
-                  });
                   if (upfrontType2 === 'CASH') {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType2 === 'CARD') {
@@ -358,12 +318,6 @@ const Dashboard = () => {
                 if (s.id && seenSchedules.has(s.id)) continue;
                 if (s.id) seenSchedules.add(s.id);
                 agg.repaymentTotal += installment;
-                console.log('Dashboard: Processing payment schedule:', {
-                  scheduleId: s.id,
-                  paidChannel: s.paidChannel,
-                  amount: installment,
-                  transactionId: t.id
-                });
                 agg.repayments.push({
                   scheduleId: s.id,
                   paidAt: s.paidAt,
@@ -466,7 +420,6 @@ const Dashboard = () => {
           }
         } catch (e) {
           // If supplemental fetch fails, proceed with what we have
-          console.warn("Supplemental credit/installment fetch failed", e);
         }
 
         // Include daily repayments from backend into cashierReport totals and list
@@ -491,15 +444,10 @@ const Dashboard = () => {
                 customer: l.transaction?.customer || null,
                 paidBy: l.paidBy || { id: l.paidByUserId },
               });
-              console.log('Dashboard: Added daily repayment from backend:', {
-                amount: l.amount,
-                channel: ch,
-                transactionId: l.transactionId
-              });
             }
           }
         } catch (error) {
-          console.warn('Failed to fetch daily repayments from backend:', error);
+          
         }
 
         // Include credit repayments from backend into cashierReport totals and list
@@ -525,16 +473,10 @@ const Dashboard = () => {
                 paidBy: l.paidBy || { id: l.paidByUserId },
                 soldBy: l.transaction?.soldBy || null,
               });
-              console.log('Dashboard: Added credit repayment from backend:', {
-                amount: l.amount,
-                channel: ch,
-                transactionId: l.transactionId,
-                month: l.month
-              });
             }
           }
         } catch (error) {
-          console.warn('Failed to fetch credit repayments from backend:', error);
+          
         }
 
         // Include defective logs (returns) for cash adjustments
@@ -569,23 +511,10 @@ const Dashboard = () => {
           setDefectivePlus(0);
           setDefectiveMinus(0);
         }
-
-        // Debug logging for final aggregation
-        console.log('Final cashier report aggregation:', {
-          cashTotal: agg.cashTotal,
-          cardTotal: agg.cardTotal,
-          creditTotal: agg.creditTotal,
-          installmentTotal: agg.installmentTotal,
-          upfrontTotal: agg.upfrontTotal,
-          upfrontCash: agg.upfrontCash,
-          upfrontCard: agg.upfrontCard,
-          repaymentTotal: agg.repaymentTotal
-        });
         
         setCashierReport(agg);
 
       } catch (e) {
-        console.error("Cashier report error", e);
         setCashierReport(null);
       } finally {
         setCashierLoading(false);

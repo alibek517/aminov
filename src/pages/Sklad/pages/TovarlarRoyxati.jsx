@@ -237,11 +237,9 @@ const TovarlarRoyxati = () => {
             }
           }
         } else {
-          console.warn('No exchange rates found in response');
         }
       }
     } catch (error) {
-      console.error('Failed to fetch exchange rate:', error);
     } finally {
       setExchangeRateLoading(false);
     }
@@ -273,7 +271,6 @@ const TovarlarRoyxati = () => {
           }
         }
       } catch (error) {
-        console.log('Background exchange rate check failed:', error);
       }
     }, 10000);
 
@@ -308,7 +305,6 @@ const TovarlarRoyxati = () => {
           }
         }
       } catch (error) {
-        console.log('Real-time exchange rate check failed:', error);
       }
       
       if (checkCount < maxChecks) {
@@ -346,7 +342,6 @@ const TovarlarRoyxati = () => {
           }
         }
       } catch (error) {
-        console.log('Ultra-fast exchange rate check failed:', error);
       }
       ultraFastTimeoutRef.current = setTimeout(performUltraFastCheck, 5000);
     };
@@ -373,12 +368,10 @@ const TovarlarRoyxati = () => {
               });
             }
           } catch (error) {
-            console.log('SSE data parsing error:', error);
           }
         };
         
         eventSource.onerror = (error) => {
-          console.log('SSE connection error:', error);
           eventSource.close();
         };
         
@@ -387,7 +380,6 @@ const TovarlarRoyxati = () => {
         };
       }
     } catch (error) {
-      console.log('SSE monitoring failed:', error);
     }
   }, [exchangeRate]);
 
@@ -410,16 +402,13 @@ const TovarlarRoyxati = () => {
               });
             }
           } catch (error) {
-            console.log('WebSocket data parsing error:', error);
           }
         };
         
         ws.onerror = (error) => {
-          console.log('WebSocket connection error:', error);
         };
         
         ws.onclose = () => {
-          console.log('WebSocket connection closed');
         };
         
         return () => {
@@ -427,7 +416,6 @@ const TovarlarRoyxati = () => {
         };
       }
     } catch (error) {
-      console.log('WebSocket monitoring failed:', error);
     }
   }, [exchangeRate]);
 

@@ -591,7 +591,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
         console.warn('Failed to fetch credit repayments from backend:', error);
       }
 
-      // Fetch defective logs for this user
+      // Fetch defective logs for this user (returns and adjustments)
       try {
         const params2 = new URLSearchParams();
         if (selectedBranchId) params2.append("branchId", selectedBranchId);
@@ -603,6 +603,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           const list = Array.isArray(logs) ? logs : (Array.isArray(logs.items) ? logs.items : []);
           const startBound2 = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
           const endBound2 = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
+          // Build transaction map by id for paymentType and repayment info
+          const txById = new Map();
+          for (const t of Array.isArray(transactions) ? transactions : []) {
+            txById.set(t.id, t);
+          }
           for (const log of list) {
             const createdAt = log.createdAt ? new Date(log.createdAt) : null;
             const inRange = createdAt && (!startBound2 || createdAt >= startBound2) && (!endBound2 || createdAt <= endBound2);
@@ -612,7 +617,39 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             const actorIdRaw = (log.createdBy && log.createdBy.id) ?? log.createdById ?? (log.user && log.user.id) ?? log.userId ?? (log.performedBy && log.performedBy.id) ?? log.performedById ?? null;
             const actorId = actorIdRaw != null ? Number(actorIdRaw) : null;
             if (!actorId || actorId !== userId) continue;
-            if (rawAmt > 0) plus += rawAmt; else if (rawAmt < 0) minus += Math.abs(rawAmt);
+            if (rawAmt > 0) {
+              plus += rawAmt;
+            } else if (rawAmt < 0) {
+              // Only reduce Naqd for: CASH returns; CREDIT/INSTALLMENT returns if fully paid; and generic cash-out adjustments
+              const isReturn = String(log.actionType || '').toUpperCase() === 'RETURN';
+              if (isReturn) {
+                const tx = txById.get(log.transactionId);
+                const retAmount = Math.abs(rawAmt);
+                if (tx) {
+                  const paymentType = String(tx.paymentType || '').toUpperCase();
+                  // Determine if fully paid
+                  const finalTotal = Number(tx.finalTotal || tx.total || 0);
+                  const upfrontPaid = Number(tx.downPayment || tx.amountPaid || 0);
+                  let schedulesPaid = 0;
+                  if (Array.isArray(tx.paymentSchedules)) {
+                    for (const s of tx.paymentSchedules) {
+                      schedulesPaid += Number((s?.paidAmount ?? s?.payment) || 0);
+                    }
+                  }
+                  const fullyPaid = (upfrontPaid + schedulesPaid) >= finalTotal && finalTotal > 0;
+                  if (paymentType === 'CASH') {
+                    minus += retAmount;
+                  } else if (paymentType === 'CARD') {
+                    // Do not touch Naqd
+                  } else if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
+                    if (fullyPaid) minus += retAmount;
+                  }
+                }
+              } else {
+                // Non-return negative logs are generic cash adjustments
+                minus += Math.abs(rawAmt);
+              }
+            }
           }
         }
         agg.defectivePlus = plus;
@@ -838,6 +875,38 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     }
                   }
                   break;
+                case "RETURN": {
+                  // Returns should reduce original category. If original was CREDIT/INSTALLMENT and not fully paid, reduce that bucket.
+                  const retAmount = -Math.abs(finalW);
+                  const totalDue = Number(transaction.finalTotal || transaction.total || 0);
+                  const totalPaid = Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0);
+                  const fullyPaid = totalPaid >= Math.max(0, totalDue);
+                  switch (transaction.paymentType) {
+                    case 'CREDIT':
+                      if (fullyPaid) {
+                        wagg.cashTotal += retAmount;
+                      } else {
+                        wagg.creditTotal += retAmount;
+                      }
+                      break;
+                    case 'INSTALLMENT':
+                      if (fullyPaid) {
+                        wagg.cashTotal += retAmount;
+                      } else {
+                        wagg.installmentTotal += retAmount;
+                      }
+                      break;
+                    case 'CASH':
+                      wagg.cashTotal += retAmount;
+                      break;
+                    case 'CARD':
+                      wagg.cardTotal += retAmount;
+                      break;
+                    default:
+                      break;
+                  }
+                  break;
+                }
                 default:
                   wagg.otherTotal += finalW;
                   break;
@@ -1168,6 +1237,29 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                       break;
                     default:
                       break;
+                  }
+                  // Handle returns: subtract from the correct bucket and date
+                  if (transaction.type === 'RETURN') {
+                    const retAmount = -Math.abs(final);
+                    const totalDue = Number(transaction.finalTotal || transaction.total || 0);
+                    const totalPaid = Number(transaction.amountPaid || 0) + Number(transaction.downPayment || 0);
+                    const fullyPaid = totalPaid >= Math.max(0, totalDue);
+                    switch (transaction.paymentType) {
+                      case 'CREDIT':
+                        if (fullyPaid) agg.cashTotal += retAmount; else agg.creditTotal += retAmount;
+                        break;
+                      case 'INSTALLMENT':
+                        if (fullyPaid) agg.cashTotal += retAmount; else agg.installmentTotal += retAmount;
+                        break;
+                      case 'CASH':
+                        agg.cashTotal += retAmount;
+                        break;
+                      case 'CARD':
+                        agg.cardTotal += retAmount;
+                        break;
+                      default:
+                        break;
+                    }
                   }
                   // Items
                   if (Array.isArray(transaction.items)) {
@@ -1559,7 +1651,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       setDailySales(Array.from(dailyMap.values()));
       setSalesTotals({ totalQuantity, totalAmount });
 
-      // Fetch defective logs for the branch and time range; compute net cash +/-
+      // Fetch defective logs for the branch and time range; compute net cash +/- with return rules
       try {
         const params2 = new URLSearchParams();
         if (selectedBranchId) params2.append("branchId", selectedBranchId);
@@ -1577,12 +1669,47 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
           const list = Array.isArray(logs) ? logs : (Array.isArray(logs.items) ? logs.items : []);
           const startBound2 = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : null;
           const endBound2 = filters.endDate ? new Date(`${filters.endDate}T23:59:59`) : null;
+          // Build transaction map to check paymentType and repayment status
+          const txById = new Map();
+          for (const t of Array.isArray(transactions) ? transactions : []) {
+            txById.set(t.id, t);
+          }
           for (const log of list) {
             const createdAt = log.createdAt ? new Date(log.createdAt) : null;
             const inRange = createdAt && (!startBound2 || createdAt >= startBound2) && (!endBound2 || createdAt <= endBound2);
             if (!inRange) continue;
             const rawAmt = Number(log.cashAmount ?? log.amount ?? log.value ?? 0) || 0;
-            if (rawAmt > 0) plus += rawAmt; else if (rawAmt < 0) minus += Math.abs(rawAmt);
+            if (rawAmt > 0) {
+              plus += rawAmt;
+            } else if (rawAmt < 0) {
+              const isReturn = String(log.actionType || '').toUpperCase() === 'RETURN';
+              if (isReturn) {
+                const tx = txById.get(log.transactionId);
+                const retAmount = Math.abs(rawAmt);
+                if (tx) {
+                  const paymentType = String(tx.paymentType || '').toUpperCase();
+                  const finalTotal = Number(tx.finalTotal || tx.total || 0);
+                  const upfrontPaid = Number(tx.downPayment || tx.amountPaid || 0);
+                  let schedulesPaid = 0;
+                  if (Array.isArray(tx.paymentSchedules)) {
+                    for (const s of tx.paymentSchedules) {
+                      schedulesPaid += Number((s?.paidAmount ?? s?.payment) || 0);
+                    }
+                  }
+                  const fullyPaid = (upfrontPaid + schedulesPaid) >= finalTotal && finalTotal > 0;
+                  if (paymentType === 'CASH') {
+                    minus += retAmount;
+                  } else if (paymentType === 'CARD') {
+                    // ignore for Naqd
+                  } else if (paymentType === 'CREDIT' || paymentType === 'INSTALLMENT') {
+                    if (fullyPaid) minus += retAmount;
+                  }
+                }
+              } else {
+                // Generic cash out
+                minus += Math.abs(rawAmt);
+              }
+            }
           }
         }
         setDefectivePlus(plus);
@@ -1887,7 +2014,6 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
       const pairs = users.map(u => ({ id: u.id, url: `${BASE_URL}/cashier-reports/cashier/${u.id}?${params.toString()}` }));
       const results = await Promise.all(pairs.map(async p => {
         try {
-          const res = await fetch(p.url, { headers });
           if (!res.ok) return { id: p.id, value: 0 };
           const rep = await res.json();
           const value = Number(rep.cashTotal || 0)
@@ -1932,6 +2058,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               )}
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                onClick={() => navigate('/admin/sotuvchilar')}
+                className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors text-sm sm:text-base"
+                title="Сотувчилар саҳифасига ўтиш"
+              >
+                Сотувчилар саҳифасига ўтиш
+              </button>
               <input
                 type="date"
                 value={filters.startDate}
@@ -2064,11 +2197,50 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     )}
                   </div>
                 </div>
+
+                {/* Admins List */}
+                <div className="bg-purple-50 rounded-lg p-4 md:col-span-2">
+                  <h4 className="text-md font-semibold text-purple-800 mb-3 flex items-center gap-2">
+                    <UserIcon size={18} />
+                    Админлар ({allUsers.filter(user => (user.role === 'ADMIN' || user.role === 'MANAGER') && (!selectedBranchId || user.branchId === selectedBranchId)).length})
+                  </h4>
+                  <div className="space-y-2">
+                    {allUsers.filter(user => (user.role === 'ADMIN' || user.role === 'MANAGER') && (!selectedBranchId || user.branchId === selectedBranchId)).length === 0 ? (
+                      <p className="text-gray-500 text-sm">Админлар топилмади</p>
+                    ) : (
+                      allUsers
+                        .filter(user => (user.role === 'ADMIN' || user.role === 'MANAGER') && (!selectedBranchId || user.branchId === selectedBranchId))
+                        .map((user, index) => (
+                          <div key={`admin-list-${user.id}-${index}`} className="flex items-center justify-between bg-white rounded p-2 shadow-sm">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-gray-700">
+                                {getUserName(user)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => {
+                                  setSelectedUser(user);
+                                  setShowUserModal(true);
+                                  fetchUserReport(user.id, 'ADMIN');
+                                }}
+                                className="text-purple-600 hover:text-purple-800 p-1"
+                                title="Тўлиқ ҳисоботни кўриш"
+                              >
+                                <Eye size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-
+          <div className="mt-8">
+          </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

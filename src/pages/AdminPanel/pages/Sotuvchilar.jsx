@@ -14,6 +14,7 @@ const Notification = ({ message, type, onClose }) => (
 );
 
 function Sotuvchilar() {
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [branches, setBranches] = useState([]); // Barcha filiallar
   const [selectedUserId, setSelectedUserId] = useState(''); 
@@ -24,7 +25,6 @@ function Sotuvchilar() {
   const [salesData, setSalesData] = useState([]);
   const [earningsSummary, setEarningsSummary] = useState({});
   const [exchangeRate, setExchangeRate] = useState(12500); 
-  const navigate = useNavigate();
   const token = localStorage.getItem('access_token');
   const branchId = localStorage.getItem('branchId');
   const API_URL = 'https://suddocs.uz';
@@ -313,6 +313,9 @@ function Sotuvchilar() {
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen">
+      <div className="mb-4">
+      
+      </div>
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Сотувчилар маоши</h1>
         <p className="text-gray-600 mt-1">Сотувчилар маоши бўйича маълумотлар</p>

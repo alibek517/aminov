@@ -28,15 +28,12 @@ const SignIn = () => {
       try {
         const decodedToken = jwtDecode(token);
         if (decodedToken.exp * 1000 < Date.now()) {
-          console.log('Token expired, clearing localStorage');
           localStorage.clear();
           setErrors({ username: '', password: 'Сессия тугади. Илтимос, қайта киринг.' });
           return;
         }
-        console.log('Valid token and role found, redirecting:', role);
         redirectByRole(role);
       } catch (error) {
-        console.error('Invalid token:', error);
         localStorage.clear();
         setErrors({ username: '', password: 'Нотўғри токен. Илтимос, қайта киринг.' });
       }
@@ -44,7 +41,6 @@ const SignIn = () => {
   }, []);
 
   const redirectByRole = (role) => {
-    console.log('Redirecting to role:', role);
     switch (role) {
       case 'CASHIER':
         navigate('/kasir', { replace: true });
@@ -70,9 +66,6 @@ const SignIn = () => {
   const handleSignIn = async (e) => {
     e.preventDefault();
     if (isSubmittingRef.current) return;
-    console.log('Form submitted, handleSignIn called');
-    console.log('Entered Email:', username.trim());
-    console.log('Entered Password:', password.trim());
 
     if (!username.trim() || !password.trim()) {
       setErrors({
@@ -87,7 +80,6 @@ const SignIn = () => {
     setErrors({ username: '', password: '' });
 
     try {
-      console.log('Sending login request to /auth/login');
       const response = await axios.post(
         'https://suddocs.uz/auth/login',
         {
@@ -101,7 +93,6 @@ const SignIn = () => {
           withCredentials: true,
         }
       );
-      console.log('Login successful:', response.data);
 
       const { access_token, user } = response.data;
       if (!access_token || !user || !user.role) {
@@ -128,7 +119,6 @@ const SignIn = () => {
           username: user.username || '',
         }));
         localStorage.setItem('userId', user.id);
-        console.log('Stored token and user data:', { role: user.role, userId: user.id });
 
         if (user.role === 'AUDITOR') {
           const socket = io('https://suddocs.uz/', {
@@ -142,7 +132,6 @@ const SignIn = () => {
           });
 
           socket.on('connect', () => {
-            console.log('Socket.IO connected for AUDITOR, userId:', user.id);
             if (navigator.geolocation) {
               navigator.geolocation.getCurrentPosition(
                 (position) => {
@@ -153,10 +142,8 @@ const SignIn = () => {
                     address: '',
                     userId: user.id,
                   });
-                  console.log('Sent initial location:', { userId: user.id, latitude, longitude });
                 },
                 (error) => {
-                  console.error('Geolocation error:', error);
                   socket.emit('updateLocation', {
                     userId: user.id,
                     latitude: 41.3111, 
@@ -164,13 +151,11 @@ const SignIn = () => {
                     address: 'Unknown',
                     isOnline: true,
                   });
-                  console.log('Sent fallback location for user:', user.id);
                   setErrors({ username: '', password: 'Жойлашувни олишда хато юз берди. Стандарт жойлашув ишлатилди.' });
                 },
                 { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
               );
             } else {
-              console.error('Geolocation not supported');
               socket.emit('updateLocation', {
                 userId: user.id,
                 latitude: 41.3111,
@@ -178,22 +163,18 @@ const SignIn = () => {
                 address: 'Unknown',
                 isOnline: true,
               });
-              console.log('Sent fallback location for user:', user.id);
               setErrors({ username: '', password: 'Браузер жойлашувни қўллаб-қувватламайди.' });
             }
           });
 
           socket.on('connect_error', (err) => {
-            console.error('Socket.IO connection error:', err.message);
             setErrors({ username: '', password: `Уланиш хатоси: ${err.message}` });
           });
 
           socket.on('locationUpdateConfirmed', (data) => {
-            console.log('Location update confirmed:', data);
           });
 
           socket.on('error', (data) => {
-            console.error('Socket.IO error:', data);
             setErrors({ username: '', password: data.message || 'Сервер хатоси.' });
           });
         }
@@ -205,7 +186,6 @@ const SignIn = () => {
         throw new Error('Invalid token format');
       }
     } catch (error) {
-      console.error('Login error:', error.response ? error.response.data : error.message);
       setErrors({
         username: '',
         password:

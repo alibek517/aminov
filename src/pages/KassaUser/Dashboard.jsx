@@ -529,7 +529,7 @@ const Dashboard = () => {
           console.warn('Failed to fetch credit repayments from backend:', error);
         }
 
-        // Include defective logs (returns) for cash adjustments
+        // Include defective logs (returns) to adjust categories and cash
         try {
           const params2 = new URLSearchParams();
           if (selectedBranchId) params2.append("branchId", selectedBranchId);
@@ -542,6 +542,11 @@ const Dashboard = () => {
             const list = Array.isArray(logs) ? logs : (Array.isArray(logs.items) ? logs.items : []);
             const startBound2 = reportDate.startDate ? new Date(`${reportDate.startDate}T00:00:00`) : null;
             const endBound2 = reportDate.endDate ? new Date(`${reportDate.endDate}T23:59:59`) : null;
+            // Build a transaction map for quick lookup
+            const txById = new Map();
+            for (const tx of Array.isArray(transactions) ? transactions : []) {
+              txById.set(tx.id, tx);
+            }
             for (const log of list) {
               const createdAt = log.createdAt ? new Date(log.createdAt) : null;
               const inRange = createdAt && (!startBound2 || createdAt >= startBound2) && (!endBound2 || createdAt <= endBound2);
@@ -552,7 +557,54 @@ const Dashboard = () => {
               const actorIdRaw = (log.createdBy && log.createdBy.id) ?? log.createdById ?? (log.user && log.user.id) ?? log.userId ?? (log.performedBy && log.performedBy.id) ?? log.performedById ?? null;
               const actorId = actorIdRaw != null ? Number(actorIdRaw) : null;
               if (!actorId || actorId !== currentUserId) continue;
-              if (rawAmt > 0) plus += rawAmt; else if (rawAmt < 0) minus += Math.abs(rawAmt);
+              if (rawAmt > 0) {
+                plus += rawAmt;
+              } else if (rawAmt < 0) {
+                // On RETURN logs, also reduce category totals, and decide whether to reduce Naqd
+                const isReturn = String(log.actionType || '').toUpperCase() === 'RETURN';
+                if (isReturn) {
+                  const tx = txById.get(log.transactionId);
+                  const retAmount = Math.abs(rawAmt);
+                  if (tx) {
+                    // Determine if fully paid
+                    const finalTotal = Number(tx.finalTotal || tx.total || 0);
+                    const upfrontPaid = Number(tx.downPayment || tx.amountPaid || 0);
+                    let schedulesPaid = 0;
+                    if (Array.isArray(tx.paymentSchedules)) {
+                      for (const s of tx.paymentSchedules) {
+                        schedulesPaid += Number((s?.paidAmount ?? s?.payment) || 0);
+                      }
+                    }
+                    const fullyPaid = (upfrontPaid + schedulesPaid) >= finalTotal && finalTotal > 0;
+                    switch ((tx.paymentType || '').toUpperCase()) {
+                      case 'CREDIT':
+                        if (fullyPaid) agg.cashTotal -= retAmount; else agg.creditTotal -= retAmount;
+                        // Only hit cash (defectiveMinus) if fully paid
+                        if (fullyPaid) minus += retAmount;
+                        break;
+                      case 'INSTALLMENT':
+                        if (fullyPaid) agg.cashTotal -= retAmount; else agg.installmentTotal -= retAmount;
+                        // Only hit cash (defectiveMinus) if fully paid
+                        if (fullyPaid) minus += retAmount;
+                        break;
+                      case 'CASH':
+                        agg.cashTotal -= retAmount;
+                        // CASH sales returns reduce cash
+                        minus += retAmount;
+                        break;
+                      case 'CARD':
+                        agg.cardTotal -= retAmount;
+                        // CARD returns should NOT reduce cash
+                        break;
+                      default:
+                        break;
+                    }
+                  }
+                } else {
+                  // Non-return negative logs are raw cash adjustments; count in minus
+                  minus += Math.abs(rawAmt);
+                }
+              }
             }
           }
           setDefectivePlus(plus);
@@ -595,6 +647,12 @@ const Dashboard = () => {
   // Refresh dashboard when report date changes
   useEffect(() => {
     // This will trigger a re-fetch when report date changes
+    const onFlag = () => {
+      // lightweight nudge to refetch on external edits
+      setReportDate((f) => ({ ...f }));
+    };
+    window.addEventListener('storage', onFlag);
+    return () => window.removeEventListener('storage', onFlag);
   }, [reportDate.startDate, reportDate.endDate]);
 
   if (error) {
