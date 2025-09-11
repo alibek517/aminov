@@ -7,7 +7,7 @@
  * @returns {string} Formatted amount with "so'm" suffix
  */
 export const formatAmountSom = (value) => {
-  const num = Math.floor(Number(value) || 0);
+  const num = Math.round(Number(value) || 0);
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' so\'m';
 };
 
@@ -17,7 +17,7 @@ export const formatAmountSom = (value) => {
  * @returns {string} Formatted amount with "$" prefix
  */
 export const formatAmountUSD = (value) => {
-  const num = Math.floor(Number(value) || 0);
+  const num = Math.round(Number(value) || 0);
   return '$' + num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
@@ -27,7 +27,7 @@ export const formatAmountUSD = (value) => {
  * @returns {string} Formatted amount with spaces between thousands
  */
 export const formatAmount = (value) => {
-  const num = Math.floor(Number(value) || 0);
+  const num = Math.round(Number(value) || 0);
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };
 
@@ -37,7 +37,7 @@ export const formatAmount = (value) => {
  * @returns {string} Formatted amount with "so'm" suffix
  */
 export const formatCurrency = (value) => {
-  const num = Math.floor(Number(value) || 0);
+  const num = Math.round(Number(value) || 0);
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' so\'m';
 };
 
@@ -47,6 +47,6 @@ export const formatCurrency = (value) => {
  * @returns {string} Formatted amount with "$" prefix
  */
 export const formatCurrencyUSD = (value) => {
-  const num = Math.floor(Number(value) || 0);
+  const num = Math.round(Number(value) || 0);
   return '$' + num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 };

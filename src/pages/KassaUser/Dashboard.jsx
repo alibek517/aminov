@@ -494,7 +494,6 @@ const Dashboard = () => {
           console.warn('Failed to fetch daily repayments from backend:', error);
         }
 
-        // Include credit repayments from backend into cashierReport totals and list
         try {
           const creditRepaymentsRes = await fetch(
             `https://suddocs.uz/credit-repayments/cashier/${currentUserId}?branchId=${selectedBranchId}&startDate=${new Date(`${reportDate.startDate}T00:00:00`).toISOString()}&endDate=${new Date(`${reportDate.endDate}T23:59:59`).toISOString()}`,
@@ -579,29 +578,24 @@ const Dashboard = () => {
                     switch ((tx.paymentType || '').toUpperCase()) {
                       case 'CREDIT':
                         if (fullyPaid) agg.cashTotal -= retAmount; else agg.creditTotal -= retAmount;
-                        // Only hit cash (defectiveMinus) if fully paid
                         if (fullyPaid) minus += retAmount;
                         break;
                       case 'INSTALLMENT':
                         if (fullyPaid) agg.cashTotal -= retAmount; else agg.installmentTotal -= retAmount;
-                        // Only hit cash (defectiveMinus) if fully paid
                         if (fullyPaid) minus += retAmount;
                         break;
                       case 'CASH':
                         agg.cashTotal -= retAmount;
-                        // CASH sales returns reduce cash
                         minus += retAmount;
                         break;
                       case 'CARD':
                         agg.cardTotal -= retAmount;
-                        // CARD returns should NOT reduce cash
                         break;
                       default:
                         break;
                     }
                   }
                 } else {
-                  // Non-return negative logs are raw cash adjustments; count in minus
                   minus += Math.abs(rawAmt);
                 }
               }
@@ -614,7 +608,6 @@ const Dashboard = () => {
           setDefectiveMinus(0);
         }
 
-        // Debug logging for final aggregation
         console.log('Final cashier report aggregation:', {
           cashTotal: agg.cashTotal,
           cardTotal: agg.cardTotal,
@@ -644,11 +637,8 @@ const Dashboard = () => {
     selectedBranchId,
   ]);
 
-  // Refresh dashboard when report date changes
   useEffect(() => {
-    // This will trigger a re-fetch when report date changes
     const onFlag = () => {
-      // lightweight nudge to refetch on external edits
       setReportDate((f) => ({ ...f }));
     };
     window.addEventListener('storage', onFlag);

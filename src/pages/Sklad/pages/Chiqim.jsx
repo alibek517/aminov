@@ -53,12 +53,12 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
   const formatCurrency = (amount) =>
     amount != null && Number.isFinite(Number(amount))
-      ? new Intl.NumberFormat('uz-UZ').format(Math.floor(Number(amount))) + "$"
+      ? new Intl.NumberFormat('uz-UZ').format(Math.round(Number(amount))) + "$"
       : "0$";
 
   const formatCurrencySom = (amount) => {
     if (amount != null && Number.isFinite(Number(amount))) {
-      return new Intl.NumberFormat('uz-UZ').format(Math.floor(Number(amount))) + " so'm";
+      return new Intl.NumberFormat('uz-UZ').format(Math.round(Number(amount))) + " so'm";
     }
     return "0 so'm";
   };
@@ -94,7 +94,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       return;
     }
     // Convert so'm to USD and update the item
-    const usd = somInt / Math.max(1, Number(exchangeRate));
+    const usd = somInt / Math.max(0, Number(exchangeRate));
     updateItem(index, 'marketPrice', usd.toString());
   };
 
@@ -584,9 +584,9 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           .join(', ')} ko'chirmoqchimisiz?`
         : `Haqiqatan ham ushbu mahsulotlarni mijozga sotmoqchimisiz?`;
 
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
+    // if (!window.confirm(confirmMessage)) {
+    //   return;
+    // }
 
     setSubmitting(true);
 
@@ -1013,9 +1013,9 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
   const closeReceiptModal = async () => {
     if (!receiptPrinted && operationType === 'SALE') {
-      if (!window.confirm('Chek chop etilmadi! Cheksiz yopsangiz sotish bekor bo\'ladi. Davom etasizmi?')) {
-        return;
-      }
+      // if (!window.confirm('Chek chop etilmadi! Cheksiz yopsangiz sotish bekor bo\'ladi. Davom etasizmi?')) {
+      //   return;
+      // }
       if (pendingTransaction) {
         try {
           await axiosWithAuth({
@@ -1261,14 +1261,14 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                 <div className="space-y-2">
                                   <input
                                     type="text"
-                                    value={Math.floor(Number(item.marketPrice) * Number(exchangeRate)) || ''}
+                                    value={Math.round(Number(item.marketPrice) * Number(exchangeRate)) || ''}
                                     onChange={(e) => onPriceSomChangeDirect(index, e)}
                                     className={`w-24 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors[`price_${index}`] ? 'border-red-500' : 'border-gray-300'
                                       }`}
                                     placeholder="0"
                                   />
                                   <div className="text-xs text-gray-500">
-                                    {Math.floor(Number(item.marketPrice))} USD
+                                    {Math.round(Number(item.marketPrice))} USD
                                   </div>
                                   {errors[`price_${index}`] && (
                                     <span className="text-red-500 text-xs">{errors[`price_${index}`]}</span>
@@ -1762,7 +1762,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                           <td className="p-3">
                             <input
                               type="number"
-                              value={priceInputValues[`${item.id}_${index}`] || Math.floor(Number(item.marketPrice) * Number(exchangeRate))}
+                              value={priceInputValues[`${item.id}_${index}`] || Math.round(Number(item.marketPrice) * Number(exchangeRate))}
                               onChange={(e) => {
                                 const inputValue = e.target.value;
                                 const itemKey = `${item.id}_${index}`;
@@ -2043,7 +2043,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                       <div className="font-medium text-blue-600 break-words text-sm">{(() => {
                         let total = 0;
                         selectedItems.forEach((item, index) => {
-                          const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.floor(Number(item.marketPrice) * Number(exchangeRate));
+                          const displayPrice = priceInputValues[`${item.id}_${index}`] || Math.round(Number(item.marketPrice) * Number(exchangeRate));
                           const quantity = Number(item.quantity);
                           total += quantity * Number(displayPrice);
                         });

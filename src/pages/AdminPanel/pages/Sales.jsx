@@ -73,7 +73,7 @@ const Sales = ({ branchId: propbranchId }) => {
   }, [sales, search]);
 
   const formatAmount = (value) => {
-    const num = Math.floor(Number(value) || 0);
+    const num = Math.round(Number(value) || 0);
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   };
 

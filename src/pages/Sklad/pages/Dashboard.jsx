@@ -584,7 +584,7 @@ const Dashboard = () => {
   ];
 
   function formatPrice(number) {
-    const num = Math.floor(Number(number) || 0);
+    const num = Math.round(Number(number) || 0);
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   }
 
