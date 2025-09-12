@@ -146,7 +146,7 @@ const TovarlarRoyxati = () => {
     .name { font-size: 16px; font-weight: 600; }
     .modal { font-size: 10px; font-weight: 500; }
     .price { font-size: 16px; font-weight: 700; }
-    .barcode { margin-top: 6px;}
+    .barcode { margin-top: 6px; text-align: center; width: 63%;}
     .oq { color: #fff;}
     .text {text-align: center; margin-top: 4px;width: 60%;}
     @media print { .no-print { display: none !important; } }

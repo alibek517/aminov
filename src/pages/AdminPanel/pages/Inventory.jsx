@@ -92,7 +92,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     propSelectedBranchId || localStorage.getItem('selectedBranchId') || ''
   );
   const nameInputRef = useRef(null);
-  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | IN_STOCK | SOLD | DEFECTIVE
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [creatingCategory, setCreatingCategory] = useState(false);
@@ -176,7 +176,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     const loadData = async () => {
       try {
         setIsLoading(true);
-        // 1) Ensure we have an exchange rate first (to avoid 0 so'm on first render)
         try {
           const rateResp = await fetchWithAuth(`${API_BASE_URL}/currency-exchange-rates/current-rate?fromCurrency=USD&toCurrency=UZS`);
           if (rateResp.ok) {
@@ -189,7 +188,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
             }
           }
         } catch (e) {
-          // Fallback to list endpoint
+          
           try {
             const listResp = await fetchWithAuth(`${API_BASE_URL}/currency-exchange-rates`);
             if (listResp.ok) {
@@ -201,7 +200,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
           } catch {}
         }
 
-        // 2) Load data
         const [productsResponse, categoriesResponse, branchesResponse] = await Promise.all([
           fetchWithAuth(`${API_BASE_URL}/products?includeZeroQuantity=true`),
           fetchWithAuth(`${API_BASE_URL}/categories`),
@@ -533,7 +531,7 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
     .name { font-size: 16px; font-weight: 600; }
     .modal { font-size: 10px; font-weight: 500; }
     .price { font-size: 16px; font-weight: 700; }
-    .barcode { margin-top: 6px;}
+    .barcode { margin-top: 6px; text-align: center; width: 63%;}
     .oq { color: #fff;}
     .text {text-align: center; margin-top: 4px;width: 60%;}
     @media print { .no-print { display: none !important; } }
