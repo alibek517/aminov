@@ -139,7 +139,6 @@ function Korish() {
         setFilteredProducts(result);
     }, [selectedBranch, allProducts, searchTerm]);
 
-    // Narxni so'mda hisoblash
     const calculatePriceWithRate = (price) => {
         if (!price || !exchangeRates.length) return 'N/A';
         const rate = exchangeRates.find(r =>
@@ -148,7 +147,6 @@ function Korish() {
         return rate ? `${Math.round(price * rate.rate).toLocaleString()} so'm` : 'N/A';
     };
 
-    // Mahsulotni batafsil ko'rish
     const handleProductClick = (product) => {
         setSelectedProduct(product);
         setQuantityLoading(true);
@@ -307,6 +305,7 @@ function Korish() {
                         <div style={styles.modalBody(theme)}>
                             <p><strong>Model:</strong> {selectedProduct?.model || '—'}</p>
                             <p><strong>Barcode:</strong> {selectedProduct?.barcode || '—'}</p>
+                            <p><strong>Kelish Baxo:</strong> {(selectedProduct?.price)}$</p>
                             <p><strong>Narxi:</strong> {calculatePriceWithRate(selectedProduct?.marketPrice)}</p>
                             <h4 style={styles.subTitle(theme)}>Filiallar bo'yicha miqdor:</h4>
                             {quantityLoading ? (
