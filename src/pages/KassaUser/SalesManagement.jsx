@@ -149,7 +149,7 @@ const SalesManagement = () => {
     };
 
     const productList = selectedItems
-      .map((item) => `${escapeLatex(item.name)} (${formatQuantity(item.quantity)}, ${formatAmount(item.price)})`)
+      .map((item) => `${escapeLatex(item.name)}${item.model ? ` - ${escapeLatex(item.model)}` : ''} (${formatQuantity(item.quantity)}, ${formatAmount(item.price)})`)
       .join(', ');
 
     const latexContent = `
@@ -877,6 +877,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                                     {
                                       id: product.id,
                                       name: product.name,
+                                      model: product.model || '',
+                                      barcode: product.barcode || '',
                                       quantity: quantity,
                                       price: priceInSom.toString(),
                                       marketPrice: priceInSom.toString(),
@@ -935,6 +937,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     <thead>
                       <tr className="bg-gray-50">
                         <th className="p-3 text-left font-medium">Маҳсулот</th>
+                        <th className="p-3 text-left font-medium">Модель</th>
                         <th className="p-3 text-left font-medium">Филиал</th>
                         <th className="p-3 text-left font-medium">Нарх (сом)</th>
                         <th className="p-3 text-left font-medium">Миқдор</th>
@@ -946,6 +949,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       {selectedItems.map((item, index) => (
                         <tr key={index} className="border-t border-gray-200">
                           <td className="p-3">{item.name}</td>
+                          <td className="p-3">{item.model || 'Номаълум'}</td>
                           <td className="p-3">
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                               item.sourceBranchType === 'SKLAD' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'
@@ -1340,6 +1344,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     <thead>
                       <tr className="bg-gray-50">
                         <th className="p-3 text-left font-medium">Маҳсулот</th>
+                        <th className="p-3 text-left font-medium">Модель</th>
                         <th className="p-3 text-left font-medium">Филиал</th>
                         <th className="p-3 text-left font-medium">Нарх (сом)</th>
                         <th className="p-3 text-left font-medium">Миқдор</th>
@@ -1351,6 +1356,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       {selectedItems.map((item, index) => (
                         <tr key={index} className="border-t border-gray-200">
                           <td className="p-3">{item.name}</td>
+                          <td className="p-3">{item.model || 'Номаълум'}</td>
                           <td className="p-3">
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                               item.sourceBranchType === 'SKLAD' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'
@@ -2020,7 +2026,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                   <h4>MAHSULOTLAR</h4>
                   ${receiptData.items.map((item) => `
                     <div class="total-row">
-                      <span>${item.name} x${item.quantity}</span>
+                      <span>${item.name}${item.model} x${item.quantity}</span>
                       <span>${new Intl.NumberFormat('uz-UZ').format(Number(item.quantity) * Number(item.price))} so'm</span>
                     </div>
                   `).join('')}

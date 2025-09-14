@@ -849,7 +849,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
             ${transaction.items
         .map((item) => `
               <div class="product-row">
-                <span>${item.name} x${item.quantity}</span>
+                <span>${item.name}${item.model ? ` - ${item.model}` : ''} x${item.quantity}</span>
                 <span>${formatCurrencySom(Number(item.quantity) * Number(item.priceInSom))}</span>
               </div>`)
         .join('')}
@@ -1281,6 +1281,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                           <tr className="bg-gray-50">
                             <th className="p-3 text-left font-medium">№</th>
                             <th className="p-3 text-left font-medium">Маҳсулот</th>
+                            <th className="p-3 text-left font-medium">Модель</th>
                             <th className="p-3 text-left font-medium">Нарх (сўм)</th>
                             <th className="p-3 text-left font-medium">Миқдор</th>
                             <th className="p-3 text-left font-medium">Жами</th>
@@ -1291,6 +1292,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                             <tr key={index} className="border-t border-gray-200">
                               <td className="p-3">{index + 1}</td>
                               <td className="p-3">{item.name}</td>
+                              <td className="p-3">{item.model || 'Номаълум'}</td>
                               <td className="p-3">
                                 <div className="space-y-2">
                                   <input
@@ -1783,6 +1785,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                     <thead>
                       <tr className="bg-gray-50">
                         <th className="p-3 text-left font-medium">Маҳсулот</th>
+                        <th className="p-3 text-left font-medium">Модель</th>
                         <th className="p-3 text-left font-medium">Нарх (сом)</th>
                         <th className="p-3 text-left font-medium">Миқдор</th>
                         <th className="p-3 text-left font-medium">Жами</th>
@@ -1793,6 +1796,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                       {selectedItems.map((item, index) => (
                         <tr key={index} className="border-t border-gray-200">
                           <td className="p-3">{item.name}</td>
+                          <td className="p-3">{item.model || 'Номаълум'}</td>
                           <td className="p-3">
                             <input
                               type="number"
