@@ -12,7 +12,6 @@ const ExchangeRates = () => {
     fromCurrency: 'USD',
     toCurrency: 'UZS',
     rate: '',
-    isActive: true,
     branchId: ''
   });
   const [branches, setBranches] = useState([]);
@@ -125,7 +124,7 @@ const ExchangeRates = () => {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ isActive: true }),
+        body: JSON.stringify({}),
       });
       if (!response.ok) {
         throw new Error('Failed to set active rate');
@@ -147,7 +146,6 @@ const ExchangeRates = () => {
       fromCurrency: rate.fromCurrency,
       toCurrency: rate.toCurrency,
       rate: rate.rate.toString(),
-      isActive: rate.isActive,
       branchId: rate.branchId?.toString() || ''
     });
     setShowForm(true);
@@ -183,7 +181,6 @@ const ExchangeRates = () => {
       fromCurrency: 'USD',
       toCurrency: 'UZS',
       rate: '',
-      isActive: true,
       branchId: ''
     });
     setEditingRate(null);
@@ -287,9 +284,6 @@ const ExchangeRates = () => {
                   </th>
 
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Ҳолат
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Яратилган
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -314,14 +308,6 @@ const ExchangeRates = () => {
                       </span>
                     </td>
 
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${rate.isActive
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                        }`}>
-                        {rate.isActive ? 'Фаол' : 'Фаол эмас'}
-                      </span>
-                    </td>
                     <td className="px-6 py-4 text-gray-500">
                       {new Date(rate.createdAt).toLocaleDateString('uz-Cyrl-UZ')}
                     </td>

@@ -52,11 +52,11 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
 
   const departments = [
     "all",
-    "Бошқарув",
-    "Савдо",
-    "Омбор",
+    "Администратор",
+    "Кассир",
+    "Склад",
     "Доставка",
-    "Молия",
+    "Сотувчи"
   ];
 
   // Phone number formatting function
@@ -169,7 +169,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.CASHIER:
         return "Кассир";
       case UserRole.WAREHOUSE:
-        return "Омборчи";
+        return "Складчи";
       case UserRole.AUDITOR:
         return "Доставкачи";
         case UserRole.MARKETING:
@@ -182,18 +182,17 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
   const getDepartmentFromRole = (role) => {
     switch (role) {
       case UserRole.ADMIN:
-        return "Бошқарув";
+        return "Администратор";
       case UserRole.CASHIER:
-        return "Савдо";
+        return "Кассир";
       case UserRole.WAREHOUSE:
-        return "Омбор";
+        return "Складчи";
       case UserRole.AUDITOR:
-        return "Етказиб бериш";
+        return "Доставкачи";
       case UserRole.MARKETING:
         return "Сотувчи";
-
       default:
-        return "Бошқарув";
+        return "Ходим";
     }
   };
 
@@ -397,7 +396,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
   const getStatusText = (status) => {
     switch (status) {
       case "active":
-        return "Фаол";
+        return "Активный";
       case "inactive":
         return "Ишламайди";
       case "on_leave":
@@ -438,7 +437,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
       case UserRole.CASHIER:
         return "Кассир";
       case UserRole.WAREHOUSE:
-        return "Омборчи";
+        return "Складчи";
       case UserRole.AUDITOR:
         return "Доставкачи";
  case UserRole.MARKETING:
@@ -771,19 +770,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-green-50 rounded-lg">
-              <UserCheck className="text-green-600" size={20} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Фаол Ходимлар</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {activeEmployees}
-              </p>
-            </div>
-          </div>
-        </div>
+       
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="flex flex-col lg:flex-row gap-4">
@@ -838,9 +825,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Рол
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Ҳолат
-                </th>
+                
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Амаллар
                 </th>
@@ -906,18 +891,7 @@ const Employees = ({ selectedBranchId: propSelectedBranchId }) => {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      {getStatusIcon(employee.status)}
-                      <span
-                        className={`ml-2 px-2 py-1 text-xs font-medium rounded-full ${getStatusBadge(
-                          employee.status
-                        )}`}
-                      >
-                        {getStatusText(employee.status)}
-                      </span>
-                    </div>
-                  </td>
+                  
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-2">
                       <button

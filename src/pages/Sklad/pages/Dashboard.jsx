@@ -594,7 +594,7 @@ const Dashboard = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 mt-4">
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-900">
-              Омбор — тўлиқ сотувлар
+            Склад — тўлиқ сотувлар
             </h3>
             <div className="flex items-center gap-2">
               <input

@@ -56,6 +56,8 @@ const Notification = ({ message, type, onClose }) => (
 
 const TovarlarRoyxati = () => {
   const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
+  const [filteredProducts, setFilteredProducts] = useState([]);
   const [defectiveProducts, setDefectiveProducts] = useState([]);
   const [fixedProducts, setFixedProducts] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -422,7 +424,7 @@ const TovarlarRoyxati = () => {
   const formatQuantity = (qty) => (qty >= 0 ? new Intl.NumberFormat('uz-UZ').format(qty) + ' дона' : 'Номаълум');
 
   const statusOptions = [
-    { value: 'IN_WAREHOUSE', label: 'Омборда', color: 'bg-blue-100 text-blue-800' },
+    { value: 'IN_WAREHOUSE', label: 'Складда', color: 'bg-blue-100 text-blue-800' },
     { value: 'IN_STORE', label: 'Дўконда', color: 'bg-green-100 text-green-800' },
     { value: 'SOLD', label: 'Сотилган', color: 'bg-purple-100 text-purple-800' },
     { value: 'DEFECTIVE', label: 'Нуқсонли', color: 'bg-red-100 text-red-800' },
@@ -537,9 +539,34 @@ const TovarlarRoyxati = () => {
   }, [startExchangeRateMonitoring, startRealTimeMonitoring, startUltraFastMonitoring, startSSEMonitoring, startWebSocketMonitoring]);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 400);
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
     return () => clearTimeout(t);
   }, [searchTerm]);
+
+  // Advanced client-side filtering with multi-word search
+  useEffect(() => {
+    if (!debouncedSearchTerm) {
+      setFilteredProducts(allProducts);
+      return;
+    }
+
+    const filtered = allProducts.filter(product => {
+      if (!debouncedSearchTerm.trim()) return true;
+      
+      const words = debouncedSearchTerm.toLowerCase().trim().split(/\s+/);
+      const name = (product.name || '').toLowerCase();
+      const model = (product.model || '').toLowerCase();
+      const barcode = (product.barcode || '').toLowerCase();
+      
+      // Multi-word search: all words must be found in at least one field
+      return words.every(word => 
+        name.includes(word) || 
+        model.includes(word) || 
+        barcode.includes(word)
+      );
+    });
+    setFilteredProducts(filtered);
+  }, [debouncedSearchTerm, allProducts]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -556,48 +583,43 @@ const TovarlarRoyxati = () => {
   }, []);
 
   const loadAllProducts = useCallback(async () => {
-    setLoading(true);
     const branchId = Number(selectedBranchId);
     const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
 
     if (!isValidBranchId) {
       setNotification({ message: 'Филиални танланг', type: 'error' });
       setProducts([]);
+      setAllProducts([]);
+      setFilteredProducts([]);
       setSelectedProducts([]);
-      setLoading(false);
       return;
     }
 
     try {
       const queryParams = new URLSearchParams();
       queryParams.append('branchId', branchId.toString());
-      if (debouncedSearchTerm) {
-        queryParams.append('search', debouncedSearchTerm);
-        queryParams.append('searchBy', 'name,barcode,model');
-      }
       queryParams.append('includeZeroQuantity', 'true');
       const productsRes = await axiosWithAuth({
         method: 'get',
         url: `${API_URL}/products?${queryParams.toString()}`,
       });
-      setProducts(productsRes.data);
+      const productData = productsRes.data || [];
+      setProducts(productData);
+      setAllProducts(productData);
+      setFilteredProducts(productData);
       setSelectedProducts([]);
     } catch (err) {
       setNotification({ message: err.message || 'Маълумотларни юклашда хатолик', type: 'error' });
-    } finally {
-      setLoading(false);
     }
-  }, [debouncedSearchTerm, selectedBranchId]);
+  }, [selectedBranchId]);
 
   const loadDefectiveProducts = useCallback(async () => {
-    setLoading(true);
     const branchId = Number(selectedBranchId);
     const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
 
     if (!isValidBranchId) {
       setDefectiveProducts([]);
       setSelectedDefectiveProducts([]);
-      setLoading(false);
       return;
     }
 
@@ -608,23 +630,19 @@ const TovarlarRoyxati = () => {
         method: 'get',
         url: `${API_URL}/products/defective?${queryParams.toString()}`,
       });
-      setDefectiveProducts(defectiveRes.data);
+      setDefectiveProducts(defectiveRes.data || []);
       setSelectedDefectiveProducts([]);
     } catch (err) {
       setNotification({ message: err.message || 'Нуқсонли маҳсулотларни юклашда хатолик', type: 'error' });
-    } finally {
-      setLoading(false);
     }
   }, [selectedBranchId]);
 
   const loadFixedProducts = useCallback(async () => {
-    setLoading(true);
     const branchId = Number(selectedBranchId);
     const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
 
     if (!isValidBranchId) {
       setFixedProducts([]);
-      setLoading(false);
       return;
     }
 
@@ -635,27 +653,31 @@ const TovarlarRoyxati = () => {
         method: 'get',
         url: `${API_URL}/products/fixed?${queryParams.toString()}`,
       });
-      setFixedProducts(fixedRes.data);
+      setFixedProducts(fixedRes.data || []);
     } catch (err) {
       setNotification({ message: err.message || 'Тузатилган маҳсулотларни юклашда хатолик', type: 'error' });
-    } finally {
-      setLoading(false);
     }
   }, [selectedBranchId]);
 
   useEffect(() => {
     if (selectedBranchId) {
-      loadAllProducts();
-      loadDefectiveProducts();
-      loadFixedProducts();
+      const loadData = async () => {
+        setLoading(true);
+        try {
+          await Promise.all([
+            loadAllProducts(),
+            loadDefectiveProducts(),
+            loadFixedProducts()
+          ]);
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadData();
     }
-  }, [loadAllProducts, loadDefectiveProducts, loadFixedProducts, selectedBranchId]);
+  }, [selectedBranchId]);
 
-  useEffect(() => {
-    if (selectedBranchId) {
-      loadAllProducts();
-    }
-  }, [debouncedSearchTerm]);
+  // Remove the search-triggered API call since we're using client-side filtering
 
   const isOmborBranch = () => {
     const stored = localStorage.getItem('branchId');
@@ -1049,15 +1071,139 @@ const TovarlarRoyxati = () => {
     });
   };
 
-  const handleSelect50 = () => {
-    const availableProducts = products.filter((product) => !selectedProducts.includes(product.id));
-    const productsToSelect = availableProducts.map((product) => product.id);
-    setSelectedProducts((prev) => [...prev, ...productsToSelect]);
-    if (productsToSelect.length > 0) {
-      setNotification({ message: `${productsToSelect.length} та маҳсулот танланди`, type: 'success' });
+  const handleSelectAll = () => {
+    const allIds = filteredProducts.map((p) => p.id);
+    if (selectedProducts.length === allIds.length) {
+      setSelectedProducts([]);
+      setNotification({ message: "Барча танловлар бекор қилинди", type: 'info' });
     } else {
-      setNotification({ message: "Танлаш учун етарли маҳсулот йўқ", type: 'error' });
+      setSelectedProducts(allIds);
+      setNotification({ message: `${allIds.length} та маҳсулот танланди`, type: 'success' });
     }
+  };
+
+  const handleExportToExcel = () => {
+    if (selectedProducts.length === 0) {
+      setNotification({ message: "Экспорт қилиш учун маҳсулот танланг", type: 'error' });
+      return;
+    }
+
+    const selectedProductsData = filteredProducts.filter(product => 
+      selectedProducts.includes(product.id)
+    );
+
+    // Create CSV content with semicolon separators for Excel
+    const headers = [
+      '№',
+      'Номи', 
+      'Штрих-код',
+      'Модель',
+      'Нарх (USD)',
+      'Нарх (сўм)',
+      'Сотиш нархи (USD)', 
+      'Сотиш нархи (сўм)',
+      'Миқдор',
+      'Категория',
+      'Филиал'
+    ];
+
+    const csvRows = [headers.join(';')];
+    
+    selectedProductsData.forEach((product, index) => {
+      const barcode = product.barcode || '';
+      const row = [
+        index + 1,
+        (product.name || '').replace(/;/g, ','),
+        barcode ? `'${barcode.replace(/;/g, ',')}` : '',
+        (product.model || '').replace(/;/g, ','),
+        product.price || 0,
+        Math.round((product.price || 0) * exchangeRate),
+        product.marketPrice || product.price || 0,
+        Math.round((product.marketPrice || product.price || 0) * exchangeRate),
+        product.quantity || 0,
+        (categories.find(c => c.id === product.categoryId)?.name || '').replace(/;/g, ','),
+        (branches.find(b => b.id === product.branchId)?.name || '').replace(/;/g, ',')
+      ];
+      csvRows.push(row.join(';'));
+    });
+    
+    const csvContent = csvRows.join('\r\n');
+
+    // Create and download file with custom filename
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const hour = String(now.getHours()).padStart(2, '0');
+    const minute = String(now.getMinutes()).padStart(2, '0');
+    const filename = `Zippy_${day}_${month}_${year}_${hour}_${minute}.csv`;
+    
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setNotification({ 
+      message: `${selectedProducts.length} та маҳсулот Excel файлига экспорт қилинди`, 
+      type: 'success' 
+    });
+  };
+
+  const handleDownloadTemplate = () => {
+    // Create template CSV with proper headers for upload
+    const templateHeaders = [
+      'name',
+      'model', 
+      'quantity',
+      'price',
+      'marketPrice'
+    ];
+
+    const templateRows = [templateHeaders.join(';')];
+    
+    // Add sample data rows
+    const sampleData = [
+      ['PELESOS', 'ROSSO VC 1000', '59', '70', '78.51529412'],
+      ['XOLODILNIK', 'VOLMER 521 BSI BLACK', '2', '750', '764.7058824'],
+      ['AVTAMAT', 'VOLMER T55LD8DD', '15', '350', '356.8627451'],
+      ['TELEVIZOR', 'MOONX 32 WEBOS', '10', '115', '128'],
+      ['Nomi', 'Madeli', 'Donasi', 'Kelish puli dolorda', 'Sotish puli Dolorda']
+    ];
+    
+    sampleData.forEach(row => {
+      templateRows.push(row.join(';'));
+    });
+    
+    const templateContent = templateRows.join('\r\n');
+
+    // Create filename with current date/time
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const hour = String(now.getHours()).padStart(2, '0');
+    const minute = String(now.getMinutes()).padStart(2, '0');
+    const filename = `zippy_${day}_${month}_${year}_${hour}_${minute}.csv`;
+    
+    const blob = new Blob(['\uFEFF' + templateContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setNotification({ 
+      message: 'Excel шаблони юклаб олинди', 
+      type: 'success' 
+    });
   };
 
   const handleSelectDefectiveProduct = (productId) => {
@@ -1068,21 +1214,11 @@ const TovarlarRoyxati = () => {
     );
   };
 
-  const handleSelectAll = (type) => {
-    if (type === 'all') {
-      if (selectedProducts.length === products.length) {
-        setSelectedProducts([]);
-      } else {
-        const newSelection = products.map((product) => product.id);
-        setSelectedProducts(newSelection);
-        setNotification({ message: `${newSelection.length} та маҳсулот танланди`, type: 'success' });
-      }
-    } else if (type === 'defective') {
-      if (selectedDefectiveProducts.length === defectiveProducts.length) {
-        setSelectedDefectiveProducts([]);
-      } else {
-        setSelectedDefectiveProducts(defectiveProducts.map((product) => product.id));
-      }
+  const handleSelectAllDefective = () => {
+    if (selectedDefectiveProducts.length === defectiveProducts.length) {
+      setSelectedDefectiveProducts([]);
+    } else {
+      setSelectedDefectiveProducts(defectiveProducts.map((product) => product.id));
     }
   };
 
@@ -1155,7 +1291,14 @@ const TovarlarRoyxati = () => {
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
               {type === 'all' && (
-                <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Танла</th>
+                <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    checked={selected.length > 0 && selected.length === data.length}
+                    onChange={onSelectAll}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
               )}
               <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Номи</th>
               <th className="px-2 py-1 text-left text-sm font-semibold text-gray-600 uppercase tracking-wider">Штрих</th>
@@ -1323,26 +1466,40 @@ const TovarlarRoyxati = () => {
                 Excel юклаш
               </button>
             </div>
+            <button
+              onClick={handleDownloadTemplate}
+              className="inline-flex items-center px-5 py-3 border border-green-300 text-xl font-semibold rounded-lg text-green-800 bg-green-50 hover:bg-green-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 shadow-sm hover:shadow-md whitespace-nowrap"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Excel шаблони
+            </button>
           </div>
           
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-        <div className="relative max-w-2xl">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <svg className="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Номи, штрих код ёки модель бўйича қидиринг..."
-            className="block w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 placeholder-gray-400 text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-          />
-        </div>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        marginBottom: '16px',
+      }}>
+        <input
+          type="text"
+          placeholder="Қидирув: номи, модели, баркод ёки охирги 4 рақам..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={{
+            padding: '8px',
+            borderRadius: '6px',
+            border: '1px solid #ddd',
+            fontSize: '13px',
+            width: '100%',
+            backgroundColor: 'white',
+          }}
+        />
       </div>
 
       {notification && <Notification {...notification} onClose={() => setNotification(null)} />}
@@ -1357,7 +1514,7 @@ const TovarlarRoyxati = () => {
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Барчаси ({products.length})
+            Барчаси ({filteredProducts.length})
           </button>
           <button
             onClick={() => setActiveTab('defective')}
@@ -1398,33 +1555,35 @@ const TovarlarRoyxati = () => {
                       {selectedProducts.length} та маҳсулот танланди
                     </h3>
                     <div className="flex gap-3">
-                      <button
-                        onClick={handleSelect50}
-                        disabled={submitting || selectedProducts.length >= 100 || !canPerformOperations()}
-                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                      >
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Барчасини танлаш
-                      </button>
                       {selectedProducts.length > 0 && (
-                        <button
-                          onClick={handleBulkDelete}
-                          disabled={submitting}
-                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                        >
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                          Танланганларни ўчириш
-                        </button>
+                        <>
+                          <button
+                            onClick={handleExportToExcel}
+                            disabled={submitting}
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Excel қилиб юклаб олиш
+                          </button>
+                          <button
+                            onClick={handleBulkDelete}
+                            disabled={submitting}
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          >
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Танланганларни ўчириш
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
                 </div>
               )}
-              {renderTable(products, selectedProducts, handleSelectProduct, handleSelectAll, 'all')}
+              {renderTable(filteredProducts, selectedProducts, handleSelectProduct, handleSelectAll, 'all')}
             </div>
           )}
           {activeTab === 'defective' && (

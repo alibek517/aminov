@@ -185,13 +185,18 @@ const Kirim = () => {
   };
 
   const filteredProducts = products.filter((p) => {
-    const lowerSearch = searchTerm.toLowerCase();
-    const isLast4 = searchTerm.length === 4 && /^\d{4}$/.test(searchTerm);
-    return (
-      p.name.toLowerCase().includes(lowerSearch) ||
-      (p.model && p.model.toLowerCase().includes(lowerSearch)) ||
-      (p.barcode && p.barcode.toLowerCase().includes(lowerSearch)) ||
-      (isLast4 && p.barcode && p.barcode.endsWith(searchTerm))
+    if (!searchTerm.trim()) return true;
+    
+    const words = searchTerm.toLowerCase().trim().split(/\s+/);
+    const name = (p.name || '').toLowerCase();
+    const model = (p.model || '').toLowerCase();
+    const barcode = (p.barcode || '').toLowerCase();
+    
+    // Multi-word search: all words must be found in at least one field
+    return words.every(word => 
+      name.includes(word) || 
+      model.includes(word) || 
+      barcode.includes(word)
     );
   });
 

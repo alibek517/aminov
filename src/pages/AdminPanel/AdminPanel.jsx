@@ -381,7 +381,8 @@ export default function AdminPanel() {
               >
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
-                    {branch.name}
+                    {branch.name} 
+                    
                   </option>
                 ))}
               </select>

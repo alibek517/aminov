@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { TrendingDown, BarChart3, Box, Settings, LogOut, Bell, Users, Menu, X, TrendingUp } from 'lucide-react';
+import { TrendingDown, BarChart3, Box, Settings, LogOut, Bell, Users, Menu, X, TrendingUp, ArrowRightLeft } from 'lucide-react';
 import Chiqim from './pages/Chiqim';
 import Tovarlar from './pages/Tovarlar';
 import TovarlarniQaytarish from './pages/TovarlarniQaytarish';
@@ -8,6 +8,7 @@ import Qaytarilganlar from './pages/Qaytarilganlar';
 import TovarlarRoyxati from './pages/TovarlarRoyxati';
 import Hisobotlar from './pages/Hisobotlar';
 import Customers from './pages/Customers';
+import WarehouseSales from './pages/Delivery';
 import Logout from '../Chiqish/logout';
 
 // AuthContext
@@ -48,7 +49,7 @@ function SkladPanel() {
   );
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedBranchId, setSelectedBranchId] = useState(() => localStorage.getItem('branchId') || '');
+  const [selectedBranchId, setSelectedBranchId] = useState('all');
   const [branches, setBranches] = useState([]);
   const [error, setError] = useState(null);
   const [userName, setUserName] = useState('Test User');
@@ -61,6 +62,7 @@ function SkladPanel() {
   const navigation = [
     { id: 'hisobotlar', name: 'Хисоботлар', icon: BarChart3, path: '/sklad/hisobotlar' },
     { id: 'chiqim', name: 'Чиким', icon: TrendingUp, path: '/sklad/chiqim' },
+    { id: 'delivery', name: 'Транзаксияалар', icon: ArrowRightLeft, path: '/sklad/delivery' },
     { id: 'tovarlar', name: 'Товарлар', icon: TrendingDown, path: '/sklad/tovarlar' },  
     { id: 'tovarlarroyxati', name: "Товарлар Руйхати", icon: Box, path: '/sklad/tovarlarroyxati' },
     { id: 'tovarlarniqaytarish', name: 'Товарларни қайтариш', icon: TrendingDown, path: '/sklad/tovarlarniqaytarish' },
@@ -149,6 +151,10 @@ function SkladPanel() {
     setShowLogoutModal(false);
   };
 
+  const handleBranchChange = (e) => {
+    setSelectedBranchId(e.target.value);
+  };
+
   const fetchExchangeRate = async () => {
     try {
       setExchangeRateLoading(true);
@@ -203,8 +209,10 @@ function SkladPanel() {
     switch (activeTab) {
       case 'chiqim':
         return <Chiqim selectedBranchId={selectedBranchId} exchangeRate={exchangeRate} />;
+      case 'delivery':
+        return <WarehouseSales selectedBranchId={selectedBranchId} />;
       case 'tovarlar':
-        return <Tovarlar selectedBranchId={selectedBranchId} />;   // 🔥 yangi qo‘shildi
+        return <Tovarlar selectedBranchId={selectedBranchId} />;   // 
       case 'tovarlarroyxati':
         return <TovarlarRoyxati selectedBranchId={selectedBranchId} />;
       case 'tovarlarniqaytarish':
@@ -311,16 +319,6 @@ function SkladPanel() {
                 >
                   <Menu size={20} />
                 </button>
-                <div className="flex items-center gap-2">
-                  {selectedBranchId && (
-                    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
-                      {branches.find(b => b.id.toString() === selectedBranchId)?.name || 'Filial'}
-                    </span>
-                  )}
-                </div>
-                {error && (
-                  <span className="ml-2 text-red-500 text-sm">{error}</span>
-                )}
               </div>
 
               <div className="flex items-center space-x-4 w-full justify-end lg:w-auto">

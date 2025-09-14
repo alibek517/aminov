@@ -208,11 +208,19 @@ const DefectiveManagement = () => {
     let filteredSales = sales;
 
     if (soldSearch.trim()) {
-      filteredSales = filteredSales.filter(sale =>
-        (sale.name || '').toLowerCase().includes(soldSearch.trim().toLowerCase()) ||
-        (sale.model || '').toLowerCase().includes(soldSearch.trim().toLowerCase()) ||
-        (sale.barcode || '').toLowerCase().includes(soldSearch.trim().toLowerCase())
-      );
+      const words = soldSearch.toLowerCase().trim().split(/\s+/);
+      filteredSales = filteredSales.filter(sale => {
+        const name = (sale.name || '').toLowerCase();
+        const model = (sale.model || '').toLowerCase();
+        const barcode = (sale.barcode || '').toLowerCase();
+        
+        // Multi-word search: all words must be found in at least one field
+        return words.every(word => 
+          name.includes(word) || 
+          model.includes(word) || 
+          barcode.includes(word)
+        );
+      });
     }
 
     // Filter by time (optional)
@@ -460,7 +468,7 @@ const DefectiveManagement = () => {
               <input
                 value={soldSearch}
                 onChange={(e) => setSoldSearch(e.target.value)}
-                placeholder="Номи, баркод, модели"
+                placeholder="Қидирув: номи, модели, баркод ёки охирги 4 рақам..."
                 className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
               />
             </div>

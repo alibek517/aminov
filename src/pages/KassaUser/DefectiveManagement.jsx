@@ -16,6 +16,8 @@ const DefectiveManagement = () => {
   const [timeFilter, setTimeFilter] = useState(''); // Time filter (hour)
   const [notification, setNotification] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [branches, setBranches] = useState([]);
+  const [selectedReturnBranchId, setSelectedReturnBranchId] = useState(() => branchId || '');
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -48,6 +50,7 @@ const DefectiveManagement = () => {
     fetchSoldTransactions();
     fetchDefectiveLogs();
     fetchExchangeRate();
+    fetchBranches();
   }, []);
 
   const authHeaders = () => ({
@@ -131,6 +134,18 @@ const DefectiveManagement = () => {
     }
   };
 
+  const fetchBranches = async () => {
+    try {
+      const res = await fetch(`${API_URL}/branches`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const branchesArray = Array.isArray(data) ? data : (data.branches || []);
+      setBranches(branchesArray);
+    } catch (e) {
+      // ignore
+    }
+  };
+
   const individualSales = useMemo(() => {
     const sales = [];
 
@@ -204,15 +219,16 @@ const DefectiveManagement = () => {
     // Sort by creation time (newest first)
     sales.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    // Filter by search term
     let filteredSales = sales;
 
     if (soldSearch.trim()) {
-      filteredSales = filteredSales.filter(sale =>
-        (sale.name || '').toLowerCase().includes(soldSearch.trim().toLowerCase()) ||
-        (sale.model || '').toLowerCase().includes(soldSearch.trim().toLowerCase()) ||
-        (sale.barcode || '').toLowerCase().includes(soldSearch.trim().toLowerCase())
-      );
+      const words = soldSearch.toLowerCase().trim().split(/\s+/);
+      filteredSales = filteredSales.filter(sale => {
+        const name = (sale.name || '').toLowerCase();
+        const model = (sale.model || '').toLowerCase();
+        const barcode = (sale.barcode || '').toLowerCase();
+        return words.every(word => name.includes(word) || model.includes(word) || barcode.includes(word));
+      });
     }
 
     // Filter by time (optional)
@@ -327,7 +343,7 @@ const DefectiveManagement = () => {
         actionType: 'RETURN',
         quantity: qty,
         description: reason,
-        branchId: Number(selectedBranchIdLS || branchId),
+        branchId: Number(selectedReturnBranchId || selectedBranchIdLS || branchId),
         isFromSale: true,
         transactionId: modalData.transactionId,
         cashAdjustmentDirection: 'MINUS', // Force MINUS for RETURN
@@ -459,7 +475,22 @@ const DefectiveManagement = () => {
             className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300 mb-3"
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm text-gray-700 mb-1">Қайси филиалга қайтарилсин</label>
+              <select
+                value={selectedReturnBranchId}
+                onChange={(e) => setSelectedReturnBranchId(e.target.value)}
+                className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 border-gray-300"
+              >
+                <option value="">Филиал танланг</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="block text-sm text-gray-700 mb-1">Сотилган махсулот қидириш</label>
               <input

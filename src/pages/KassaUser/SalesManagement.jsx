@@ -6,9 +6,12 @@ import { formatAmount, formatCurrency } from '../../utils/currencyFormat';
 
 const SalesManagement = () => {
   const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]); // Store all products for client-side filtering
   const [branches, setBranches] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [availableBranches, setAvailableBranches] = useState([]); // Branches available for product selection
+  const [selectedProductBranchId, setSelectedProductBranchId] = useState(''); // Branch to fetch products from
   const [selectedUserId, setSelectedUserId] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
@@ -246,7 +249,26 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         const userBranchId = localStorage.getItem('branchId');
         if (userBranchId) {
           setSelectedBranchId(userBranchId);
+          setSelectedProductBranchId(userBranchId); // Default to user's branch
         }
+        
+        // Set available branches: user's branch + all warehouses (SKLAD)
+        const userBranch = branchesRes.data.find(b => b.id.toString() === userBranchId);
+        const warehouses = branchesRes.data.filter(b => b.type === 'SKLAD');
+        const availableBranchList = [];
+        
+        if (userBranch) {
+          availableBranchList.push(userBranch);
+        }
+        
+        // Add warehouses that are not already included
+        warehouses.forEach(warehouse => {
+          if (!availableBranchList.find(b => b.id === warehouse.id)) {
+            availableBranchList.push(warehouse);
+          }
+        });
+        
+        setAvailableBranches(availableBranchList);
       } catch (err) {
         setNotification({ message: err.message || 'Filial va foydalanuvchilarni yuklashda xatolik', type: 'error' });
         console.error('Fetch branches and users error:', err);
@@ -259,7 +281,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
   const loadData = useCallback(async () => {
     setLoading(true);
     setNotification(null);
-    const branchId = Number(selectedBranchId);
+    const branchId = Number(selectedProductBranchId || selectedBranchId);
     const isValidBranchId = !isNaN(branchId) && Number.isInteger(branchId) && branchId > 0;
 
     if (!isValidBranchId) {
@@ -272,10 +294,9 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     try {
       const queryParams = new URLSearchParams();
       queryParams.append('branchId', branchId.toString());
-      if (searchTerm.trim()) queryParams.append('search', searchTerm);
       queryParams.append('includeZeroQuantity', 'true');
 
-      let allProducts = [];
+      let fetchedProducts = [];
       let page = 1;
       while (true) {
         const productsRes = await axiosWithAuth({
@@ -283,12 +304,27 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
           url: `${API_URL}/products?${queryParams.toString()}&page=${page}`,
         });
         const productsData = Array.isArray(productsRes.data) ? productsRes.data : productsRes.data.products || [];
-        allProducts = [...allProducts, ...productsData];
+        fetchedProducts = [...fetchedProducts, ...productsData];
         if (!productsRes.data.nextPage) break;
         page++;
       }
 
-      const sortedProducts = allProducts.sort((a, b) => {
+      // Store all products for filtering
+      setAllProducts(fetchedProducts);
+
+      // Apply client-side filtering
+      let filteredProducts = [...fetchedProducts];
+      if (searchTerm.trim()) {
+        const words = searchTerm.toLowerCase().trim().split(/\s+/);
+        filteredProducts = filteredProducts.filter(p => {
+          const name = (p.name || '').toLowerCase();
+          const model = (p.model || '').toLowerCase();
+          const barcode = (p.barcode || '').toLowerCase();
+          return words.every(word => name.includes(word) || model.includes(word) || barcode.includes(word));
+        });
+      }
+
+      const sortedProducts = filteredProducts.sort((a, b) => {
         if (a.quantity === 0 && b.quantity !== 0) return 1;
         if (a.quantity !== 0 && b.quantity === 0) return -1;
         return a.id - b.id;
@@ -297,7 +333,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
 
       // Store original quantities
       const quantities = {};
-      sortedProducts.forEach(product => {
+      fetchedProducts.forEach(product => {
         quantities[product.id] = product.quantity;
       });
       setOriginalQuantities(quantities);
@@ -306,13 +342,36 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, selectedBranchId]);
+  }, [selectedBranchId, selectedProductBranchId]);
+
+  // Separate effect for search filtering
+  useEffect(() => {
+    if (!allProducts.length) return;
+    
+    let filteredProducts = [...allProducts];
+    if (searchTerm.trim()) {
+      const words = searchTerm.toLowerCase().trim().split(/\s+/);
+      filteredProducts = filteredProducts.filter(p => {
+        const name = (p.name || '').toLowerCase();
+        const model = (p.model || '').toLowerCase();
+        const barcode = (p.barcode || '').toLowerCase();
+        return words.every(word => name.includes(word) || model.includes(word) || barcode.includes(word));
+      });
+    }
+
+    const sortedProducts = filteredProducts.sort((a, b) => {
+      if (a.quantity === 0 && b.quantity !== 0) return 1;
+      if (a.quantity !== 0 && b.quantity === 0) return -1;
+      return a.id - b.id;
+    });
+    setProducts(sortedProducts);
+  }, [searchTerm, allProducts]);
 
   useEffect(() => {
-    if (selectedBranchId) {
+    if (selectedBranchId && selectedProductBranchId) {
       loadData();
     }
-  }, [loadData, selectedBranchId]);
+  }, [loadData, selectedBranchId, selectedProductBranchId]);
 
 
 
@@ -691,20 +750,46 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         ))}
       </select>
 
-      <input
-        type="text"
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        placeholder="Товар қидириш..."
-        className="w-full p-3 border border-gray-300 rounded-lg mb-6 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+      <div className="mb-6 space-y-4">
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Товар қидириш..."
+          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        
+        <div className="flex items-center gap-4">
+          <label className="text-sm font-medium text-gray-700">Маҳсулотларни танлаш:</label>
+          <select
+            value={selectedProductBranchId}
+            onChange={(e) => setSelectedProductBranchId(e.target.value)}
+            className="p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Филиал танланг</option>
+            {availableBranches.map((branch) => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name} {branch.type === 'SKLAD' ? '(Склад)' : '(Савдо Марказ)'}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {loading ? (
         <div className="text-center text-gray-600">Юкланмоқда...</div>
       ) : (
         <>
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-700">Маҳсулотлар қолдиғи</h2>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-700">Маҳсулотлар қолдиғи</h2>
+              {selectedProductBranchId && (
+                <p className="text-sm text-gray-600 mt-1">
+                  Танланган филиал: {availableBranches.find(b => b.id.toString() === selectedProductBranchId)?.name}
+                  {availableBranches.find(b => b.id.toString() === selectedProductBranchId)?.type === 'SKLAD' ? ' (Склад)' : ' (Савдо Марказ)'}
+                </p>
+              )}
+            </div>
             <div className="flex gap-2">
               {selectedItems.length > 0 && (
                 <button
@@ -786,6 +871,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                                 } else {
                                   // Add new item - convert USD to som
                                   const priceInSom = Math.round(Number(product.marketPrice || product.price) * exchangeRate);
+                                  const sourceBranch = availableBranches.find(b => b.id.toString() === selectedProductBranchId);
                                   setSelectedItems([
                                     ...selectedItems,
                                     {
@@ -795,6 +881,9 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                                       price: priceInSom.toString(),
                                       marketPrice: priceInSom.toString(),
                                       maxQuantity: product.quantity,
+                                      sourceBranchId: selectedProductBranchId,
+                                      sourceBranchName: sourceBranch?.name || 'Номаълум',
+                                      sourceBranchType: sourceBranch?.type || 'SAVDO_MARKAZ',
                                     },
                                   ]);
                                   setNotification({ message: `${product.name} (${quantity} дона) саватга қўшилди`, type: 'success' });
@@ -846,6 +935,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     <thead>
                       <tr className="bg-gray-50">
                         <th className="p-3 text-left font-medium">Маҳсулот</th>
+                        <th className="p-3 text-left font-medium">Филиал</th>
                         <th className="p-3 text-left font-medium">Нарх (сом)</th>
                         <th className="p-3 text-left font-medium">Миқдор</th>
                         <th className="p-3 text-left font-medium">Жами</th>
@@ -856,6 +946,13 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       {selectedItems.map((item, index) => (
                         <tr key={index} className="border-t border-gray-200">
                           <td className="p-3">{item.name}</td>
+                          <td className="p-3">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              item.sourceBranchType === 'SKLAD' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {item.sourceBranchName} {item.sourceBranchType === 'SKLAD' ? '(Склад)' : '(Савдо)'}
+                            </span>
+                          </td>
                           <td className="p-3">
                             <input
                               type="number"
@@ -1243,6 +1340,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                     <thead>
                       <tr className="bg-gray-50">
                         <th className="p-3 text-left font-medium">Маҳсулот</th>
+                        <th className="p-3 text-left font-medium">Филиал</th>
                         <th className="p-3 text-left font-medium">Нарх (сом)</th>
                         <th className="p-3 text-left font-medium">Миқдор</th>
                         <th className="p-3 text-left font-medium">Жами</th>
@@ -1253,7 +1351,13 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       {selectedItems.map((item, index) => (
                         <tr key={index} className="border-t border-gray-200">
                           <td className="p-3">{item.name}</td>
-
+                          <td className="p-3">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              item.sourceBranchType === 'SKLAD' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {item.sourceBranchName} {item.sourceBranchType === 'SKLAD' ? '(Склад)' : '(Савдо)'}
+                            </span>
+                          </td>
                           <td className="p-3">
                             <input
                               type="number"
@@ -1660,11 +1764,15 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       if (!rd.items || rd.items.length === 0) throw new Error("Маҳсулотлар танланмаган");
                       const userId = Number(localStorage.getItem('userId'));
                       if (!userId || isNaN(userId)) throw new Error("Фойдаланувчи ID топилмади");
-                      const fromBranchId = rd.branch?.id
-                        ? Number(rd.branch.id)
-                        : selectedBranch
-                          ? Number(selectedBranch)
-                          : Number(selectedBranchId);
+                      // Use the branch where products are actually located (selectedProductBranchId)
+                      // This ensures inventory is deducted from the correct warehouse/branch
+                      const fromBranchId = selectedProductBranchId 
+                        ? Number(selectedProductBranchId)
+                        : rd.branch?.id
+                          ? Number(rd.branch.id)
+                          : selectedBranch
+                            ? Number(selectedBranch)
+                            : Number(selectedBranchId);
                       if (!fromBranchId || isNaN(fromBranchId)) throw new Error("Филиал ID топилмади");
                       const soldByUserId = rd.seller?.id ? Number(rd.seller.id) : Number(selectedUserId);
                       if (!soldByUserId || isNaN(soldByUserId)) throw new Error("Сотувчи ID топилмади");

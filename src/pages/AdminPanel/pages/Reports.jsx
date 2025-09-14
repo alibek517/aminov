@@ -2159,11 +2159,11 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                 <div className="bg-green-50 rounded-lg p-4">
                   <h4 className="text-md font-semibold text-green-800 mb-3 flex items-center gap-2">
                     <UserIcon size={18} />
-                    Омбор ходимлари ({allUsers.filter(user => user.role === 'WAREHOUSE' && (!selectedBranchId || user.branchId === selectedBranchId)).length})
+                    Склад ходимлари ({allUsers.filter(user => user.role === 'WAREHOUSE' && (!selectedBranchId || user.branchId === selectedBranchId)).length})
                   </h4>
                   <div className="space-y-2">
                     {allUsers.filter(user => user.role === 'WAREHOUSE' && (!selectedBranchId || user.branchId === selectedBranchId)).length === 0 ? (
-                      <p className="text-gray-500 text-sm">Омбор ходимлари топилмади</p>
+                      <p className="text-gray-500 text-sm">Склад ходимлари топилмади</p>
                     ) : (
                       allUsers
                         .filter(user => user.role === 'WAREHOUSE' && (!selectedBranchId || user.branchId === selectedBranchId))
@@ -2549,7 +2549,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
             <div className="bg-white w-[95vw] h-[95vh] rounded-lg shadow-xl flex flex-col">
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <h3 className="text-lg font-semibold">
-                  {selectedWarehouse.name} — омбор операциялари
+                  {selectedWarehouse.name} — склад операциялари
                 </h3>
                 <button
                   className="text-gray-500 hover:text-gray-700"

@@ -22,7 +22,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { formatAmount, formatAmountSom, formatAmountUSD } from '../../../utils/currencyFormat';
 
 const PRODUCT_STATUSES = [
-  { value: 'IN_WAREHOUSE', label: 'Омборда' },
+  { value: 'IN_WAREHOUSE', label: 'Складда' },
   { value: 'IN_STORE', label: 'Дўконда' },
   { value: 'SOLD', label: 'Сотилган' },
   { value: 'DEFECTIVE', label: 'Брак' },
@@ -267,9 +267,18 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
   };
 
   const baseFilteredProducts = products.filter((product) => {
-    const matchesSearch =
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (product.barcode?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+    // Advanced search logic matching Korish.jsx
+    let matchesSearch = true;
+    if (searchTerm.trim()) {
+      const words = searchTerm.toLowerCase().trim().split(/\s+/);
+      matchesSearch = words.every(word => {
+        const name = (product.name || '').toLowerCase();
+        const model = (product.model || '').toLowerCase();
+        const barcode = (product.barcode || '').toLowerCase();
+        return name.includes(word) || model.includes(word) || barcode.includes(word);
+      });
+    }
+    
     const matchesCategory =
       selectedCategory === 'all' || product.categoryId.toString() === selectedCategory;
     const matchesBranch = !selectedBranchId || product.branchId.toString() === selectedBranchId;

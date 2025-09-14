@@ -23,7 +23,7 @@ const translateStatus = (status) => {
     return map[status] || status;
 };
 
-function Tranzaksiyalar({ selectedBranchId }) {
+function Tranzaksiyalar({ selectedBranchId: propSelectedBranchId }) {
     const [transactions, setTransactions] = useState([]);
     const [defectiveLogs, setDefectiveLogs] = useState([]);
     const [branches, setBranches] = useState([]);
@@ -36,6 +36,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
     const [selectedLog, setSelectedLog] = useState(null);
     const [viewMode, setViewMode] = useState('non-returned'); // 'non-returned' or 'logs'
     const [selectedTransactionIds, setSelectedTransactionIds] = useState([]);
+    const [selectedBranchId, setSelectedBranchId] = useState('all');
     
     const token = localStorage.getItem('access_token');
     
@@ -164,27 +165,6 @@ function Tranzaksiyalar({ selectedBranchId }) {
         }
     };
 
-    const handleDeleteLog = async (logId) => {
-        if (!window.confirm('Ҳақиқатан ҳам ушбу қайтариш логини ўчирмоқчимисиз?')) return;
-
-        try {
-            const res = await fetch(`https://suddocs.uz/defective-logs/${logId}`, {
-                method: 'DELETE',
-                headers: authHeaders(),
-            });
-
-            if (res.ok) {
-                setDefectiveLogs(defectiveLogs.filter((log) => log.id !== logId));
-                alert('Қайтариш логи муваффақиятли ўчирилди');
-            } else {
-                const errorData = await res.json().catch(() => ({}));
-                alert(`Ўчиришда хатолик: ${errorData.message || 'Номаълум хатолик'}`);
-            }
-        } catch (err) {
-            alert('Уланишда хатолик: ' + err.message);
-        }
-    };
-
     const openTransactionModal = (t) => setSelectedTransaction(t);
     const openLogModal = (log) => setSelectedLog(log);
     const closeModal = () => {
@@ -193,7 +173,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
     };
 
     const filteredTransactions = transactions.filter((t) => {
-        const matchesBranch = !selectedBranchId || t.fromBranch?.id?.toString() === selectedBranchId;
+        const matchesBranch = selectedBranchId === 'all' || !selectedBranchId || t.fromBranch?.id?.toString() === selectedBranchId;
         const matchesPayment = !filterPaymentType || t.paymentType === filterPaymentType;
         const matchesDate = !filterDate || t.createdAt.startsWith(filterDate);
         const lowerSearch = searchTerm.toLowerCase();
@@ -512,6 +492,18 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                     />
                                 </div>
                                 <select
+                                    value={selectedBranchId}
+                                    onChange={(e) => setSelectedBranchId(e.target.value)}
+                                    className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="all">Барча филиаллар</option>
+                                    {branches.map((branch) => (
+                                        <option key={branch.id} value={branch.id}>
+                                            {branch.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
                                     value={filterPaymentType}
                                     onChange={(e) => setFilterPaymentType(e.target.value)}
                                     className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -658,13 +650,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                                     >
                                                         <Eye size={16} />
                                                     </button>
-                                                    <button
-                                                        onClick={() => handleDelete(t.id)}
-                                                        className="inline-flex items-center justify-center w-8 h-8 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-full transition-colors ml-2"
-                                                        title="Ўчириш"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                   
                                                 </td>
                                             </tr>
                                         ))}
@@ -712,7 +698,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                                 Ходим
                                             </th>
                                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Ҳаракатлар
+                                                Батафсил
                                             </th>
                                         </tr>
                                     </thead>
@@ -755,22 +741,13 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-center">
-                                                    <div className="flex items-center justify-center gap-2">
-                                                        <button
-                                                            onClick={() => openLogModal(log)}
-                                                            className="inline-flex items-center justify-center w-8 h-8 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-full transition-colors"
-                                                            title="Батафсил маълумот"
-                                                        >
-                                                            <Eye size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDeleteLog(log.id)}
-                                                            className="inline-flex items-center justify-center w-8 h-8 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-full transition-colors"
-                                                            title="Ўчириш"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
+                                                    <button
+                                                        onClick={() => openLogModal(log)}
+                                                        className="inline-flex items-center justify-center w-8 h-8 text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-full transition-colors"
+                                                        title="Батафсил маълумот"
+                                                    >
+                                                        <Eye size={16} />
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}

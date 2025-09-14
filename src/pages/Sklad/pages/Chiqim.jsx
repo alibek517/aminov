@@ -5,6 +5,7 @@ import Receipt from '../../KassaUser/Receipt/Receipt';
 
 const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExchangeRate }) => {
   const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]); // Store all products for client-side filtering
   const [branches, setBranches] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState(propSelectedBranchId || '');
   const [selectedItems, setSelectedItems] = useState([]);
@@ -199,10 +200,9 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
     try {
       const queryParams = new URLSearchParams();
       queryParams.append('branchId', branchId.toString());
-      if (searchTerm.trim()) queryParams.append('search', searchTerm);
       queryParams.append('includeZeroQuantity', 'true');
 
-      let allProducts = [];
+      let fetchedProducts = [];
       let page = 1;
       while (true) {
         const productsRes = await axiosWithAuth({
@@ -210,32 +210,64 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           url: `${API_URL}/products?${queryParams.toString()}&page=${page}`,
         });
         const productsData = Array.isArray(productsRes.data) ? productsRes.data : productsRes.data.products || [];
-        allProducts = [...allProducts, ...productsData];
+        fetchedProducts = [...fetchedProducts, ...productsData];
         if (!productsRes.data.nextPage) break;
         page++;
       }
 
-      setProducts(
-        allProducts.map((product) => ({
-          ...product,
-          name:
-            product.name ??
-            product.productName ??
-            product.title ??
-            product.item_name ??
-            product.product_title ??
-            product.item_title ??
-            `Product ${product.id}`,
-          price: Number(product.price) || 0,
-          quantity: Number(product.quantity) || 0,
-          marketPrice: Number(product.marketPrice || product.price) || 0,
-        })),
-      );
+      const processedProducts = fetchedProducts.map((product) => ({
+        ...product,
+        name:
+          product.name ??
+          product.productName ??
+          product.title ??
+          product.item_name ??
+          product.product_title ??
+          product.item_title ??
+          `Product ${product.id}`,
+        price: Number(product.price) || 0,
+        quantity: Number(product.quantity) || 0,
+        marketPrice: Number(product.marketPrice || product.price) || 0,
+      }));
+
+      // Store all products for filtering
+      setAllProducts(processedProducts);
+      
+      // Apply client-side filtering
+      let filteredProducts = [...processedProducts];
+      if (searchTerm.trim()) {
+        const words = searchTerm.toLowerCase().trim().split(/\s+/);
+        filteredProducts = filteredProducts.filter(p => {
+          const name = (p.name || '').toLowerCase();
+          const model = (p.model || '').toLowerCase();
+          const barcode = (p.barcode || '').toLowerCase();
+          return words.every(word => name.includes(word) || model.includes(word) || barcode.includes(word));
+        });
+      }
+
+      setProducts(filteredProducts);
     } catch (err) {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, selectedBranchId]);
+  }, [selectedBranchId]);
+
+  // Separate effect for search filtering
+  useEffect(() => {
+    if (!allProducts.length) return;
+    
+    let filteredProducts = [...allProducts];
+    if (searchTerm.trim()) {
+      const words = searchTerm.toLowerCase().trim().split(/\s+/);
+      filteredProducts = filteredProducts.filter(p => {
+        const name = (p.name || '').toLowerCase();
+        const model = (p.model || '').toLowerCase();
+        const barcode = (p.barcode || '').toLowerCase();
+        return words.every(word => name.includes(word) || model.includes(word) || barcode.includes(word));
+      });
+    }
+    setProducts(filteredProducts);
+  }, [searchTerm, allProducts]);
 
   useEffect(() => {
     if (selectedBranchId) loadData();
@@ -1186,6 +1218,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                   <th className="p-3">ID</th>
                   <th className="p-3">Номи</th>
                   <th className="p-3">Модел</th>
+                  <th className="p-3">Баркод</th>
                   <th className="p-3">Филиал</th>
                   <th className="p-3">Нарх (USD)</th>
                   <th className="p-3">Нарх (сом)</th>
@@ -1200,6 +1233,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                       <td className="p-3">#{product.id}</td>
                       <td className="p-3">{product.name}</td>
                       <td className="p-3">{product.model || 'N/A'}</td>
+                      <td className="p-3">{product.barcode || 'N/A'}</td>
                       <td className="p-3">{product.branch?.name || "Noma'lum"}</td>
                       <td className="p-3">{formatCurrency(product.marketPrice)}</td>
                       <td className="p-3">{formatCurrencySom(product.marketPrice * exchangeRate)}</td>

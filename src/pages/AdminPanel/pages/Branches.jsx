@@ -18,11 +18,10 @@ import { formatAmount, formatCurrency } from '../../../utils/currencyFormat';
 const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('all');
   const [branches, setBranches] = useState([]);
   const [modalState, setModalState] = useState({ isOpen: false, type: null, branch: null });
-  const [newBranch, setNewBranch] = useState({ name: '', location: '' });
-  const [editBranch, setEditBranch] = useState({ name: '', location: '' });
+  const [newBranch, setNewBranch] = useState({ name: '', location: '', type: 'SAVDO_MARKAZ' });
+  const [editBranch, setEditBranch] = useState({ name: '', location: '', type: 'SAVDO_MARKAZ' });
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState(
@@ -148,12 +147,13 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
         body: JSON.stringify({
           name: newBranch.name,
           location: newBranch.location,
+          type: newBranch.type,
         }),
       });
       console.log('Add response:', response.status, response.statusText);
       if (response.ok) {
         setModalState({ isOpen: false, type: null, branch: null });
-        setNewBranch({ name: '', location: '' });
+        setNewBranch({ name: '', location: '', type: 'SAVDO_MARKAZ' });
         await fetchBranches();
       }
     } catch (err) {
@@ -180,13 +180,14 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
           body: JSON.stringify({
             name: editBranch.name,
             location: editBranch.location,
+            type: editBranch.type,
           }),
         }
       );
       console.log('Edit response:', response.status, response.statusText);
       if (response.ok) {
         setModalState({ isOpen: false, type: null, branch: null });
-        setEditBranch({ name: '', location: '' });
+        setEditBranch({ name: '', location: '', type: 'SAVDO_MARKAZ' });
         await fetchBranches();
       }
     } catch (err) {
@@ -236,7 +237,7 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
     }
     setModalState({ isOpen: true, type, branch });
     if (type === 'edit' && branch) {
-      setEditBranch({ name: branch.name, location: branch.location });
+      setEditBranch({ name: branch.name, location: branch.location, type: branch.type || 'SAVDO_MARKAZ' });
     }
     setError(null);
   };
@@ -273,7 +274,29 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
       case 'suspended':
         return 'Тўхтатилган';
       default:
-        return status || 'Номаълум';
+        return 'Номаълум';
+    }
+  };
+
+  const getBranchTypeText = (type) => {
+    switch (type) {
+      case 'SKLAD':
+        return 'Склад';
+      case 'SAVDO_MARKAZ':
+        return 'Савдо Марказ';
+      default:
+        return 'Савдо Марказ';
+    }
+  };
+
+  const getBranchTypeBadge = (type) => {
+    switch (type) {
+      case 'SKLAD':
+        return 'bg-orange-100 text-orange-800';
+      case 'SAVDO_MARKAZ':
+        return 'bg-blue-100 text-blue-800';
+      default:
+        return 'bg-blue-100 text-blue-800';
     }
   };
 
@@ -281,16 +304,12 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
     const matchesSearch =
       branch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       branch.address.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = selectedStatus === 'all' || branch.status === selectedStatus;
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   });
 
   const totalBranches = branches.length;
-  const activeBranches = branches.filter((b) => b.status === 'active').length;
   const totalEmployees = branches.reduce((sum, branch) => sum + branch.employeeCount, 0);
   const totalInventoryValue = branches.reduce((sum, branch) => sum + branch.inventoryValue, 0);
-
-
 
   return (
     <div className="space-y-6">
@@ -312,7 +331,7 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex items-center">
           <div className="flex items-center">
             <div className="p-3 bg-blue-50 rounded-lg mr-4">
@@ -321,17 +340,6 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
             <div>
               <p className="text-sm font-medium text-gray-600">Жами Филиаллар</p>
               <p className="text-2xl font-bold text-gray-900">{totalBranches}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <div className="flex items-center">
-            <div className="p-3 bg-green-50 rounded-lg mr-4">
-              <Building2 className="text-green-600" size={24} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Фаол Филиаллар</p>
-              <p className="text-2xl font-bold text-gray-900">{activeBranches}</p>
             </div>
           </div>
         </div>
@@ -376,21 +384,6 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <div className="flex items-center">
-            <Filter className="text-gray-400 mr-2" size={20} />
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">Барча ҳолатлар</option>
-              {Array.from(new Set(branches.map(b => b.status))).map(status => (
-                <option key={status} value={status}>
-                  {getStatusText(status)}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       </div>
 
@@ -406,13 +399,13 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   Манзил
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Тури
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Ходимлар
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Инвентар
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Ҳолат
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Амаллар
@@ -446,6 +439,11 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBranchTypeBadge(branch.type)}`}>
+                      {getBranchTypeText(branch.type)}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <Users size={14} className="mr-2 text-gray-400" />
                       <span className="text-sm font-medium text-gray-900">
@@ -457,15 +455,6 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="text-sm font-semibold text-gray-900">
                       {formatAmount(branch.inventoryValue)}
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusBadge(
-                        branch.status
-                      )}`}
-                    >
-                      {getStatusText(branch.status)}
-                    </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-2">
@@ -537,10 +526,10 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   <p className="mt-1 text-sm text-gray-900">{modalState.branch.location}</p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Ҳолат</label>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {getStatusText(modalState.branch.status)}
-                  </p>
+                  <label className="block text-sm font-medium text-gray-700">Филиал Тури</label>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBranchTypeBadge(modalState.branch.type)}`}>
+                    {getBranchTypeText(modalState.branch.type)}
+                  </span>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Ходимлар</label>
@@ -588,6 +577,18 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                     required
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Филиал Тури</label>
+                  <select
+                    value={newBranch.type}
+                    onChange={(e) => setNewBranch({ ...newBranch, type: e.target.value })}
+                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="SAVDO_MARKAZ">Савдо Марказ</option>
+                    <option value="SKLAD">Склад</option>
+                  </select>
+                </div>
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
@@ -629,6 +630,18 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
                     required
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Филиал Тури</label>
+                  <select
+                    value={editBranch.type}
+                    onChange={(e) => setEditBranch({ ...editBranch, type: e.target.value })}
+                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="SAVDO_MARKAZ">Савдо Марказ</option>
+                    <option value="SKLAD">Склад</option>
+                  </select>
                 </div>
                 <div className="flex justify-end gap-2">
                   <button
