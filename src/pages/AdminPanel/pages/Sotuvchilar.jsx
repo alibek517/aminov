@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DollarSign, Calendar, User, TrendingUp } from 'lucide-react';
+import { DollarSign, Calendar, User, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react';
 
 const Notification = ({ message, type, onClose }) => (
   <div
@@ -24,6 +24,7 @@ function Sotuvchilar() {
   const [loading, setLoading] = useState(false);
   const [salesData, setSalesData] = useState([]);
   const [earningsSummary, setEarningsSummary] = useState({});
+  const [expandedRows, setExpandedRows] = useState({});
   const [exchangeRate, setExchangeRate] = useState(12500); 
   const token = localStorage.getItem('access_token');
   const branchId = localStorage.getItem('branchId');
@@ -290,6 +291,7 @@ function Sotuvchilar() {
     switch (type) {
       case 'CASH': return 'Нақд';
       case 'CARD': return 'Карта';
+      case 'TERMINAL': return 'Терминал';
       case 'CREDIT': return 'Кредит';
       case 'INSTALLMENT': return 'Бўлиб тўлаш';
       default: return 'Номаълум';
@@ -300,6 +302,7 @@ function Sotuvchilar() {
     switch (type) {
       case 'CASH': return 'text-green-600 bg-green-100';
       case 'CARD': return 'text-blue-600 bg-blue-100';
+      case 'TERMINAL': return 'text-blue-600 bg-blue-100';
       case 'CREDIT': return 'text-purple-600 bg-purple-100';
       case 'INSTALLMENT': return 'text-orange-600 bg-orange-100';
       default: return 'text-gray-600 bg-gray-100';
@@ -309,6 +312,13 @@ function Sotuvchilar() {
   const getBranchName = (branchId) => {
     const branch = branches.find(b => b.id === branchId);
     return branch ? branch.name : 'Номаълум';
+  };
+
+  const toggleRow = (id) => {
+    setExpandedRows(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
   };
 
   return (
@@ -493,33 +503,85 @@ function Sotuvchilar() {
                         return true;
                       })
                       .map((sale) => (
-                        <tr key={sale.id} className="hover:bg-gray-50 transition-colors duration-150">
-                          <td className="px-6 py-4 text-gray-900">#{sale.id}</td>
-                          <td className="px-6 py-4 text-gray-700">
-                            {users.find((u) => u.id === sale.userId)?.firstName || 'Складдан'}{' '}
-                            {users.find((u) => u.id === sale.userId)?.lastName || ''}
-                          </td>
-                          <td className="px-6 py-4 text-gray-700">
-                            {getBranchName(sale.branchId)}
-                          </td>
-                          <td className="px-6 py-4 text-gray-700">{sale.customerName}</td>
-                          <td className="px-6 py-4 text-gray-700 font-medium">
-                            {formatCurrency(sale.totalInSom, 'UZS')}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentTypeColor(
-                                sale.paymentType
-                              )}`}
-                            >
-                              {getPaymentTypeLabel(sale.paymentType)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="text-gray-900">{formatDate(sale.createdAt)}</div>
-                            <div className="text-xs text-gray-500">{formatTime(sale.createdAt)}</div>
-                          </td>
-                        </tr>
+                        <React.Fragment key={sale.id}>
+                          <tr className="hover:bg-gray-50 transition-colors duration-150 cursor-pointer" onClick={() => toggleRow(sale.id)}>
+                            <td className="px-6 py-4 text-gray-900 flex items-center">
+                              {expandedRows[sale.id] ? <ChevronDown size={16} className="mr-1" /> : <ChevronRight size={16} className="mr-1" />}
+                              #{sale.id}
+                            </td>
+                            <td className="px-6 py-4 text-gray-700">
+                              {users.find((u) => u.id === sale.userId)?.firstName || 'Складдан'}{' '}
+                              {users.find((u) => u.id === sale.userId)?.lastName || ''}
+                            </td>
+                            <td className="px-6 py-4 text-gray-700">
+                              {getBranchName(sale.branchId)}
+                            </td>
+                            <td className="px-6 py-4 text-gray-700">{sale.customerName}</td>
+                            <td className="px-6 py-4 text-gray-700 font-medium">
+                              {formatCurrency(sale.totalInSom, 'UZS')}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span
+                                className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentTypeColor(
+                                  sale.paymentType
+                                )}`}
+                              >
+                                {getPaymentTypeLabel(sale.paymentType)}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-gray-900">{formatDate(sale.createdAt)}</div>
+                              <div className="text-xs text-gray-500">{formatTime(sale.createdAt)}</div>
+                            </td>
+                          </tr>
+                          {expandedRows[sale.id] && sale.items && sale.items.length > 0 && (
+                            <tr className="bg-gray-50">
+                              <td colSpan="7" className="px-6 py-4">
+                                <div className="ml-6">
+                                  <h4 className="font-medium text-gray-700 mb-2">Сотилган махсулотлар:</h4>
+                                  <div className="overflow-x-auto">
+                                    <table className="min-w-full bg-white rounded-lg overflow-hidden">
+                                      <thead className="bg-gray-100">
+                                        <tr>
+                                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Номи</th>
+                                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Модель</th>
+                                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Barcode</th>
+                                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Сони</th>
+                                          <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Филиал</th>
+                                         </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-200">
+                                        {sale.items.map((item, index) => {
+                                          console.log('Item data:', item); // Debug log
+                                          return (
+                                          <tr key={index} className="hover:bg-gray-50">
+                                            <td className="px-4 py-2 text-sm text-gray-800">
+                                              {item.product?.name || item.name || 'Номаълум махсулот'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-600">
+                                              {item.product?.model || item.model || item.product?.type || 'Номаълум'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-600 text-right">
+                                              {item.barcode || item.product?.barcode || 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-600 text-right">
+                                              {item.quantity || 1}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm text-gray-600 text-right">
+                                              {getBranchName(sale.branchId || item.branchId)}
+                                            </td>
+                                           
+                                          </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       ))}
                   </tbody>
                 </table>

@@ -30,20 +30,21 @@ function Tranzaksiyalar({ selectedBranchId }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [filterPaymentType, setFilterPaymentType] = useState('');
-    const [filterDate, setFilterDate] = useState('');
+    const today = new Date().toISOString().split('T')[0];
+    const [filterDate, setFilterDate] = useState(today);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [selectedLog, setSelectedLog] = useState(null);
     const [viewMode, setViewMode] = useState('non-returned'); // 'non-returned' or 'logs'
     const [selectedTransactionIds, setSelectedTransactionIds] = useState([]);
-    
+
     const token = localStorage.getItem('access_token');
-    
+
     const authHeaders = () => ({
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
     });
-    
+
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
@@ -56,7 +57,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
                 if (!transactionsResponse.ok) throw new Error('Маълумот олишда хатолик');
                 const transactionsData = await transactionsResponse.json();
                 setTransactions(transactionsData.transactions || []);
-                
+
                 // Fetch branches
                 const branchesResponse = await fetch('https://suddocs.uz/branches/', {
                     headers: authHeaders(),
@@ -111,14 +112,29 @@ function Tranzaksiyalar({ selectedBranchId }) {
                 headers: authHeaders(),
             });
 
+            const data = await res.json();
+            
             if (res.ok) {
-                setTransactions(transactions.filter((t) => t.id !== id));
+                // Remove the deleted transaction from the list
+                setTransactions(prev => prev.filter(t => t.id !== id));
+                // Also remove from selected items if it was selected
+                setSelectedTransactionIds(prev => prev.filter(selectedId => selectedId !== id));
+                alert('Транзакция муваффақиятли ўчирилди');
+                
+                // Refresh the transactions list
+                const refreshRes = await fetch('https://suddocs.uz/transactions/', {
+                    headers: authHeaders(),
+                });
+                if (refreshRes.ok) {
+                    const refreshData = await refreshRes.json();
+                    setTransactions(refreshData.transactions || []);
+                }
             } else {
-                const errorData = await res.json();
-                alert(`Ўчиришда хатолик: ${errorData.message || 'Номаълум хатолик'}`);
+                throw new Error(data.message || 'Транзакцияни ўчириб бўлмади');
             }
         } catch (err) {
-            alert('Уланишда хатолик: ' + err.message);
+            console.error('Delete error:', err);
+            alert('Хатолик: ' + (err.message || 'Сервер билан алоқада хатолик'));
         }
     };
 
@@ -133,7 +149,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
 
     const handleSelectAll = () => {
         const allIds = filteredTransactions.map((t) => t.id);
-        
+
         if (selectedTransactionIds.length === allIds.length) {
             setSelectedTransactionIds([]);
         } else {
@@ -146,19 +162,58 @@ function Tranzaksiyalar({ selectedBranchId }) {
         if (!window.confirm(`${selectedTransactionIds.length} та транзакцияни ўчиришни хоҳлайсизми?`)) return;
 
         try {
-            // Delete transactions one by one since there might not be a bulk endpoint
-            await Promise.all(
-                selectedTransactionIds.map((id) =>
+            const results = await Promise.allSettled(
+                selectedTransactionIds.map(id =>
                     fetch(`https://suddocs.uz/transactions/${id}`, {
                         method: 'DELETE',
                         headers: authHeaders(),
                     })
+                    .then(res => res.json())
+                    .then(data => ({
+                        success: true,
+                        id,
+                        data
+                    }))
+                    .catch(error => ({
+                        success: false,
+                        id,
+                        error: error.message
+                    }))
                 )
             );
 
-            setTransactions((prev) => prev.filter((t) => !selectedTransactionIds.includes(t.id)));
-            setSelectedTransactionIds([]);
-            alert(`Танланган ${selectedTransactionIds.length} транзакция ўчирилди`);
+            // Check which deletions were successful
+            const successfulDeletions = results.filter(r => r.value?.success);
+            const failedDeletions = results.filter(r => !r.value?.success);
+
+            // Update UI for successful deletions
+            if (successfulDeletions.length > 0) {
+                const deletedIds = successfulDeletions.map(r => r.value.id);
+                setTransactions(prev => prev.filter(t => !deletedIds.includes(t.id)));
+                setSelectedTransactionIds(prev => prev.filter(id => !deletedIds.includes(id)));
+            }
+
+            // Show appropriate messages
+            if (successfulDeletions.length > 0) {
+                alert(`${successfulDeletions.length} та транзакция муваффақиятли ўчирилди`);
+            }
+            if (failedDeletions.length > 0) {
+                console.error('Failed to delete some transactions:', failedDeletions);
+                alert(`${failedDeletions.length} та транзакцияни ўчиришда хатолик юз берди`);
+            }
+
+            // Refresh the transactions list
+            try {
+                const refreshRes = await fetch('https://suddocs.uz/transactions/', {
+                    headers: authHeaders(),
+                });
+                if (refreshRes.ok) {
+                    const refreshData = await refreshRes.json();
+                    setTransactions(refreshData.transactions || []);
+                }
+            } catch (refreshError) {
+                console.error('Error refreshing transactions:', refreshError);
+            }
         } catch (error) {
             alert('Транзакцияларни ўчиришда хатолик: ' + error.message);
         }
@@ -186,7 +241,14 @@ function Tranzaksiyalar({ selectedBranchId }) {
     };
 
     const openTransactionModal = (t) => setSelectedTransaction(t);
-    const openLogModal = (log) => setSelectedLog(log);
+    const openLogModal = (log) => {
+        // Find the related transaction to show more details
+        const relatedTransaction = transactions.find(t => t.id === log.transactionId);
+        setSelectedLog({
+            ...log,
+            transaction: relatedTransaction
+        });
+    };
     const closeModal = () => {
         setSelectedTransaction(null);
         setSelectedLog(null);
@@ -216,7 +278,6 @@ function Tranzaksiyalar({ selectedBranchId }) {
         });
     };
 
-    const today = new Date().toISOString().split('T')[0];
     const daily = filteredTransactions
         .filter((t) => t.createdAt.startsWith(today))
         .reduce((sum, t) => sum + t.finalTotal, 0);
@@ -325,8 +386,8 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                             <td className="px-4 py-3">
                                                 <span
                                                     className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${item.status === 'RETURNED'
-                                                            ? 'bg-red-100 text-red-800'
-                                                            : 'bg-green-100 text-green-800'
+                                                        ? 'bg-red-100 text-red-800'
+                                                        : 'bg-green-100 text-green-800'
                                                         }`}
                                                 >
                                                     {translateStatus(item.status)}
@@ -457,8 +518,8 @@ function Tranzaksiyalar({ selectedBranchId }) {
                         <button
                             onClick={() => setViewMode('non-returned')}
                             className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'non-returned'
-                                    ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-600 hover:text-gray-900'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
                                 }`}
                         >
                             Қайтарилмаганлар
@@ -466,8 +527,8 @@ function Tranzaksiyalar({ selectedBranchId }) {
                         <button
                             onClick={() => setViewMode('logs')}
                             className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'logs'
-                                    ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-600 hover:text-gray-900'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-900'
                                 }`}
                         >
                             Кайтарилганлар
@@ -629,14 +690,14 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                                             [...new Set(t.items.map(item => {
                                                                 // Get product branch name
                                                                 const productBranchId = item.product?.branchId;
-                                                                const foundBranch = branches?.find((b) => 
-                                                                    b.id === productBranchId || 
+                                                                const foundBranch = branches?.find((b) =>
+                                                                    b.id === productBranchId ||
                                                                     b.id?.toString() === productBranchId?.toString()
                                                                 );
-                                                                
-                                                                return foundBranch?.name || 
-                                                                       item.product?.branch?.name ||
-                                                                       'Номаълум';
+
+                                                                return foundBranch?.name ||
+                                                                    item.product?.branch?.name ||
+                                                                    'Номаълум';
                                                             }))].map((branchName, index) => (
                                                                 <div key={index} className="text-xs py-1 rounded mb-1">
                                                                     {branchName}
@@ -693,9 +754,7 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Вақт
                                             </th>
-                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                                Транзакция
-                                            </th>
+                                      
                                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                                 Маҳсулот
                                             </th>
@@ -717,21 +776,35 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {defectiveLogs.map((log, idx) => (
-                                            <tr key={idx} className="hover:bg-gray-50">
+                                        {defectiveLogs.map((log, idx) => {
+                                            try {
+                                                // Safely find the corresponding transaction
+                                                // Try to find related transaction by both id and transactionId
+                                                const relatedTransaction = transactions?.find(t => {
+                                                    return t?.id === log?.transactionId || 
+                                                           t?.id === log?.id ||
+                                                           t?.transactionId === log?.transactionId ||
+                                                           t?.transactionId === log?.id;
+                                                }) || null;
+                                                
+                                                return (
+                                                <tr key={idx} className="hover:bg-gray-50">
+                                                    <td className="px-4 py-4 whitespace-nowrap">
+                                                        <div className="text-sm text-gray-900">
+                                                            {log?.createdAt || log?.returnDate ? formatDate(log.createdAt || log.returnDate) : '-'}
+                                                        </div>
+                                                    </td>
+                                        
                                                 <td className="px-4 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-900">
-                                                        {formatDate(log.createdAt)}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-medium text-gray-900">
-                                                        #{log.transactionId}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-900">
-                                                        {log.product?.name || '-'}
+                                                    <div className="flex flex-col">
+                                                        <div className="text-sm font-medium text-gray-900">
+                                                            {log.product?.name || log.productName || '-'}
+                                                        </div>
+                                                        {log.product?.model && (
+                                                            <div className="text-xs text-gray-500">
+                                                                {log.product.model}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-4 whitespace-nowrap">
@@ -773,7 +846,12 @@ function Tranzaksiyalar({ selectedBranchId }) {
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                            );
+                                        } catch (err) {
+                                            console.error('Error rendering log row:', err);
+                                            return null; // Skip this row if there's an error
+                                        }
+                                    })}
                                     </tbody>
                                 </table>
                             </div>

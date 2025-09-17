@@ -26,6 +26,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentBranch, setCurrentBranch] = useState(null);
 
   // Customer sales modal state
   const [showCustomerSalesModal, setShowCustomerSalesModal] = useState(false);
@@ -166,6 +167,34 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       }, 100);
     }
   };
+
+  // Fetch current branch data
+  useEffect(() => {
+    const fetchCurrentBranch = async () => {
+      try {
+        const branchId = localStorage.getItem('branchId');
+        if (!branchId) return;
+
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+
+        const response = await axios.get(`${API_URL}/branches/${branchId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.status === 200) {
+          setCurrentBranch(response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching branch data:', error);
+      }
+    };
+
+    fetchCurrentBranch();
+  }, []);
 
   useEffect(() => {
     const fetchBranchesAndSetBranch = async () => {
@@ -777,6 +806,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       switch (paymentType) {
         case 'CASH': return 'Нақд';
         case 'CARD': return 'Карта';
+        case 'TERMINAL': return 'Терминал';
         case 'CREDIT': return 'Кредит';
         case 'INSTALLMENT': return 'Бўлиб тўлаш';
         default: return "Noma'lum";
@@ -871,7 +901,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
           </div>
            <div class="total-row">
                     <span>Telefon:</span>
-                    <small>+998 98 800 66 66</small>
+                    <small>${currentBranch?.phoneNumber || '+998 98 800 66 66'}</small>
                   </div>
                 </div>
                 <div>
@@ -1128,6 +1158,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
       upfrontPayment,
       remainingPrincipal,
       interestAmount,
+      remainingWithInterest,
       isDays,
       termCount
     };
@@ -1145,7 +1176,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
 
   // Debug logging for payment calculations
   useEffect(() => {
-    if (['CREDIT', 'INSTALLMENT'].includes(paymentType) && paymentSchedule.baseTotal > 0) {
+    if (!['CREDIT', 'INSTALLMENT', 'TERMINAL'].includes(paymentType) && deliveryType !== 'DELIVERY') {
     }
   }, [paymentType, paymentSchedule]);
 
@@ -1394,6 +1425,23 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                             {['CREDIT', 'INSTALLMENT', 'DELIVERY'].includes(paymentType) && (
                               <>
                                 <div>
+                                  {paymentType !== 'TERMINAL' && (
+                                    <div>
+                                      <label className="block text-sm font-medium text-gray-700 mb-1">Фоиз (%)</label>
+                                      <input
+                                        type="number"
+                                        value={interestRate}
+                                        onChange={(e) => setInterestRate(e.target.value)}
+                                        className={`w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.interestRate ? 'border-red-500' : 'border-gray-300'
+                                          }`}
+                                        step="0.01"
+                                        min="0"
+                                      />
+                                      {errors.interestRate && (
+                                        <span className="text-red-500 text-xs">{errors.interestRate}</span>
+                                      )}
+                                    </div>
+                                  )}
                                   <label className="block text-sm font-medium text-gray-700 mb-1">Исм</label>
                                   <input
                                     value={firstName}
@@ -1431,7 +1479,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                             )}
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Етказиб бериш тури
+                                Етказиб бериш / Tури
                               </label>
                               <select
                                 value={paymentType}
@@ -1444,7 +1492,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                             </div>
                             {(paymentType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                               <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Манзил</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Манзил/Turi</label>
                                 <textarea
                                   value={deliveryAddress}
                                   onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -1475,6 +1523,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                                 <option value="">Танланг</option>
                                 <option value="CASH">Нақд</option>
                                 <option value="CARD">Карта</option>
+                                <option value="TERMINAL">Терминал</option>
                                 <option value="CREDIT">Кредит</option>
                                 <option value="INSTALLMENT">Бўлиб Тўлаш</option>
                               </select>
@@ -1897,7 +1946,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                         </>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Етказиб бериш тури</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Етказиб бериш / Tури</label>
                         <select
                           value={deliveryType}
                           onChange={(e) => setDeliveryType(e.target.value)}
@@ -1909,7 +1958,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                       </div>
                       {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил/Turi</label>
                           <textarea
                             value={deliveryAddress}
                             onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -1938,6 +1987,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                           <option value="">Танланг</option>
                           <option value="CASH">Нақд</option>
                           <option value="CARD">Карта</option>
+                          <option value="TERMINAL">Терминал</option>
                           <option value="CREDIT">Кредит</option>
                           <option value="INSTALLMENT">Бўлиб Тўлаш</option>
                         </select>

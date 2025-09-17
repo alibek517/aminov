@@ -126,6 +126,7 @@ const ReturnedTransactions = () => {
     switch (paymentType) {
       case 'CASH': return 'Нақд';
       case 'CARD': return 'Карта';
+      case 'TERMINAL': return 'Терминал';
       case 'CREDIT': return 'Кредит';
       case 'INSTALLMENT': return 'Бўлиб тўлаш';
       default: return paymentType || 'Номаълум';

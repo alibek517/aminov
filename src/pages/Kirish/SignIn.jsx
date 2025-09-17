@@ -4,7 +4,7 @@ import { Eye, EyeOff, User, Lock, Building2 } from 'lucide-react';
 import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import io from 'socket.io-client';
-import './SignIn.css';
+import './Signin.css';
 
 const SignIn = () => {
   const navigate = useNavigate();

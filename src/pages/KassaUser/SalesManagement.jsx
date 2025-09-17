@@ -28,6 +28,7 @@ const SalesManagement = () => {
   const [customerPaid, setCustomerPaid] = useState('0');
   const [upfrontPaymentType, setUpfrontPaymentType] = useState('CASH'); // CASH | CARD
   const [months, setMonths] = useState('');
+  const [currentBranch, setCurrentBranch] = useState(null);
   const [interestRate, setInterestRate] = useState('');
   const [termUnit, setTermUnit] = useState('DAYS'); // MONTHS | DAYS
   const [daysCount, setDaysCount] = useState('');
@@ -233,6 +234,34 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
       throw error;
     }
   };
+
+  // Fetch current branch data
+  useEffect(() => {
+    const fetchCurrentBranch = async () => {
+      try {
+        const branchId = localStorage.getItem('branchId');
+        if (!branchId) return;
+
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+
+        const response = await axios.get(`${API_URL}/branches/${branchId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.status === 200) {
+          setCurrentBranch(response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching branch data:', error);
+      }
+    };
+
+    fetchCurrentBranch();
+  }, []);
 
   const didInitRef = useRef(false);
   useEffect(() => {
@@ -556,8 +585,8 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
 
     // Credit/Installment specific validation
     if (['CREDIT', 'INSTALLMENT'].includes(paymentType)) {
-      if (!['CASH', 'CARD'].includes(upfrontPaymentType)) {
-        newErrors.upfrontPaymentType = "Олдиндан тўлов тури танланмаган (Нақд ёки Карта)";
+      if (!['CASH', 'CARD', 'TERMINAL'].includes(upfrontPaymentType)) {
+        newErrors.upfrontPaymentType = "Олдиндан тўлов тури танланмаган (Нақд, Карта ёки Терминал)";
       }
       const isDays = paymentType === 'INSTALLMENT' && termUnit === 'DAYS';
       if (!isDays) {
@@ -653,7 +682,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
         monthlyPayment: Number(monthlyPayment),
         totalInSom: Number(baseTotal),
         finalTotalInSom: Number(finalTotal),
-        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(paymentType) ? upfrontPaymentType : paymentType, // Use paymentType for CASH/CARD, upfrontPaymentType for CREDIT/INSTALLMENT
+        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(paymentType) ? upfrontPaymentType : paymentType, // Use paymentType for CASH/CARD/TERMINAL, upfrontPaymentType for CREDIT/INSTALLMENT
       });
 
       console.log('Receipt data set:', {
@@ -1070,7 +1099,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         </>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Етказиб бериш тури</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Етказиб бериш / Tури</label>
                         <select
                           value={deliveryType}
                           onChange={(e) => setDeliveryType(e.target.value)}
@@ -1082,7 +1111,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       </div>
                       {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил/Turi</label>
                           <textarea
                             value={deliveryAddress} // downPayment o'rniga deliveryAddress
                             onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -1112,6 +1141,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           <option value="">Танланг</option>
                           <option value="CASH">Нақд</option>
                           <option value="CARD">Карта</option>
+                          <option value="TERMINAL">Терминал</option>
                           <option value="CREDIT">Кредит</option>
                           <option value="INSTALLMENT">Бўлиб Тўлаш</option>
                         </select>
@@ -1502,7 +1532,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         </>
                       )}
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Етказиб бериш тури</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Етказиб бериш / Tури</label>
                         <select
                           value={deliveryType}
                           onChange={(e) => setDeliveryType(e.target.value)}
@@ -1514,7 +1544,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       </div>
                       {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил/Turi</label>
                           <textarea
                             value={deliveryAddress} // downPayment o'rniga deliveryAddress
                             onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -1544,6 +1574,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           <option value="">Танланг</option>
                           <option value="CASH">Нақд</option>
                           <option value="CARD">Карта</option>
+                          <option value="TERMINAL">Терминал</option>
                           <option value="CREDIT">Кредит</option>
                           <option value="INSTALLMENT">Бўлиб Тўлаш</option>
                         </select>
@@ -1674,6 +1705,17 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                                 />
                                 <span className="text-sm font-medium text-gray-700">Карта</span>
                               </label>
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  name="upfrontPaymentType"
+                                  value="TERMINAL"
+                                  checked={upfrontPaymentType === 'TERMINAL'}
+                                  onChange={(e) => setUpfrontPaymentType(e.target.value)}
+                                  className="mr-2 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Терминал</span>
+                              </label>
                             </div>
                             {errors.upfrontPaymentType && (
                               <span className="text-red-500 text-xs">{errors.upfrontPaymentType}</span>
@@ -1797,9 +1839,9 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                         userId: userId,
                         remainingBalance: Number(rd.remaining || 0) || 0,  // Qolgan summa (foiz bilan)
                         paymentType: rd.paymentType,
-                        upfrontPaymentType: ['CREDIT', 'INSTALLMENT'].includes(rd.paymentType)
-                          ? rd.upfrontPaymentType
-                          : rd.paymentType,
+                        ...((['CREDIT', 'INSTALLMENT'].includes(rd.paymentType) && rd.upfrontPaymentType) 
+                          ? { upfrontPaymentType: rd.upfrontPaymentType }
+                          : {}),
                         termUnit: rd.termUnit || 'MONTHS',
                         // Kunlik bo'lib to'lash uchun kunlar sonini yuborish
                         days: rd.termUnit === 'DAYS' ? Number(rd.days || 0) : 0,
@@ -1839,7 +1881,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       console.log('Sending payload to API:', JSON.stringify(payload, null, 2));
                       console.log('Payload upfrontPaymentType:', payload.upfrontPaymentType);
 
-                      if (!['CASH', 'CARD'].includes(payload.upfrontPaymentType) && ['CREDIT', 'INSTALLMENT'].includes(payload.paymentType)) {
+                      if (['CREDIT', 'INSTALLMENT'].includes(payload.paymentType) && !['CASH', 'CARD', 'TERMINAL'].includes(payload.upfrontPaymentType)) {
                         throw new Error("Нотўғри олдиндан тўлов тури");
                       }
 
@@ -2053,7 +2095,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                   ` : ''}
                   <div class="total-row">
                     <span>Telefon:</span>
-                    <small>+998 98 800 66 66</small>
+                    <small>${currentBranch?.phoneNumber || '+998 98 800 66 66'}</small>
                   </div>
                 </div>
                 <div>

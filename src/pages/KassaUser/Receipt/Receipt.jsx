@@ -1,9 +1,43 @@
-import React, { forwardRef, useState } from 'react';
+import React, { forwardRef, useState, useEffect } from 'react';
 import { X, Printer } from 'lucide-react';
 import { formatAmountSom } from '../../../utils/currencyFormat';
 
 const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentBranch, setCurrentBranch] = useState(null);
+
+  // Fetch current branch data from localStorage and API
+  useEffect(() => {
+    const fetchCurrentBranch = async () => {
+      try {
+        const branchId = localStorage.getItem('branchId');
+        if (!branchId) return;
+
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        const response = await fetch(`https://suddocs.uz/branches/${branchId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const branchData = await response.json();
+          console.log('Branch data received:', branchData);
+          setCurrentBranch(branchData);
+        } else {
+          console.error('Failed to fetch branch data:', response.status, response.statusText);
+        }
+      } catch (error) {
+        console.error('Error fetching branch data:', error);
+      }
+    };
+
+    fetchCurrentBranch();
+  }, []);
+
   if (!transaction || !transaction.items || !Array.isArray(transaction.items)) {
     return (
       <div ref={ref} className="bg-white px-4 sm:px-6 md:px-8 py-4 sm:py-6 w-full max-w-3xl mx-auto rounded-2xl shadow-2xl font-sans">
@@ -51,6 +85,7 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
     switch (paymentType) {
       case 'CASH': return 'Нақд';
       case 'CARD': return 'Карта';
+      case 'TERMINAL': return 'Терминал';
       case 'CREDIT': return 'Кредит';
       case 'INSTALLMENT': return "Бўлиб тўлаш";
       default: return 'Номаълум';
@@ -130,9 +165,17 @@ const Receipt = forwardRef(({ transaction, onClose, onPrint }, ref) => {
               <div className="flex justify-between">
                 <span className="font-semibold text-gray-700 text-xs sm:text-sm">Филиал:</span>
                 <span className="text-gray-900 text-xs sm:text-sm font-medium break-words max-w-[60%] text-right">
-                  {transaction.branch?.name || 'Номаълум'}
+                  {currentBranch?.name || transaction.branch?.name || 'Номаълум'}
                 </span>
               </div>
+              {(currentBranch?.phoneNumber || transaction.branch?.phoneNumber) && (
+                <div className="flex justify-between">
+                  <span className="font-semibold text-gray-700 text-xs sm:text-sm">Телефон:</span>
+                  <span className="text-gray-900 text-xs sm:text-sm font-medium break-words max-w-[60%] text-right">
+                    {currentBranch?.phoneNumber || transaction.branch?.phoneNumber}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="font-semibold text-gray-700 text-xs sm:text-sm">Сотувчи:</span>
                 <span className="text-gray-900 text-xs sm:text-sm font-medium break-words max-w-[60%] text-right">

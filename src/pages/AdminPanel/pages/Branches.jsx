@@ -20,8 +20,19 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [branches, setBranches] = useState([]);
   const [modalState, setModalState] = useState({ isOpen: false, type: null, branch: null });
-  const [newBranch, setNewBranch] = useState({ name: '', location: '', type: 'SAVDO_MARKAZ' });
-  const [editBranch, setEditBranch] = useState({ name: '', location: '', type: 'SAVDO_MARKAZ' });
+  const [newBranch, setNewBranch] = useState({ 
+    name: '', 
+    location: '', 
+    phoneNumber: '', 
+    type: 'SAVDO_MARKAZ' 
+  });
+  
+  const [editBranch, setEditBranch] = useState({ 
+    name: '', 
+    location: '', 
+    phoneNumber: '', 
+    type: 'SAVDO_MARKAZ' 
+  });
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState(
@@ -147,13 +158,14 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
         body: JSON.stringify({
           name: newBranch.name,
           location: newBranch.location,
+          phoneNumber: newBranch.phoneNumber,
           type: newBranch.type,
         }),
       });
       console.log('Add response:', response.status, response.statusText);
       if (response.ok) {
         setModalState({ isOpen: false, type: null, branch: null });
-        setNewBranch({ name: '', location: '', type: 'SAVDO_MARKAZ' });
+        setNewBranch({ name: '', location: '', phoneNumber: '', type: 'SAVDO_MARKAZ' });
         await fetchBranches();
       }
     } catch (err) {
@@ -172,7 +184,7 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
       if (!modalState.branch?.id) {
         throw new Error('No branch selected for editing');
       }
-      console.log('Editing branch:', { id: modalState.branch.id, name: editBranch.name, location: editBranch.location });
+      console.log('Editing branch:', { id: modalState.branch.id, name: editBranch.name, location: editBranch.location, phoneNumber: editBranch.phoneNumber });
       const response = await fetchWithAuth(
         `https://suddocs.uz/branches/${modalState.branch.id}`,
         {
@@ -180,6 +192,7 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
           body: JSON.stringify({
             name: editBranch.name,
             location: editBranch.location,
+            phoneNumber: editBranch.phoneNumber,
             type: editBranch.type,
           }),
         }
@@ -187,7 +200,7 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
       console.log('Edit response:', response.status, response.statusText);
       if (response.ok) {
         setModalState({ isOpen: false, type: null, branch: null });
-        setEditBranch({ name: '', location: '', type: 'SAVDO_MARKAZ' });
+        setEditBranch({ name: '', location: '', phoneNumber: '', type: 'SAVDO_MARKAZ' });
         await fetchBranches();
       }
     } catch (err) {
@@ -237,7 +250,20 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
     }
     setModalState({ isOpen: true, type, branch });
     if (type === 'edit' && branch) {
-      setEditBranch({ name: branch.name, location: branch.location, type: branch.type || 'SAVDO_MARKAZ' });
+      setEditBranch({
+        name: branch.name || '',
+        location: branch.location || '',
+        phoneNumber: branch.phoneNumber || '',
+        type: branch.type || 'SAVDO_MARKAZ'
+      });
+    } else if (type === 'add') {
+      // Reset to default values when opening add modal
+      setNewBranch({
+        name: '',
+        location: '',
+        phoneNumber: '',
+        type: 'SAVDO_MARKAZ'
+      });
     }
     setError(null);
   };
@@ -246,6 +272,39 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
     setModalState({ isOpen: false, type: null, branch: null });
     setError(null);
     setIsLoading(false);
+  };
+
+  const formatPhoneNumber = (value) => {
+    if (!value) return '';
+    // Remove all non-digit characters
+    const cleaned = String(value).replace(/\D/g, '');
+    
+    // Format as +998 XX XXX XX XX
+    const match = cleaned.match(/^(\d{0,3})(\d{0,2})(\d{0,3})(\d{0,2})(\d{0,2})$/);
+    if (match) {
+      return !match[1] ? '' : `+${match[1]}${match[2] ? ` ${match[2]}` : ''}${match[3] ? ` ${match[3]}` : ''}${match[4] ? ` ${match[4]}` : ''}${match[5] ? ` ${match[5]}` : ''}`.trim();
+    }
+    return value;
+  };
+
+  const handleNewBranchChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'phoneNumber') {
+      const formattedValue = formatPhoneNumber(value);
+      setNewBranch(prev => ({ ...prev, [name]: formattedValue }));
+    } else {
+      setNewBranch(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleEditBranchChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'phoneNumber') {
+      const formattedValue = formatPhoneNumber(value);
+      setEditBranch(prev => ({ ...prev, [name]: formattedValue }));
+    } else {
+      setEditBranch(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -399,6 +458,9 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   Манзил
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Телефон
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Тури
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -437,6 +499,18 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                         <div className="text-xs text-gray-500">{branch.workingHours}</div>
                       </div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {branch.phoneNumber ? (
+                      <div className="flex items-center text-sm text-blue-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                        {branch.phoneNumber}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-500">Киритилмаган</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getBranchTypeBadge(branch.type)}`}>
@@ -561,9 +635,10 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   <label className="block text-sm font-medium text-gray-700">Филиал Номи</label>
                   <input
                     type="text"
+                    name="name"
                     value={newBranch.name}
-                    onChange={(e) => setNewBranch({ ...newBranch, name: e.target.value })}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    onChange={handleNewBranchChange}
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
                 </div>
@@ -571,18 +646,32 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   <label className="block text-sm font-medium text-gray-700">Манзил</label>
                   <input
                     type="text"
+                    name="location"
                     value={newBranch.location}
-                    onChange={(e) => setNewBranch({ ...newBranch, location: e.target.value })}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    onChange={handleNewBranchChange}
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Телефон Раками</label>
+                  <input
+                    type="tel"
+                    name="phoneNumber"
+                    value={newBranch.phoneNumber}
+                    onChange={handleNewBranchChange}
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    pattern="\+998[0-9]{9}"
+                    title="+998XXXXXXXXX formatida kiriting"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Филиал Тури</label>
                   <select
                     value={newBranch.type}
-                    onChange={(e) => setNewBranch({ ...newBranch, type: e.target.value })}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    onChange={handleNewBranchChange}
+                    name="type"
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
                     <option value="SAVDO_MARKAZ">Савдо Марказ</option>
@@ -615,9 +704,10 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   <label className="block text-sm font-medium text-gray-700">Филиал Номи</label>
                   <input
                     type="text"
+                    name="name"
                     value={editBranch.name}
-                    onChange={(e) => setEditBranch({ ...editBranch, name: e.target.value })}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    onChange={handleEditBranchChange}
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   />
                 </div>
@@ -625,9 +715,25 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   <label className="block text-sm font-medium text-gray-700">Манзил</label>
                   <input
                     type="text"
+                    name="location"
                     value={editBranch.location}
-                    onChange={(e) => setEditBranch({ ...editBranch, location: e.target.value })}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    onChange={handleEditBranchChange}
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Телефон Раками</label>
+                  <input
+                    type="tel"
+                    id="phoneNumber"
+                    name="phoneNumber"
+                    value={editBranch?.phoneNumber || ''}
+                    onChange={handleEditBranchChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="+998 XX XXX XX XX"
+                    pattern="\+998\s\d{2}\s\d{3}\s\d{2}\s\d{2}"
+                    title="Iltimos, telefon raqamini to'g'ri formatda kiriting: +998 XX XXX XX XX"
                     required
                   />
                 </div>
@@ -635,8 +741,9 @@ const Branches = ({ selectedBranchId: propSelectedBranchId }) => {
                   <label className="block text-sm font-medium text-gray-700">Филиал Тури</label>
                   <select
                     value={editBranch.type}
-                    onChange={(e) => setEditBranch({ ...editBranch, type: e.target.value })}
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                    onChange={handleEditBranchChange}
+                    name="type"
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
                     <option value="SAVDO_MARKAZ">Савдо Марказ</option>

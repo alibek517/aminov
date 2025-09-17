@@ -238,6 +238,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
         return "Нақд";
       case "CARD":
         return "Карта";
+      case "TERMINAL":
+        return "Ҳисоб рақамга";
       case "CREDIT":
         return "Кредит";
       case "INSTALLMENT":
@@ -310,11 +312,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
         name: getUserName(selectedUser),
         cashTotal: 0,
         cardTotal: 0,
+        terminalTotal: 0,
         creditTotal: 0,
         installmentTotal: 0,
         upfrontTotal: 0,
         upfrontCash: 0,
         upfrontCard: 0,
+        upfrontTerminal: 0,
         soldQuantity: 0,
         soldAmount: 0,
         repaymentTotal: 0,
@@ -347,6 +351,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
               case "CARD":
                 agg.cardTotal += final;
                 break;
+              case "TERMINAL":
+                agg.terminalTotal += final;
+                break;
               case "CREDIT":
                 agg.creditTotal += final;
                 agg.upfrontTotal += upfront;
@@ -355,6 +362,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   agg.upfrontCash += upfront;
                 } else if (upfrontType === 'CARD') {
                   agg.upfrontCard += upfront;
+                } else if (upfrontType === 'TERMINAL') {
+                  agg.upfrontTerminal += upfront;
                 }
                 break;
               case "INSTALLMENT":
@@ -365,6 +374,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   agg.upfrontCash += upfront;
                 } else if (upfrontType2 === 'CARD') {
                   agg.upfrontCard += upfront;
+                } else if (upfrontType2 === 'TERMINAL') {
+                  agg.upfrontTerminal += upfront;
                 }
                 break;
               default:
@@ -798,6 +809,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                   upfrontTotal: 0,
                   upfrontCash: 0,
                   upfrontCard: 0,
+                  upfrontTerminal: 0,
                   repaymentTotal: 0,
                   repayments: [],
                   soldQuantity: 0,
@@ -838,6 +850,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     case "CARD":
                       wagg.cardTotal += finalW;
                       break;
+                    case "TERMINAL":
+                      wagg.terminalTotal += finalW;
+                      break;
                     case "CREDIT":
                       wagg.creditTotal += finalW;
                       wagg.upfrontTotal += upfrontW;
@@ -846,6 +861,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         wagg.upfrontCash += upfrontW;
                       } else if (upfrontType1 === 'CARD') {
                         wagg.upfrontCard += upfrontW;
+                      } else if (upfrontType1 === 'TERMINAL') {
+                        wagg.upfrontTerminal += upfrontW;
                       }
                       break;
                     case "INSTALLMENT":
@@ -856,6 +873,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         wagg.upfrontCash += upfrontW;
                       } else if (upfrontType2 === 'CARD') {
                         wagg.upfrontCard += upfrontW;
+                      } else if (upfrontType2 === 'TERMINAL') {
+                        wagg.upfrontTerminal += upfrontW;
                       }
                       break;
                     default:
@@ -901,6 +920,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                       break;
                     case 'CARD':
                       wagg.cardTotal += retAmount;
+                      break;
+                    case 'TERMINAL':
+                      wagg.terminalTotal += retAmount;
                       break;
                     default:
                       break;
@@ -1180,11 +1202,13 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         `#${cashierId}`,
                       cashTotal: 0,
                       cardTotal: 0,
+                      terminalTotal: 0,
                       creditTotal: 0,
                       installmentTotal: 0,
                       upfrontTotal: 0,
                       upfrontCash: 0,
                       upfrontCard: 0,
+                      upfrontTerminal: 0,
                       soldQuantity: 0,
                       soldAmount: 0,
                       creditMonths: [],
@@ -1213,6 +1237,9 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     case "CARD":
                       agg.cardTotal += final;
                       break;
+                    case "TERMINAL":
+                      agg.terminalTotal += final;
+                      break;
                     case "CREDIT":
                       agg.creditTotal += final;
                       agg.upfrontTotal += upfront;
@@ -1222,6 +1249,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         agg.upfrontCash += upfront;
                       } else if (upfrontType === 'CARD') {
                         agg.upfrontCard += upfront;
+                      } else if (upfrontType === 'TERMINAL') {
+                        agg.upfrontTerminal += upfront;
                       }
                       break;
                     case "INSTALLMENT":
@@ -1233,6 +1262,8 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                         agg.upfrontCash += upfront;
                       } else if (upfrontType2 === 'CARD') {
                         agg.upfrontCard += upfront;
+                      } else if (upfrontType2 === 'TERMINAL') {
+                        agg.upfrontTerminal += upfront;
                       }
                       break;
                     default:
@@ -2320,6 +2351,12 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     </div>
                   </div>
                   <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Ҳисоб рақамга</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedCashier.terminalTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Кредит</div>
                     <div className="font-semibold">
                       {formatAmount(selectedCashier.creditTotal)}
@@ -2338,7 +2375,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="font-semibold">
                       {formatAmount(selectedCashier.upfrontTotal)}
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Naqd</div>
                         <div className="font-semibold">
@@ -2351,6 +2388,12 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                           {formatAmount(selectedCashier.upfrontCard || 0)}
                         </div>
                       </div>
+                      <div>
+                        <div className="text-xs">Terminal</div>
+                        <div className="font-semibold">
+                          {formatAmount(selectedCashier.upfrontTerminal || 0)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="p-3 rounded border bg-purple-50">
@@ -2358,7 +2401,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="text-xl font-bold">
                       {formatAmount(selectedCashier.repaymentTotal || 0)}
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Naqd</div>
                         <div className="font-semibold">
@@ -2380,6 +2423,19 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                               .filter(
                                 (r) =>
                                   (r.channel || "CASH").toUpperCase() === "CARD"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Terminal</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (selectedCashier.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "TERMINAL").toUpperCase() === "TERMINAL"
                               )
                               .reduce((s, r) => s + Number(r.amount || 0), 0)
                           )}
@@ -2576,6 +2632,12 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     </div>
                   </div>
                   <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Ҳисоб рақамга</div>
+                    <div className="font-semibold">
+                      {formatAmount(selectedWarehouse.terminalTotal)}
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Кредит</div>
                     <div className="font-semibold">
                       {formatAmount(selectedWarehouse.creditTotal)}
@@ -2594,7 +2656,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="font-semibold">
                       {formatAmount(selectedWarehouse.upfrontTotal)}
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Naqd</div>
                         <div className="font-semibold">
@@ -2607,6 +2669,12 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                           {formatAmount(selectedWarehouse.upfrontCard || 0)}
                         </div>
                       </div>
+                      <div>
+                        <div className="text-xs">Terminal</div>
+                        <div className="font-semibold">
+                          {formatAmount(selectedWarehouse.upfrontTerminal || 0)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="p-3 rounded border bg-purple-50">
@@ -2614,7 +2682,7 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                     <div className="text-xl font-bold">
                       {formatAmount(selectedWarehouse.repaymentTotal || 0)}
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Naqd</div>
                         <div className="font-semibold">
@@ -2636,6 +2704,19 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                               .filter(
                                 (r) =>
                                   (r.channel || "CASH").toUpperCase() === "CARD"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Terminal</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (selectedWarehouse.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "TERMINAL").toUpperCase() === "TERMINAL"
                               )
                               .reduce((s, r) => s + Number(r.amount || 0), 0)
                           )}
@@ -3094,6 +3175,27 @@ const TransactionReport = ({ selectedBranchId: propSelectedBranchId }) => {
                           <div>💳 Кредит тўловлар: {formatAmount(
                             (userReport.repayments || [])
                               .filter(r => (r.channel || "CARD").toUpperCase() === "CARD")
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}</div>
+                        </div>
+                      </div>
+                      <div className="p-3 rounded border">
+                        <div className="text-sm text-gray-500">Ҳисоб рақамга</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            Number(userReport.terminalTotal || 0) +
+                            Number(userReport.upfrontTerminal || 0) +
+                            (userReport.repayments || [])
+                              .filter(r => (r.channel || "TERMINAL").toUpperCase() === "TERMINAL")
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          <div>🏦 Терминал сотувлар: {formatAmount(userReport.terminalTotal || 0)}</div>
+                          <div>💰 Олдиндан тўловлар: {formatAmount(userReport.upfrontTerminal || 0)}</div>
+                          <div>💳 Кредит тўловлар: {formatAmount(
+                            (userReport.repayments || [])
+                              .filter(r => (r.channel || "TERMINAL").toUpperCase() === "TERMINAL")
                               .reduce((s, r) => s + Number(r.amount || 0), 0)
                           )}</div>
                         </div>

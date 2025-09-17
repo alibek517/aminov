@@ -148,6 +148,8 @@ const Dashboard = () => {
         return "Нақд";
       case "CARD":
         return "Карта";
+      case "TERMINAL":
+        return "Терминал";
       case "CREDIT":
         return "Кредит";
       case "INSTALLMENT":
@@ -215,6 +217,7 @@ const Dashboard = () => {
           name: getUserName(JSON.parse(localStorage.getItem("user") || "{}")),
           cashTotal: 0,
           cardTotal: 0,
+          terminalTotal: 0,
           creditTotal: 0,
           installmentTotal: 0,
           upfrontTotal: 0,
@@ -287,6 +290,9 @@ const Dashboard = () => {
                   break;
                 case "CARD":
                   agg.cardTotal += final;
+                  break;
+                case "TERMINAL":
+                  agg.terminalTotal += final;
                   break;
                 case "CREDIT":
                   agg.creditTotal += final;
@@ -626,6 +632,10 @@ const Dashboard = () => {
                         agg.cardTotal -= retAmount;
                         // CARD returns should NOT reduce cash
                         break;
+                      case 'TERMINAL':
+                        agg.terminalTotal -= retAmount;
+                        // TERMINAL returns should NOT reduce cash
+                        break;
                       default:
                         break;
                     }
@@ -648,6 +658,7 @@ const Dashboard = () => {
         console.log('Final cashier report aggregation:', {
           cashTotal: agg.cashTotal,
           cardTotal: agg.cardTotal,
+          terminalTotal: agg.terminalTotal,
           creditTotal: agg.creditTotal,
           installmentTotal: agg.installmentTotal,
           upfrontTotal: agg.upfrontTotal,
@@ -855,6 +866,12 @@ const Dashboard = () => {
                           .filter(r => (r.channel || "CARD").toUpperCase() === "CARD")
                           .reduce((s, r) => s + Number(r.amount || 0), 0)
                       )}</div>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Ҳисоб рақамга</div>
+                    <div className="font-semibold">
+                      {formatAmount(cashierReport.terminalTotal)}
                     </div>
                   </div>
                   <div className="p-3 rounded border">

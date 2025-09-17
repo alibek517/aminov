@@ -548,8 +548,8 @@ const Мижозлар = () => {
   };
 
   const getPaymentStatus = (schedule) => {
-    if (schedule.isPaid) return { text: 'Тўланған', color: 'text-green-600' };
-    if (schedule.paidAmount > 0) return { text: 'Қисман тўланған', color: 'text-yellow-600' };
+    if (schedule.isPaid) return { text: 'Тўланган', color: 'text-green-600' };
+    if (schedule.paidAmount > 0) return { text: 'Қисман Тўланган', color: 'text-yellow-600' };
     return { text: 'Тўланмаған', color: 'text-red-600' };
   };
 
@@ -783,29 +783,29 @@ const Мижозлар = () => {
                                   }
                                   {percent != null ? `, ${(percent * 100).toFixed(0)}%` : ''}
                                   {paidAmountCompact > 0 && remainingCompact > 0 && (
-                                    <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 align-middle">Қисман тўланған</span>
+                                    <span className="ml-2 inline-block text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 align-middle">Қисман Тўланган</span>
                                   )}
                                 </div>
                                 {t.termUnit === 'DAYS' && (
                                   <div className="text-xs text-gray-500 mt-1">
-                                    Асосий сумма: {formatCurrency(t.total || totalAmount)} | Тўланған: {formatCurrency(paidAmountCompact)} | Қолган: {formatCurrency(calculateTransactionRemaining(t))} | {t.days || 0} кун ичида тўлаш керак
+                                    Асосий сумма: {formatCurrency(t.total || totalAmount)} | Тўланган: {formatCurrency(paidAmountCompact)} | Қолган: {formatCurrency(calculateTransactionRemaining(t))} | {t.days || 0} кун ичида тўлаш керак
                                   </div>
                                 )}
                                 {t.downPayment && t.downPayment > 0 && (
                                   <div className="text-xs text-blue-600 mt-1">
-                                    💰 Олдиндан олинған: {formatCurrency(t.downPayment)}
+                                    💰 Олдиндан олинган: {formatCurrency(t.downPayment)}
                                   </div>
                                 )}
                                 <div className="text-xs text-gray-500">Сана: {formatDate(t.createdAt)}</div>
                               </div>
                               <div className="text-right">
                                 <div className="text-lg font-bold">{formatCurrency(calculateTransactionPaid(t) + calculateTransactionRemaining(t))}</div>
-                                <div className="text-xs text-gray-600">Тўланған: {formatCurrency(calculateTransactionPaid(t))}</div>
+                                <div className="text-xs text-gray-600">Тўланган: {formatCurrency(calculateTransactionPaid(t))}</div>
                                 <div className="text-xs text-gray-600">Қолган: {formatCurrency(calculateTransactionRemaining(t))}</div>
 
 
                                 {calculateTransactionRemaining(t) <= 0 && (
-                                  <div className="mt-1 inline-block bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Тўлиқ тўланған</div>
+                                  <div className="mt-1 inline-block bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">Тўлиқ Тўланган</div>
                                 )}
                               </div>
                             </button>
@@ -818,8 +818,8 @@ const Мижозлар = () => {
                                     </div>
                                     <div className="text-xs text-gray-600 mb-2">
                                       {t.termUnit === 'DAYS' 
-                                        ? `Кунлар: ${t.days || 0} | Тўланған: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/1`
-                                        : `Тўланған ойлар: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/${schedules.length}`
+                                        ? `Кунлар: ${t.days || 0} | Тўланган: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/1`
+                                        : `Тўланган ойлар: ${schedules.filter(sc => Number(sc?.paidAmount || 0) >= Number(sc?.payment || 0)).length}/${schedules.length}`
                                       }
                                     </div>
                                     <div className="overflow-x-auto">
@@ -828,10 +828,10 @@ const Мижозлар = () => {
                                           <tr>
                                             <th className="px-2 py-1 text-left">{t.termUnit === 'DAYS' ? 'Кун' : 'Ой'}</th>
                                             <th className="px-2 py-1 text-left">Тўлов</th>
-                                            <th className="px-2 py-1 text-left">Тўланған</th>
+                                            <th className="px-2 py-1 text-left">Тўланган</th>
                                             <th className="px-2 py-1 text-left">Қолган</th>
                                             <th className="px-2 py-1 text-left">Ҳолат</th>
-                                            <th className="px-2 py-1 text-left">Тўланған куни</th>
+                                            <th className="px-2 py-1 text-left">Тўланган куни</th>
                                             <th className="px-2 py-1 text-left">Канал</th>
                                             <th className="px-2 py-1 text-left">Қабул қилған</th>
                                             <th className="px-2 py-1 text-left">Баҳо</th>
@@ -981,7 +981,7 @@ const Мижозлар = () => {
                       <strong>{selectedSchedule.month}-ой тўлови:</strong> {formatCurrency(selectedSchedule.payment)}
                     </p>
                     <p className="text-gray-600 mb-2">
-                      <strong>Тўланған:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                      <strong>Тўланган:</strong> {formatCurrency(selectedSchedule.paidAmount)}
                     </p>
                     <p className="text-gray-600 mb-2">
                       <strong>Қолган:</strong> {formatCurrency(selectedSchedule.payment - selectedSchedule.paidAmount)}
@@ -993,7 +993,7 @@ const Мижозлар = () => {
                       <strong>Умумий сумма:</strong> {formatCurrency(selectedSchedule.transaction.total || selectedSchedule.payment)}
                     </p>
                     <p className="text-gray-600 mb-2">
-                      <strong>Тўланған:</strong> {formatCurrency(selectedSchedule.paidAmount)}
+                      <strong>Тўланган:</strong> {formatCurrency(selectedSchedule.paidAmount)}
                     </p>
                     <p className="text-gray-600 mb-2">
                       <strong>Қолган:</strong> {formatCurrency(selectedSchedule.remainingBalance)}

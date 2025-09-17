@@ -143,6 +143,8 @@ const Dashboard = () => {
         return "Нақд";
       case "CARD":
         return "Карта";
+      case "TERMINAL":
+        return "Ҳисоб рақамга";
       case "CREDIT":
         return "Кредит";
       case "INSTALLMENT":
@@ -210,11 +212,13 @@ const Dashboard = () => {
           name: getUserName(JSON.parse(localStorage.getItem("user") || "{}")),
           cashTotal: 0,
           cardTotal: 0,
+          terminalTotal: 0,
           creditTotal: 0,
           installmentTotal: 0,
           upfrontTotal: 0,
           upfrontCash: 0,
           upfrontCard: 0,
+          upfrontTerminal: 0,
           soldQuantity: 0,
           soldAmount: 0,
           repaymentTotal: 0,
@@ -271,6 +275,9 @@ const Dashboard = () => {
                 case "CARD":
                   agg.cardTotal += final;
                   break;
+                case "TERMINAL":
+                  agg.terminalTotal += final;
+                  break;
                 case "CREDIT":
                   agg.creditTotal += final;
                   agg.upfrontTotal += upfront;
@@ -286,6 +293,8 @@ const Dashboard = () => {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType === 'CARD') {
                     agg.upfrontCard += upfront;
+                  } else if (upfrontType === 'TERMINAL') {
+                    agg.upfrontTerminal += upfront;
                   }
                   break;
                 case "INSTALLMENT":
@@ -303,6 +312,8 @@ const Dashboard = () => {
                     agg.upfrontCash += upfront;
                   } else if (upfrontType2 === 'CARD') {
                     agg.upfrontCard += upfront;
+                  } else if (upfrontType2 === 'TERMINAL') {
+                    agg.upfrontTerminal += upfront;
                   }
                   break;
                 default:
@@ -611,11 +622,13 @@ const Dashboard = () => {
         console.log('Final cashier report aggregation:', {
           cashTotal: agg.cashTotal,
           cardTotal: agg.cardTotal,
+          terminalTotal: agg.terminalTotal,
           creditTotal: agg.creditTotal,
           installmentTotal: agg.installmentTotal,
           upfrontTotal: agg.upfrontTotal,
           upfrontCash: agg.upfrontCash,
           upfrontCard: agg.upfrontCard,
+          upfrontTerminal: agg.upfrontTerminal,
           repaymentTotal: agg.repaymentTotal
         });
         
@@ -776,6 +789,27 @@ const Dashboard = () => {
                     </div>
                   </div>
                   <div className="p-3 rounded border">
+                    <div className="text-sm text-gray-500">Ҳисоб рақамга</div>
+                    <div className="font-semibold">
+                      {formatAmount(
+                        Number(cashierReport.terminalTotal || 0) +                    // Terminal sales
+                        Number(cashierReport.upfrontTerminal || 0) +                  // Upfront payments in terminal
+                        (cashierReport.repayments || [])                          // Credit repayments in terminal
+                          .filter(r => (r.channel || "TERMINAL").toUpperCase() === "TERMINAL")
+                          .reduce((s, r) => s + Number(r.amount || 0), 0)
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs text-gray-500">
+                      <div>🏦 Терминал сотувлар: {formatAmount(cashierReport.terminalTotal || 0)}</div>
+                      <div>💰 Олдиндан тўловлар: {formatAmount(cashierReport.upfrontTerminal || 0)}</div>
+                      <div>💳 Кредит тўловлар: {formatAmount(
+                        (cashierReport.repayments || [])
+                          .filter(r => (r.channel || "TERMINAL").toUpperCase() === "TERMINAL")
+                          .reduce((s, r) => s + Number(r.amount || 0), 0)
+                      )}</div>
+                    </div>
+                  </div>
+                  <div className="p-3 rounded border">
                     <div className="text-sm text-gray-500">Кредит</div>
                     <div className="font-semibold">
                       {formatAmount(cashierReport.creditTotal)}
@@ -794,7 +828,7 @@ const Dashboard = () => {
                     <div className="font-semibold">
                       {formatAmount(cashierReport.upfrontTotal)}
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Нақд</div>
                         <div className="font-semibold">
@@ -807,6 +841,12 @@ const Dashboard = () => {
                           {formatAmount(cashierReport.upfrontCard || 0)}
                         </div>
                       </div>
+                      <div>
+                        <div className="text-xs">Терминал</div>
+                        <div className="font-semibold">
+                          {formatAmount(cashierReport.upfrontTerminal || 0)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="p-3 rounded border bg-purple-50">
@@ -814,7 +854,7 @@ const Dashboard = () => {
                     <div className="text-xl font-bold">
                       {formatAmount(cashierReport.repaymentTotal || 0)}
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-sm">
                       <div>
                         <div className="text-xs">Нақд</div>
                         <div className="font-semibold">
@@ -836,6 +876,19 @@ const Dashboard = () => {
                               .filter(
                                 (r) =>
                                   (r.channel || "CARD").toUpperCase() === "CARD"
+                              )
+                              .reduce((s, r) => s + Number(r.amount || 0), 0)
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs">Терминал</div>
+                        <div className="font-semibold">
+                          {formatAmount(
+                            (cashierReport.repayments || [])
+                              .filter(
+                                (r) =>
+                                  (r.channel || "TERMINAL").toUpperCase() === "TERMINAL"
                               )
                               .reduce((s, r) => s + Number(r.amount || 0), 0)
                           )}
@@ -989,7 +1042,8 @@ const Dashboard = () => {
                               {['CREDIT', 'INSTALLMENT'].includes(t.paymentType) && Number(t.amountPaid || 0) > 0 && (
                                 <div className="text-xs text-gray-500">
                                   {t.upfrontPaymentType === 'CASH' ? '💵 Нақд' : 
-                                   t.upfrontPaymentType === 'CARD' ? '💳 Карта' : '❓ Номаълум'}
+                                   t.upfrontPaymentType === 'CARD' ? '💳 Карта' : 
+                                   t.upfrontPaymentType === 'TERMINAL' ? '🏦 Терминал' : '❓ Номаълум'}
                                 </div>
                               )}
                             </div>
@@ -1000,7 +1054,8 @@ const Dashboard = () => {
                           <td className="px-3 py-2">
                             {['CREDIT', 'INSTALLMENT'].includes(t.paymentType) ? 
                               (t.upfrontPaymentType === 'CASH' ? 'Нақд' : 
-                               t.upfrontPaymentType === 'CARD' ? 'Карта' : 'Номаълум') : 
+                               t.upfrontPaymentType === 'CARD' ? 'Карта' : 
+                               t.upfrontPaymentType === 'TERMINAL' ? 'Терминал' : 'Номаълум') : 
                               '-'}
                           </td>
                           <td className="px-3 py-2">
