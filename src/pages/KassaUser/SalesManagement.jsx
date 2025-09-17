@@ -10,8 +10,8 @@ const SalesManagement = () => {
   const [branches, setBranches] = useState([]);
   const [users, setUsers] = useState([]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
-  const [availableBranches, setAvailableBranches] = useState([]); // Branches available for product selection
-  const [selectedProductBranchId, setSelectedProductBranchId] = useState(''); // Branch to fetch products from
+  const [availableBranches, setAvailableBranches] = useState([]); 
+  const [selectedProductBranchId, setSelectedProductBranchId] = useState(''); 
   const [selectedUserId, setSelectedUserId] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
@@ -54,11 +54,7 @@ const SalesManagement = () => {
 
 
 
-
-
   const API_URL = 'https://suddocs.uz';
-
-
 
 
 
@@ -84,7 +80,7 @@ const SalesManagement = () => {
     const interestAmount = remainingPrincipal * rate;                    // Qolgan pulga foiz qo'yish
     const remainingWithInterest = remainingPrincipal + interestAmount;   // Qolgan + foiz
     const totalWithInterest = upfrontPayment + remainingWithInterest;    // Oldindan to'lov + qolgan (foiz bilan)
-    const change = upfrontPayment > baseTotal ? upfrontPayment - baseTotal : 0; // Qaytim (agar oldindan to'lov asosiy summani oshirsa)
+    const change = upfrontPayment > baseTotal ? upfrontPayment - baseTotal : 0; 
 
     let periodicPayment, schedule;
 
@@ -898,7 +894,6 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                                   );
                                   setNotification({ message: `${product.name} миқдори янгиланди`, type: 'success' });
                                 } else {
-                                  // Add new item - convert USD to som
                                   const priceInSom = Math.round(Number(product.marketPrice || product.price) * exchangeRate);
                                   const sourceBranch = availableBranches.find(b => b.id.toString() === selectedProductBranchId);
                                   setSelectedItems([
@@ -1061,7 +1056,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                   <div>
                     <h4 className="text-md font-semibold mb-3">Мижоз маълумотлари</h4>
                     <div className="space-y-3">
-                      {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
+                      {(deliveryType === 'DELIVERY','PICKUP' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Исм</label>
@@ -1111,7 +1106,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       </div>
                       {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил/Turi</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил / тури / 2-тел</label>
                           <textarea
                             value={deliveryAddress} // downPayment o'rniga deliveryAddress
                             onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -1494,7 +1489,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                           <span className="text-red-500 text-xs">{errors.seller}</span>
                         )}
                       </div>
-                      {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
+                      {(deliveryType === 'DELIVERY','PICKUP' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Исм</label>
@@ -1544,7 +1539,7 @@ ${schedule.map((row) => `${row.month} & ${formatAmount(row.payment)} & ${formatA
                       </div>
                       {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил/Turi</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил / тури / 2-тел</label>
                           <textarea
                             value={deliveryAddress} // downPayment o'rniga deliveryAddress
                             onChange={(e) => setDeliveryAddress(e.target.value)}

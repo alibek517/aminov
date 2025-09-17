@@ -792,21 +792,15 @@ const Dashboard = () => {
                     <div className="text-sm text-gray-500">Ҳисоб рақамга</div>
                     <div className="font-semibold">
                       {formatAmount(
-                        Number(cashierReport.terminalTotal || 0) +                    // Terminal sales
-                        Number(cashierReport.upfrontTerminal || 0) +                  // Upfront payments in terminal
-                        (cashierReport.repayments || [])                          // Credit repayments in terminal
+                        Number(cashierReport.terminalTotal || 0) +                    
+                        Number(cashierReport.upfrontTerminal || 0) +                  
+                        (cashierReport.repayments || [])                          
                           .filter(r => (r.channel || "TERMINAL").toUpperCase() === "TERMINAL")
                           .reduce((s, r) => s + Number(r.amount || 0), 0)
                       )}
                     </div>
                     <div className="mt-2 text-xs text-gray-500">
                       <div>🏦 Терминал сотувлар: {formatAmount(cashierReport.terminalTotal || 0)}</div>
-                      <div>💰 Олдиндан тўловлар: {formatAmount(cashierReport.upfrontTerminal || 0)}</div>
-                      <div>💳 Кредит тўловлар: {formatAmount(
-                        (cashierReport.repayments || [])
-                          .filter(r => (r.channel || "TERMINAL").toUpperCase() === "TERMINAL")
-                          .reduce((s, r) => s + Number(r.amount || 0), 0)
-                      )}</div>
                     </div>
                   </div>
                   <div className="p-3 rounded border">
@@ -841,12 +835,6 @@ const Dashboard = () => {
                           {formatAmount(cashierReport.upfrontCard || 0)}
                         </div>
                       </div>
-                      <div>
-                        <div className="text-xs">Терминал</div>
-                        <div className="font-semibold">
-                          {formatAmount(cashierReport.upfrontTerminal || 0)}
-                        </div>
-                      </div>
                     </div>
                   </div>
                   <div className="p-3 rounded border bg-purple-50">
@@ -876,19 +864,6 @@ const Dashboard = () => {
                               .filter(
                                 (r) =>
                                   (r.channel || "CARD").toUpperCase() === "CARD"
-                              )
-                              .reduce((s, r) => s + Number(r.amount || 0), 0)
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-xs">Терминал</div>
-                        <div className="font-semibold">
-                          {formatAmount(
-                            (cashierReport.repayments || [])
-                              .filter(
-                                (r) =>
-                                  (r.channel || "TERMINAL").toUpperCase() === "TERMINAL"
                               )
                               .reduce((s, r) => s + Number(r.amount || 0), 0)
                           )}

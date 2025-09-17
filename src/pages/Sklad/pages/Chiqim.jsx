@@ -1422,7 +1422,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                         <div>
                           <h4 className="text-md font-semibold mb-3">Мижоз маълумотлари</h4>
                           <div className="space-y-3">
-                            {['CREDIT', 'INSTALLMENT', 'DELIVERY'].includes(paymentType) && (
+                            {['CREDIT', 'INSTALLMENT', 'DELIVERY', 'PICKUP'].includes(paymentType) && (
                               <>
                                 <div>
                                   {paymentType !== 'TERMINAL' && (
@@ -1908,7 +1908,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                   <div>
                     <h4 className="text-md font-semibold mb-3">Мижоз маълумотлари</h4>
                     <div className="space-y-3">
-                      {(paymentType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
+                      {(paymentType === 'DELIVERY', 'PICKUP' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Исм</label>
@@ -1958,7 +1958,7 @@ const Chiqim = ({ selectedBranchId: propSelectedBranchId, exchangeRate: propExch
                       </div>
                       {(deliveryType === 'DELIVERY' || ['CREDIT', 'INSTALLMENT'].includes(paymentType)) && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил/Turi</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Манзил / тури / 2-тел</label>
                           <textarea
                             value={deliveryAddress}
                             onChange={(e) => setDeliveryAddress(e.target.value)}
