@@ -335,6 +335,31 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
 
   const totalProducts = counts.total;
 
+  // Calculate summary data
+  const summaryData = React.useMemo(() => {
+    return filteredProducts.reduce((acc, product) => {
+      const price = Number(product.price) || 0;
+      const marketPrice = Number(product.marketPrice) || 0;
+      const quantity = Number(product.quantity) || 0;
+      const initialQuantity = Number(product.initialQuantity) || 0;
+      const sold = Math.max(0, initialQuantity - quantity - (Number(product.returnedQuantity) || 0) - (Number(product.exchangedQuantity) || 0));
+      
+      return {
+        totalProducts: acc.totalProducts + 1,
+        totalSold: acc.totalSold + sold,
+        totalRemaining: acc.totalRemaining + quantity,
+        totalPrice: acc.totalPrice + (price * quantity),
+        totalMarketPrice: acc.totalMarketPrice + (marketPrice * quantity)
+      };
+    }, {
+      totalProducts: 0,
+      totalSold: 0,
+      totalRemaining: 0,
+      totalPrice: 0,
+      totalMarketPrice: 0
+    });
+  }, [filteredProducts]);
+
   const handleAddProduct = async () => {
     if (!formData.name || !formData.categoryId || !formData.branchId || !formData.status) {
       toast.danger('Илтимос, мажбурий майдонларни тўлдиринг!');
@@ -722,37 +747,9 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
-        <div onClick={() => setStatusFilter('ALL')} className={`bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow duration-200 cursor-pointer ${statusFilter === 'ALL' ? 'border-blue-400' : 'border-gray-100'}`}>
-          <div className="flex items-center">
-            <div className="p-3 bg-blue-50 rounded-lg mr-4">
-              <Package className="text-blue-600" size={24} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Жами Маҳсулотлар</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {totalProducts > 0 ? totalProducts : 0}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div onClick={() => setStatusFilter('SOLD')} className={`bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition-shadow duration-200 cursor-pointer ${statusFilter === 'SOLD' ? 'border-blue-400' : 'border-gray-100'}`}>
-          <div className="flex items-center">
-            <div className="p-3 bg-blue-50 rounded-lg mr-4">
-              <Clock className="text-blue-600" size={24} />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Сотилган</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {counts.sold > 0 ? counts.sold : 0}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden w-full">
-        {selectedProductIds.length > 0 && (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 w-full">
+      {selectedProductIds.length > 0 && (
           <div className="flex items-center justify-between p-3 border-b bg-yellow-50">
             <div className="text-sm text-gray-700">Танланган: {selectedProductIds.length} та</div>
             <div className="flex gap-2">
@@ -760,9 +757,9 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
             </div>
           </div>
         )}
-        <div className="overflow-x-auto">
+        <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 250px)' }}>
           <table className="w-full min-w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3">
                   <input
@@ -771,26 +768,50 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                     onChange={handleSelectAll}
                   />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Маҳсулот
+                <th className="px-4 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Маҳсулот</span>
+                    <span className="text-base font-bold text-gray-900">{summaryData.totalProducts}</span>
+                  </div>
                 </th>
-              
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Модели
+                <th className="px-4 py-3">
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Модели</div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Нарх (USD)</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Нарх (so'm)</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (USD)</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (so'm)</th>
-               
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Брак
+                <th className="px-4 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Нарх (USD)</span>
+                    <span className="text-base font-bold text-gray-900">{formatAmountUSD(summaryData.totalPrice)}</span>
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Сотилган
+                <th className="px-4 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Нарх (so'm)</span>
+                    <span className="text-base font-bold text-gray-900">{formatAmountSom(summaryData.totalPrice * getEffectiveRate())}</span>
+                  </div>
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Қолгани
+                <th className="px-4 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (USD)</span>
+                    <span className="text-base font-bold text-gray-900">{formatAmountUSD(summaryData.totalMarketPrice)}</span>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Сотув нархи (so'm)</span>
+                    <span className="text-base font-bold text-gray-900">{formatAmountSom(summaryData.totalMarketPrice * getEffectiveRate())}</span>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Сотилган</span>
+                    <span className="text-base font-bold text-gray-900">{summaryData.totalSold}</span>
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-center">
+                  <div className="flex flex-col items-center">
+                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Қолгани</span>
+                    <span className="text-base font-bold text-gray-900">{summaryData.totalRemaining}</span>
+                  </div>
                 </th>
 
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -831,19 +852,6 @@ const Inventory = ({ selectedBranchId: propSelectedBranchId }) => {
                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatAmountUSD(product.marketPrice) : '-'}</td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{(product.marketPrice ?? product.marketPrice === 0) ? formatAmountSom(product.marketPrice * getEffectiveRate()) : '-'}</td>
                   
-                  <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {(() => {
-                      const defectiveCount = Number(product.defectiveQuantity || 0);
-                      if (defectiveCount > 0) {
-                        return (
-                          <div>
-                            <span className="text-red-600">{defectiveCount} дона</span>
-                          </div>
-                        );
-                      }
-                      return <span className="text-gray-400">0 дона</span>;
-                    })()}
-                  </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">
                       {(() => {
